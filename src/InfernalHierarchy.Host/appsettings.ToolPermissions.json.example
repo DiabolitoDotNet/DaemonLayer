@@ -1,0 +1,34 @@
+{
+  "ToolPermissions": {
+    "create_sub_agent": {
+      "Enabled": true,
+      "AllowedRanks": "Supreme,Prince,Duke",
+      "WhitelistedAgents": [],
+      "BlacklistedAgents": []
+    },
+    "web_search": {
+      "Enabled": true,
+      "AllowedRanks": "Supreme,Prince,Duke,Worker",
+      "WhitelistedAgents": [],
+      "BlacklistedAgents": []
+    },
+    "write_memory": {
+      "Enabled": true,
+      "AllowedRanks": "Supreme,Prince,Duke",
+      "WhitelistedAgents": [],
+      "BlacklistedAgents": []
+    },
+    "read_memory": {
+      "Enabled": true,
+      "AllowedRanks": "Supreme,Prince,Duke,Worker",
+      "WhitelistedAgents": [],
+      "BlacklistedAgents": []
+    },
+    "telegram_send": {
+      "Enabled": true,
+      "AllowedRanks": "Supreme,Prince,Duke,Worker",
+      "WhitelistedAgents": [],
+      "BlacklistedAgents": []
+    }
+  }
+}

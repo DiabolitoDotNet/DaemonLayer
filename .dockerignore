@@ -1,0 +1,14 @@
+# .dockerignore
+**/bin/
+**/obj/
+**/out/
+**/data/
+**/logs/
+**/.vs/
+**/.vscode/
+**/.git/
+**/.gitignore
+**/Dockerfile*
+**/docker-compose*
+**/*.md
+!souls/*.json

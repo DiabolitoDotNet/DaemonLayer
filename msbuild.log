@@ -1,0 +1,296 @@
+La génération a démarré 2026-02-02 17:45:08.
+La verbosité de la journalisation a la valeur Normal.     1>Projet "C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\InfernalHierarchy.sln" sur le nœud 1 (Restore cible(s)).
+     1>ValidateSolutionConfiguration:
+         Génération de la configuration de solution "Debug|Any CPU".
+       _GetAllRestoreProjectPathItems:
+         Identification des projets à restaurer...
+     1>Le projet "C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\InfernalHierarchy.sln" (1) génère "C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\src\InfernalHierarchy.Host\InfernalHierarchy.Host.csproj" (2:9) sur le nœud 1 (_GenerateProjectRestoreGraph cible(s)).
+     2>AddPrunePackageReferences:
+         Loading prune package data from PrunePackageData folder
+         Failed to load prune package data from PrunePackageData folder, loading from targeting packs instead
+     1>Le projet "C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\InfernalHierarchy.sln" (1) génère "C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\tests\InfernalHierarchy.Core.Tests\InfernalHierarchy.Core.Tests.csproj" (11:5) sur le nœud 10 (_GenerateProjectRestoreGraph cible(s)).
+    11>AddPrunePackageReferences:
+         Loading prune package data from PrunePackageData folder
+         Failed to load prune package data from PrunePackageData folder, loading from targeting packs instead
+     2>AddPrunePackageReferences:
+         Looking for targeting packs in C:\Program Files\dotnet\packs\Microsoft.NETCore.App.Ref
+         Pack directories found: C:\Program Files\dotnet\packs\Microsoft.NETCore.App.Ref\10.0.2
+    11>AddPrunePackageReferences:
+         Looking for targeting packs in C:\Program Files\dotnet\packs\Microsoft.NETCore.App.Ref
+     1>Le projet "C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\InfernalHierarchy.sln" (1) génère "C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\src\InfernalHierarchy.Agents\InfernalHierarchy.Agents.csproj" (13:7) sur le nœud 14 (_GenerateProjectRestoreGraph cible(s)).
+    13>AddPrunePackageReferences:
+         Loading prune package data from PrunePackageData folder
+     2>AddPrunePackageReferences:
+         Found package overrides file C:\Program Files\dotnet\packs\Microsoft.NETCore.App.Ref\10.0.2\data\PackageOverrides.txt
+     1>Le projet "C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\InfernalHierarchy.sln" (1) génère "C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\src\InfernalHierarchy.Personas\InfernalHierarchy.Personas.csproj" (16:8) sur le nœud 5 (_GenerateProjectRestoreGraph cible(s)).
+    16>AddPrunePackageReferences:
+         Loading prune package data from PrunePackageData folder
+     1>Le projet "C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\InfernalHierarchy.sln" (1) génère "C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\src\InfernalHierarchy.Messaging\InfernalHierarchy.Messaging.csproj" (9:9) sur le nœud 4 (_GenerateProjectRestoreGraph cible(s)).
+     9>AddPrunePackageReferences:
+         Loading prune package data from PrunePackageData folder
+     1>Le projet "C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\InfernalHierarchy.sln" (1) génère "C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\tests\InfernalHierarchy.Agents.Tests\InfernalHierarchy.Agents.Tests.csproj" (14:5) sur le nœud 6 (_GenerateProjectRestoreGraph cible(s)).
+    14>AddPrunePackageReferences:
+         Loading prune package data from PrunePackageData folder
+     9>AddPrunePackageReferences:
+         Failed to load prune package data from PrunePackageData folder, loading from targeting packs instead
+    16>AddPrunePackageReferences:
+         Failed to load prune package data from PrunePackageData folder, loading from targeting packs instead
+     9>AddPrunePackageReferences:
+         Looking for targeting packs in C:\Program Files\dotnet\packs\Microsoft.NETCore.App.Ref
+    16>AddPrunePackageReferences:
+         Looking for targeting packs in C:\Program Files\dotnet\packs\Microsoft.NETCore.App.Ref
+     9>AddPrunePackageReferences:
+         Pack directories found: C:\Program Files\dotnet\packs\Microsoft.NETCore.App.Ref\10.0.2
+     1>Le projet "C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\InfernalHierarchy.sln" (1) génère "C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\tests\InfernalHierarchy.Host.Tests\InfernalHierarchy.Host.Tests.csproj" (5:5) sur le nœud 8 (_GenerateProjectRestoreGraph cible(s)).
+     5>AddPrunePackageReferences:
+         Loading prune package data from PrunePackageData folder
+         Failed to load prune package data from PrunePackageData folder, loading from targeting packs instead
+         Looking for targeting packs in C:\Program Files\dotnet\packs\Microsoft.NETCore.App.Ref
+         Pack directories found: C:\Program Files\dotnet\packs\Microsoft.NETCore.App.Ref\10.0.2
+    14>AddPrunePackageReferences:
+         Failed to load prune package data from PrunePackageData folder, loading from targeting packs instead
+     5>AddPrunePackageReferences:
+         Found package overrides file C:\Program Files\dotnet\packs\Microsoft.NETCore.App.Ref\10.0.2\data\PackageOverrides.txt
+    14>AddPrunePackageReferences:
+         Looking for targeting packs in C:\Program Files\dotnet\packs\Microsoft.NETCore.App.Ref
+     9>AddPrunePackageReferences:
+         Found package overrides file C:\Program Files\dotnet\packs\Microsoft.NETCore.App.Ref\10.0.2\data\PackageOverrides.txt
+    11>AddPrunePackageReferences:
+         Pack directories found: C:\Program Files\dotnet\packs\Microsoft.NETCore.App.Ref\10.0.2
+    16>AddPrunePackageReferences:
+         Pack directories found: C:\Program Files\dotnet\packs\Microsoft.NETCore.App.Ref\10.0.2
+     1>Le projet "C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\InfernalHierarchy.sln" (1) génère "C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\tests\InfernalHierarchy.Tools.Tests\InfernalHierarchy.Tools.Tests.csproj" (17:5) sur le nœud 9 (_GenerateProjectRestoreGraph cible(s)).
+    17>AddPrunePackageReferences:
+         Loading prune package data from PrunePackageData folder
+    13>AddPrunePackageReferences:
+         Failed to load prune package data from PrunePackageData folder, loading from targeting packs instead
+    14>AddPrunePackageReferences:
+         Pack directories found: C:\Program Files\dotnet\packs\Microsoft.NETCore.App.Ref\10.0.2
+    17>AddPrunePackageReferences:
+         Failed to load prune package data from PrunePackageData folder, loading from targeting packs instead
+    11>AddPrunePackageReferences:
+         Found package overrides file C:\Program Files\dotnet\packs\Microsoft.NETCore.App.Ref\10.0.2\data\PackageOverrides.txt
+     2>Génération du projet "C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\src\InfernalHierarchy.Host\InfernalHierarchy.Host.csproj" terminée (_GenerateProjectRestoreGraph cible(s)).
+    13>AddPrunePackageReferences:
+         Looking for targeting packs in C:\Program Files\dotnet\packs\Microsoft.NETCore.App.Ref
+    14>AddPrunePackageReferences:
+         Found package overrides file C:\Program Files\dotnet\packs\Microsoft.NETCore.App.Ref\10.0.2\data\PackageOverrides.txt
+    16>AddPrunePackageReferences:
+         Found package overrides file C:\Program Files\dotnet\packs\Microsoft.NETCore.App.Ref\10.0.2\data\PackageOverrides.txt
+     1>Le projet "C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\InfernalHierarchy.sln" (1) génère "C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\tests\InfernalHierarchy.Memory.Tests\InfernalHierarchy.Memory.Tests.csproj" (10:5) sur le nœud 16 (_GenerateProjectRestoreGraph cible(s)).
+    10>AddPrunePackageReferences:
+         Loading prune package data from PrunePackageData folder
+    13>AddPrunePackageReferences:
+         Pack directories found: C:\Program Files\dotnet\packs\Microsoft.NETCore.App.Ref\10.0.2
+    10>AddPrunePackageReferences:
+         Failed to load prune package data from PrunePackageData folder, loading from targeting packs instead
+    13>AddPrunePackageReferences:
+         Found package overrides file C:\Program Files\dotnet\packs\Microsoft.NETCore.App.Ref\10.0.2\data\PackageOverrides.txt
+    10>AddPrunePackageReferences:
+         Looking for targeting packs in C:\Program Files\dotnet\packs\Microsoft.NETCore.App.Ref
+         Pack directories found: C:\Program Files\dotnet\packs\Microsoft.NETCore.App.Ref\10.0.2
+         Found package overrides file C:\Program Files\dotnet\packs\Microsoft.NETCore.App.Ref\10.0.2\data\PackageOverrides.txt
+    17>AddPrunePackageReferences:
+         Looking for targeting packs in C:\Program Files\dotnet\packs\Microsoft.NETCore.App.Ref
+    11>Génération du projet "C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\tests\InfernalHierarchy.Core.Tests\InfernalHierarchy.Core.Tests.csproj" terminée (_GenerateProjectRestoreGraph cible(s)).
+    17>AddPrunePackageReferences:
+         Pack directories found: C:\Program Files\dotnet\packs\Microsoft.NETCore.App.Ref\10.0.2
+     1>Le projet "C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\InfernalHierarchy.sln" (1) génère "C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\src\InfernalHierarchy.Memory\InfernalHierarchy.Memory.csproj" (7:8) sur le nœud 11 (_GenerateProjectRestoreGraph cible(s)).
+     7>AddPrunePackageReferences:
+         Loading prune package data from PrunePackageData folder
+     1>Le projet "C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\InfernalHierarchy.sln" (1) génère "C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\tests\InfernalHierarchy.Telegram.Tests\InfernalHierarchy.Telegram.Tests.csproj" (12:5) sur le nœud 2 (_GenerateProjectRestoreGraph cible(s)).
+    12>AddPrunePackageReferences:
+         Loading prune package data from PrunePackageData folder
+         Failed to load prune package data from PrunePackageData folder, loading from targeting packs instead
+     7>AddPrunePackageReferences:
+         Failed to load prune package data from PrunePackageData folder, loading from targeting packs instead
+     1>Le projet "C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\InfernalHierarchy.sln" (1) génère "C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\src\InfernalHierarchy.Telegram\InfernalHierarchy.Telegram.csproj" (8:7) sur le nœud 15 (_GenerateProjectRestoreGraph cible(s)).
+     8>AddPrunePackageReferences:
+         Loading prune package data from PrunePackageData folder
+    17>AddPrunePackageReferences:
+         Found package overrides file C:\Program Files\dotnet\packs\Microsoft.NETCore.App.Ref\10.0.2\data\PackageOverrides.txt
+    12>AddPrunePackageReferences:
+         Looking for targeting packs in C:\Program Files\dotnet\packs\Microsoft.NETCore.App.Ref
+     7>AddPrunePackageReferences:
+         Looking for targeting packs in C:\Program Files\dotnet\packs\Microsoft.NETCore.App.Ref
+     8>AddPrunePackageReferences:
+         Failed to load prune package data from PrunePackageData folder, loading from targeting packs instead
+    12>AddPrunePackageReferences:
+         Pack directories found: C:\Program Files\dotnet\packs\Microsoft.NETCore.App.Ref\10.0.2
+     7>AddPrunePackageReferences:
+         Pack directories found: C:\Program Files\dotnet\packs\Microsoft.NETCore.App.Ref\10.0.2
+     8>AddPrunePackageReferences:
+         Looking for targeting packs in C:\Program Files\dotnet\packs\Microsoft.NETCore.App.Ref
+     7>AddPrunePackageReferences:
+         Found package overrides file C:\Program Files\dotnet\packs\Microsoft.NETCore.App.Ref\10.0.2\data\PackageOverrides.txt
+    12>AddPrunePackageReferences:
+         Found package overrides file C:\Program Files\dotnet\packs\Microsoft.NETCore.App.Ref\10.0.2\data\PackageOverrides.txt
+     8>AddPrunePackageReferences:
+         Pack directories found: C:\Program Files\dotnet\packs\Microsoft.NETCore.App.Ref\10.0.2
+         Found package overrides file C:\Program Files\dotnet\packs\Microsoft.NETCore.App.Ref\10.0.2\data\PackageOverrides.txt
+     1>Le projet "C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\InfernalHierarchy.sln" (1) génère "C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\tests\InfernalHierarchy.Personas.Tests\InfernalHierarchy.Personas.Tests.csproj" (6:5) sur le nœud 13 (_GenerateProjectRestoreGraph cible(s)).
+     6>AddPrunePackageReferences:
+         Loading prune package data from PrunePackageData folder
+         Failed to load prune package data from PrunePackageData folder, loading from targeting packs instead
+         Looking for targeting packs in C:\Program Files\dotnet\packs\Microsoft.NETCore.App.Ref
+         Pack directories found: C:\Program Files\dotnet\packs\Microsoft.NETCore.App.Ref\10.0.2
+         Found package overrides file C:\Program Files\dotnet\packs\Microsoft.NETCore.App.Ref\10.0.2\data\PackageOverrides.txt
+     1>Le projet "C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\InfernalHierarchy.sln" (1) génère "C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\tests\InfernalHierarchy.Messaging.Tests\InfernalHierarchy.Messaging.Tests.csproj" (15:5) sur le nœud 7 (_GenerateProjectRestoreGraph cible(s)).
+    15>AddPrunePackageReferences:
+         Loading prune package data from PrunePackageData folder
+         Failed to load prune package data from PrunePackageData folder, loading from targeting packs instead
+         Looking for targeting packs in C:\Program Files\dotnet\packs\Microsoft.NETCore.App.Ref
+         Pack directories found: C:\Program Files\dotnet\packs\Microsoft.NETCore.App.Ref\10.0.2
+         Found package overrides file C:\Program Files\dotnet\packs\Microsoft.NETCore.App.Ref\10.0.2\data\PackageOverrides.txt
+     5>Génération du projet "C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\tests\InfernalHierarchy.Host.Tests\InfernalHierarchy.Host.Tests.csproj" terminée (_GenerateProjectRestoreGraph cible(s)).
+     6>Génération du projet "C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\tests\InfernalHierarchy.Personas.Tests\InfernalHierarchy.Personas.Tests.csproj" terminée (_GenerateProjectRestoreGraph cible(s)).
+    14>Génération du projet "C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\tests\InfernalHierarchy.Agents.Tests\InfernalHierarchy.Agents.Tests.csproj" terminée (_GenerateProjectRestoreGraph cible(s)).
+    13>Génération du projet "C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\src\InfernalHierarchy.Agents\InfernalHierarchy.Agents.csproj" terminée (_GenerateProjectRestoreGraph cible(s)).
+    10>Génération du projet "C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\tests\InfernalHierarchy.Memory.Tests\InfernalHierarchy.Memory.Tests.csproj" terminée (_GenerateProjectRestoreGraph cible(s)).
+    17>Génération du projet "C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\tests\InfernalHierarchy.Tools.Tests\InfernalHierarchy.Tools.Tests.csproj" terminée (_GenerateProjectRestoreGraph cible(s)).
+     7>Génération du projet "C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\src\InfernalHierarchy.Memory\InfernalHierarchy.Memory.csproj" terminée (_GenerateProjectRestoreGraph cible(s)).
+    16>Génération du projet "C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\src\InfernalHierarchy.Personas\InfernalHierarchy.Personas.csproj" terminée (_GenerateProjectRestoreGraph cible(s)).
+    12>Génération du projet "C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\tests\InfernalHierarchy.Telegram.Tests\InfernalHierarchy.Telegram.Tests.csproj" terminée (_GenerateProjectRestoreGraph cible(s)).
+     1>Le projet "C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\InfernalHierarchy.sln" (1) génère "C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\src\InfernalHierarchy.Tools\InfernalHierarchy.Tools.csproj" (4:8) sur le nœud 3 (_GenerateProjectRestoreGraph cible(s)).
+     4>AddPrunePackageReferences:
+         Loading prune package data from PrunePackageData folder
+         Failed to load prune package data from PrunePackageData folder, loading from targeting packs instead
+     1>Le projet "C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\InfernalHierarchy.sln" (1) génère "C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\src\InfernalHierarchy.Core\InfernalHierarchy.Core.csproj" (3:19) sur le nœud 12 (_GenerateProjectRestoreGraph cible(s)).
+     3>AddPrunePackageReferences:
+         Loading prune package data from PrunePackageData folder
+     8>Génération du projet "C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\src\InfernalHierarchy.Telegram\InfernalHierarchy.Telegram.csproj" terminée (_GenerateProjectRestoreGraph cible(s)).
+     3>AddPrunePackageReferences:
+         Failed to load prune package data from PrunePackageData folder, loading from targeting packs instead
+         Looking for targeting packs in C:\Program Files\dotnet\packs\Microsoft.NETCore.App.Ref
+         Pack directories found: C:\Program Files\dotnet\packs\Microsoft.NETCore.App.Ref\10.0.2
+         Found package overrides file C:\Program Files\dotnet\packs\Microsoft.NETCore.App.Ref\10.0.2\data\PackageOverrides.txt
+     4>AddPrunePackageReferences:
+         Looking for targeting packs in C:\Program Files\dotnet\packs\Microsoft.NETCore.App.Ref
+         Pack directories found: C:\Program Files\dotnet\packs\Microsoft.NETCore.App.Ref\10.0.2
+         Found package overrides file C:\Program Files\dotnet\packs\Microsoft.NETCore.App.Ref\10.0.2\data\PackageOverrides.txt
+     9>Génération du projet "C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\src\InfernalHierarchy.Messaging\InfernalHierarchy.Messaging.csproj" terminée (_GenerateProjectRestoreGraph cible(s)).
+    15>Génération du projet "C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\tests\InfernalHierarchy.Messaging.Tests\InfernalHierarchy.Messaging.Tests.csproj" terminée (_GenerateProjectRestoreGraph cible(s)).
+     4>Génération du projet "C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\src\InfernalHierarchy.Tools\InfernalHierarchy.Tools.csproj" terminée (_GenerateProjectRestoreGraph cible(s)).
+     3>Génération du projet "C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\src\InfernalHierarchy.Core\InfernalHierarchy.Core.csproj" terminée (_GenerateProjectRestoreGraph cible(s)).
+     1>Restore:
+         La validation de la chaîne de certificats X.509 utilisera le magasin de confiance par défaut sélectionné par .NET pour le code de signature.
+         La validation de la chaîne de certificats X.509 utilisera le magasin de confiance par défaut sélectionné par .NET pour le timestamp.
+         Le fichier d'actifs n'a pas changé. Écriture du fichier d'actifs ignorée. Chemin : C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\src\InfernalHierarchy.Telegram\obj\project.assets.json
+         Le fichier d'actifs n'a pas changé. Écriture du fichier d'actifs ignorée. Chemin : C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\src\InfernalHierarchy.Agents\obj\project.assets.json
+         Le fichier d'actifs n'a pas changé. Écriture du fichier d'actifs ignorée. Chemin : C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\src\InfernalHierarchy.Messaging\obj\project.assets.json
+         Le fichier d'actifs n'a pas changé. Écriture du fichier d'actifs ignorée. Chemin : C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\src\InfernalHierarchy.Memory\obj\project.assets.json
+         Restauration effectuée de C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\src\InfernalHierarchy.Telegram\InfernalHierarchy.Telegram.csproj (en 130 ms).
+         Restauration effectuée de C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\src\InfernalHierarchy.Messaging\InfernalHierarchy.Messaging.csproj (en 130 ms).
+         Restauration effectuée de C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\src\InfernalHierarchy.Memory\InfernalHierarchy.Memory.csproj (en 130 ms).
+         Restauration effectuée de C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\src\InfernalHierarchy.Agents\InfernalHierarchy.Agents.csproj (en 131 ms).
+         Le fichier d'actifs n'a pas changé. Écriture du fichier d'actifs ignorée. Chemin : C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\tests\InfernalHierarchy.Core.Tests\obj\project.assets.json
+         Le fichier d'actifs n'a pas changé. Écriture du fichier d'actifs ignorée. Chemin : C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\tests\InfernalHierarchy.Personas.Tests\obj\project.assets.json
+         Le fichier d'actifs n'a pas changé. Écriture du fichier d'actifs ignorée. Chemin : C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\tests\InfernalHierarchy.Messaging.Tests\obj\project.assets.json
+         Le fichier d'actifs n'a pas changé. Écriture du fichier d'actifs ignorée. Chemin : C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\tests\InfernalHierarchy.Memory.Tests\obj\project.assets.json
+         Restauration effectuée de C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\tests\InfernalHierarchy.Messaging.Tests\InfernalHierarchy.Messaging.Tests.csproj (en 147 ms).
+         Restauration effectuée de C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\tests\InfernalHierarchy.Memory.Tests\InfernalHierarchy.Memory.Tests.csproj (en 147 ms).
+         Restauration effectuée de C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\tests\InfernalHierarchy.Personas.Tests\InfernalHierarchy.Personas.Tests.csproj (en 147 ms).
+         Restauration effectuée de C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\tests\InfernalHierarchy.Core.Tests\InfernalHierarchy.Core.Tests.csproj (en 147 ms).
+     1>C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\src\InfernalHierarchy.Core\InfernalHierarchy.Core.csproj : error NU1510: PackageReference System.Text.Json will not be pruned. Consider removing this package from your dependencies, as it is likely unnecessary. [C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\InfernalHierarchy.sln]
+     1>C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\src\InfernalHierarchy.Tools\InfernalHierarchy.Tools.csproj : error NU1510: PackageReference System.Text.Json will not be pruned. Consider removing this package from your dependencies, as it is likely unnecessary. [C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\InfernalHierarchy.sln]
+     1>C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\src\InfernalHierarchy.Personas\InfernalHierarchy.Personas.csproj : error NU1510: PackageReference System.Text.Json will not be pruned. Consider removing this package from your dependencies, as it is likely unnecessary. [C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\InfernalHierarchy.sln]
+         Le fichier d'actifs n'a pas changé. Écriture du fichier d'actifs ignorée. Chemin : C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\src\InfernalHierarchy.Core\obj\project.assets.json
+         Le fichier d'actifs n'a pas changé. Écriture du fichier d'actifs ignorée. Chemin : C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\src\InfernalHierarchy.Personas\obj\project.assets.json
+         Le fichier d'actifs n'a pas changé. Écriture du fichier d'actifs ignorée. Chemin : C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\src\InfernalHierarchy.Tools\obj\project.assets.json
+         Restauration effectuée de C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\src\InfernalHierarchy.Personas\InfernalHierarchy.Personas.csproj (en 170 ms).
+         Restauration effectuée de C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\src\InfernalHierarchy.Tools\InfernalHierarchy.Tools.csproj (en 170 ms).
+         Restauration effectuée de C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\src\InfernalHierarchy.Core\InfernalHierarchy.Core.csproj (en 170 ms).
+     1>C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\tests\InfernalHierarchy.Telegram.Tests\InfernalHierarchy.Telegram.Tests.csproj : error NU1603: InfernalHierarchy.Host depends on OpenTelemetry (>= 1.10.1) but OpenTelemetry 1.10.1 was not found. OpenTelemetry 1.11.0 was resolved instead. [C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\InfernalHierarchy.sln]
+     1>C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\src\InfernalHierarchy.Host\InfernalHierarchy.Host.csproj : error NU1603: InfernalHierarchy.Host depends on OpenTelemetry (>= 1.10.1) but OpenTelemetry 1.10.1 was not found. OpenTelemetry 1.11.0 was resolved instead. [C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\InfernalHierarchy.sln]
+     1>C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\tests\InfernalHierarchy.Tools.Tests\InfernalHierarchy.Tools.Tests.csproj : error NU1603: InfernalHierarchy.Host depends on OpenTelemetry (>= 1.10.1) but OpenTelemetry 1.10.1 was not found. OpenTelemetry 1.11.0 was resolved instead. [C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\InfernalHierarchy.sln]
+     1>C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\tests\InfernalHierarchy.Host.Tests\InfernalHierarchy.Host.Tests.csproj : error NU1603: InfernalHierarchy.Host depends on OpenTelemetry (>= 1.10.1) but OpenTelemetry 1.10.1 was not found. OpenTelemetry 1.11.0 was resolved instead. [C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\InfernalHierarchy.sln]
+     1>C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\tests\InfernalHierarchy.Agents.Tests\InfernalHierarchy.Agents.Tests.csproj : error NU1603: InfernalHierarchy.Host depends on OpenTelemetry (>= 1.10.1) but OpenTelemetry 1.10.1 was not found. OpenTelemetry 1.11.0 was resolved instead. [C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\InfernalHierarchy.sln]
+     1>C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\tests\InfernalHierarchy.Telegram.Tests\InfernalHierarchy.Telegram.Tests.csproj : error NU1603: InfernalHierarchy.Host depends on OpenTelemetry.Exporter.Console (>= 1.10.1) but OpenTelemetry.Exporter.Console 1.10.1 was not found. OpenTelemetry.Exporter.Console 1.11.0 was resolved instead. [C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\InfernalHierarchy.sln]
+     1>C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\src\InfernalHierarchy.Host\InfernalHierarchy.Host.csproj : error NU1603: InfernalHierarchy.Host depends on OpenTelemetry.Exporter.Console (>= 1.10.1) but OpenTelemetry.Exporter.Console 1.10.1 was not found. OpenTelemetry.Exporter.Console 1.11.0 was resolved instead. [C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\InfernalHierarchy.sln]
+     1>C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\tests\InfernalHierarchy.Tools.Tests\InfernalHierarchy.Tools.Tests.csproj : error NU1603: InfernalHierarchy.Host depends on OpenTelemetry.Exporter.Console (>= 1.10.1) but OpenTelemetry.Exporter.Console 1.10.1 was not found. OpenTelemetry.Exporter.Console 1.11.0 was resolved instead. [C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\InfernalHierarchy.sln]
+     1>C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\tests\InfernalHierarchy.Telegram.Tests\InfernalHierarchy.Telegram.Tests.csproj : error NU1603: InfernalHierarchy.Host depends on OpenTelemetry.Exporter.OpenTelemetryProtocol (>= 1.10.1) but OpenTelemetry.Exporter.OpenTelemetryProtocol 1.10.1 was not found. OpenTelemetry.Exporter.OpenTelemetryProtocol 1.11.0 was resolved instead. [C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\InfernalHierarchy.sln]
+     1>C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\src\InfernalHierarchy.Host\InfernalHierarchy.Host.csproj : error NU1603: InfernalHierarchy.Host depends on OpenTelemetry.Exporter.OpenTelemetryProtocol (>= 1.10.1) but OpenTelemetry.Exporter.OpenTelemetryProtocol 1.10.1 was not found. OpenTelemetry.Exporter.OpenTelemetryProtocol 1.11.0 was resolved instead. [C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\InfernalHierarchy.sln]
+     1>C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\tests\InfernalHierarchy.Host.Tests\InfernalHierarchy.Host.Tests.csproj : error NU1603: InfernalHierarchy.Host depends on OpenTelemetry.Exporter.Console (>= 1.10.1) but OpenTelemetry.Exporter.Console 1.10.1 was not found. OpenTelemetry.Exporter.Console 1.11.0 was resolved instead. [C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\InfernalHierarchy.sln]
+     1>C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\tests\InfernalHierarchy.Telegram.Tests\InfernalHierarchy.Telegram.Tests.csproj : error NU1603: InfernalHierarchy.Host depends on OpenTelemetry.Extensions.Hosting (>= 1.10.1) but OpenTelemetry.Extensions.Hosting 1.10.1 was not found. OpenTelemetry.Extensions.Hosting 1.11.0 was resolved instead. [C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\InfernalHierarchy.sln]
+     1>C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\tests\InfernalHierarchy.Tools.Tests\InfernalHierarchy.Tools.Tests.csproj : error NU1603: InfernalHierarchy.Host depends on OpenTelemetry.Exporter.OpenTelemetryProtocol (>= 1.10.1) but OpenTelemetry.Exporter.OpenTelemetryProtocol 1.10.1 was not found. OpenTelemetry.Exporter.OpenTelemetryProtocol 1.11.0 was resolved instead. [C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\InfernalHierarchy.sln]
+     1>C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\src\InfernalHierarchy.Host\InfernalHierarchy.Host.csproj : error NU1603: InfernalHierarchy.Host depends on OpenTelemetry.Extensions.Hosting (>= 1.10.1) but OpenTelemetry.Extensions.Hosting 1.10.1 was not found. OpenTelemetry.Extensions.Hosting 1.11.0 was resolved instead. [C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\InfernalHierarchy.sln]
+     1>C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\tests\InfernalHierarchy.Host.Tests\InfernalHierarchy.Host.Tests.csproj : error NU1603: InfernalHierarchy.Host depends on OpenTelemetry.Exporter.OpenTelemetryProtocol (>= 1.10.1) but OpenTelemetry.Exporter.OpenTelemetryProtocol 1.10.1 was not found. OpenTelemetry.Exporter.OpenTelemetryProtocol 1.11.0 was resolved instead. [C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\InfernalHierarchy.sln]
+     1>C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\tests\InfernalHierarchy.Agents.Tests\InfernalHierarchy.Agents.Tests.csproj : error NU1603: InfernalHierarchy.Host depends on OpenTelemetry.Exporter.Console (>= 1.10.1) but OpenTelemetry.Exporter.Console 1.10.1 was not found. OpenTelemetry.Exporter.Console 1.11.0 was resolved instead. [C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\InfernalHierarchy.sln]
+     1>C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\tests\InfernalHierarchy.Tools.Tests\InfernalHierarchy.Tools.Tests.csproj : error NU1603: InfernalHierarchy.Host depends on OpenTelemetry.Extensions.Hosting (>= 1.10.1) but OpenTelemetry.Extensions.Hosting 1.10.1 was not found. OpenTelemetry.Extensions.Hosting 1.11.0 was resolved instead. [C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\InfernalHierarchy.sln]
+     1>C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\src\InfernalHierarchy.Host\InfernalHierarchy.Host.csproj : error NU1603: InfernalHierarchy.Host depends on OpenTelemetry.Instrumentation.Http (>= 1.10.1) but OpenTelemetry.Instrumentation.Http 1.10.1 was not found. OpenTelemetry.Instrumentation.Http 1.11.0 was resolved instead. [C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\InfernalHierarchy.sln]
+     1>C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\tests\InfernalHierarchy.Telegram.Tests\InfernalHierarchy.Telegram.Tests.csproj : error NU1603: InfernalHierarchy.Host depends on OpenTelemetry.Instrumentation.Http (>= 1.10.1) but OpenTelemetry.Instrumentation.Http 1.10.1 was not found. OpenTelemetry.Instrumentation.Http 1.11.0 was resolved instead. [C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\InfernalHierarchy.sln]
+     1>C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\tests\InfernalHierarchy.Tools.Tests\InfernalHierarchy.Tools.Tests.csproj : error NU1603: InfernalHierarchy.Host depends on OpenTelemetry.Instrumentation.Http (>= 1.10.1) but OpenTelemetry.Instrumentation.Http 1.10.1 was not found. OpenTelemetry.Instrumentation.Http 1.11.0 was resolved instead. [C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\InfernalHierarchy.sln]
+     1>C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\tests\InfernalHierarchy.Telegram.Tests\InfernalHierarchy.Telegram.Tests.csproj : error NU1902: Package 'OpenTelemetry.Api' 1.11.1 has a known moderate severity vulnerability, https://github.com/advisories/GHSA-8785-wc3w-h8q6 [C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\InfernalHierarchy.sln]
+     1>C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\src\InfernalHierarchy.Host\InfernalHierarchy.Host.csproj : error NU1902: Package 'OpenTelemetry.Api' 1.11.1 has a known moderate severity vulnerability, https://github.com/advisories/GHSA-8785-wc3w-h8q6 [C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\InfernalHierarchy.sln]
+     1>C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\tests\InfernalHierarchy.Host.Tests\InfernalHierarchy.Host.Tests.csproj : error NU1603: InfernalHierarchy.Host depends on OpenTelemetry.Extensions.Hosting (>= 1.10.1) but OpenTelemetry.Extensions.Hosting 1.10.1 was not found. OpenTelemetry.Extensions.Hosting 1.11.0 was resolved instead. [C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\InfernalHierarchy.sln]
+     1>C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\tests\InfernalHierarchy.Tools.Tests\InfernalHierarchy.Tools.Tests.csproj : error NU1902: Package 'OpenTelemetry.Api' 1.11.1 has a known moderate severity vulnerability, https://github.com/advisories/GHSA-8785-wc3w-h8q6 [C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\InfernalHierarchy.sln]
+     1>C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\tests\InfernalHierarchy.Agents.Tests\InfernalHierarchy.Agents.Tests.csproj : error NU1603: InfernalHierarchy.Host depends on OpenTelemetry.Exporter.OpenTelemetryProtocol (>= 1.10.1) but OpenTelemetry.Exporter.OpenTelemetryProtocol 1.10.1 was not found. OpenTelemetry.Exporter.OpenTelemetryProtocol 1.11.0 was resolved instead. [C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\InfernalHierarchy.sln]
+     1>C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\tests\InfernalHierarchy.Host.Tests\InfernalHierarchy.Host.Tests.csproj : error NU1603: InfernalHierarchy.Host depends on OpenTelemetry.Instrumentation.Http (>= 1.10.1) but OpenTelemetry.Instrumentation.Http 1.10.1 was not found. OpenTelemetry.Instrumentation.Http 1.11.0 was resolved instead. [C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\InfernalHierarchy.sln]
+     1>C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\tests\InfernalHierarchy.Host.Tests\InfernalHierarchy.Host.Tests.csproj : error NU1902: Package 'OpenTelemetry.Api' 1.11.1 has a known moderate severity vulnerability, https://github.com/advisories/GHSA-8785-wc3w-h8q6 [C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\InfernalHierarchy.sln]
+         Le fichier d'actifs n'a pas changé. Écriture du fichier d'actifs ignorée. Chemin : C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\src\InfernalHierarchy.Host\obj\project.assets.json
+     1>C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\tests\InfernalHierarchy.Agents.Tests\InfernalHierarchy.Agents.Tests.csproj : error NU1603: InfernalHierarchy.Host depends on OpenTelemetry.Extensions.Hosting (>= 1.10.1) but OpenTelemetry.Extensions.Hosting 1.10.1 was not found. OpenTelemetry.Extensions.Hosting 1.11.0 was resolved instead. [C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\InfernalHierarchy.sln]
+         Le fichier d'actifs n'a pas changé. Écriture du fichier d'actifs ignorée. Chemin : C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\tests\InfernalHierarchy.Tools.Tests\obj\project.assets.json
+     1>C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\tests\InfernalHierarchy.Agents.Tests\InfernalHierarchy.Agents.Tests.csproj : error NU1603: InfernalHierarchy.Host depends on OpenTelemetry.Instrumentation.Http (>= 1.10.1) but OpenTelemetry.Instrumentation.Http 1.10.1 was not found. OpenTelemetry.Instrumentation.Http 1.11.0 was resolved instead. [C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\InfernalHierarchy.sln]
+         Le fichier d'actifs n'a pas changé. Écriture du fichier d'actifs ignorée. Chemin : C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\tests\InfernalHierarchy.Host.Tests\obj\project.assets.json
+     1>C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\tests\InfernalHierarchy.Agents.Tests\InfernalHierarchy.Agents.Tests.csproj : error NU1902: Package 'OpenTelemetry.Api' 1.11.1 has a known moderate severity vulnerability, https://github.com/advisories/GHSA-8785-wc3w-h8q6 [C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\InfernalHierarchy.sln]
+         Restauration effectuée de C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\tests\InfernalHierarchy.Host.Tests\InfernalHierarchy.Host.Tests.csproj (en 186 ms).
+         Restauration effectuée de C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\src\InfernalHierarchy.Host\InfernalHierarchy.Host.csproj (en 186 ms).
+         Restauration effectuée de C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\tests\InfernalHierarchy.Tools.Tests\InfernalHierarchy.Tools.Tests.csproj (en 186 ms).
+         Le fichier d'actifs n'a pas changé. Écriture du fichier d'actifs ignorée. Chemin : C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\tests\InfernalHierarchy.Agents.Tests\obj\project.assets.json
+         Restauration effectuée de C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\tests\InfernalHierarchy.Agents.Tests\InfernalHierarchy.Agents.Tests.csproj (en 186 ms).
+         Le fichier d'actifs n'a pas changé. Écriture du fichier d'actifs ignorée. Chemin : C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\tests\InfernalHierarchy.Telegram.Tests\obj\project.assets.json
+         Restauration effectuée de C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\tests\InfernalHierarchy.Telegram.Tests\InfernalHierarchy.Telegram.Tests.csproj (en 186 ms).
+         
+         Fichiers de configuration NuGet utilisés :
+             C:\Users\cedri\AppData\Roaming\NuGet\NuGet.Config
+             C:\Program Files (x86)\NuGet\Config\Microsoft.VisualStudio.FallbackLocation.config
+             C:\Program Files (x86)\NuGet\Config\Microsoft.VisualStudio.Offline.config
+         
+         Flux utilisés :
+             https://api.nuget.org/v3/index.json
+             C:\Program Files (x86)\Microsoft SDKs\NuGetPackages\
+         Tous les projets sont à jour pour la restauration.
+     1>Génération du projet "C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\InfernalHierarchy.sln" terminée (Restore cible(s)).
+
+ÉCHEC de la build.
+
+       "C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\InfernalHierarchy.sln" (Restore cible) (1) ->
+       (Restore cible) -> 
+         C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\src\InfernalHierarchy.Core\InfernalHierarchy.Core.csproj : error NU1510: PackageReference System.Text.Json will not be pruned. Consider removing this package from your dependencies, as it is likely unnecessary. [C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\InfernalHierarchy.sln]
+         C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\src\InfernalHierarchy.Tools\InfernalHierarchy.Tools.csproj : error NU1510: PackageReference System.Text.Json will not be pruned. Consider removing this package from your dependencies, as it is likely unnecessary. [C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\InfernalHierarchy.sln]
+         C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\src\InfernalHierarchy.Personas\InfernalHierarchy.Personas.csproj : error NU1510: PackageReference System.Text.Json will not be pruned. Consider removing this package from your dependencies, as it is likely unnecessary. [C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\InfernalHierarchy.sln]
+         C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\tests\InfernalHierarchy.Telegram.Tests\InfernalHierarchy.Telegram.Tests.csproj : error NU1603: InfernalHierarchy.Host depends on OpenTelemetry (>= 1.10.1) but OpenTelemetry 1.10.1 was not found. OpenTelemetry 1.11.0 was resolved instead. [C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\InfernalHierarchy.sln]
+         C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\src\InfernalHierarchy.Host\InfernalHierarchy.Host.csproj : error NU1603: InfernalHierarchy.Host depends on OpenTelemetry (>= 1.10.1) but OpenTelemetry 1.10.1 was not found. OpenTelemetry 1.11.0 was resolved instead. [C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\InfernalHierarchy.sln]
+         C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\tests\InfernalHierarchy.Tools.Tests\InfernalHierarchy.Tools.Tests.csproj : error NU1603: InfernalHierarchy.Host depends on OpenTelemetry (>= 1.10.1) but OpenTelemetry 1.10.1 was not found. OpenTelemetry 1.11.0 was resolved instead. [C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\InfernalHierarchy.sln]
+         C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\tests\InfernalHierarchy.Host.Tests\InfernalHierarchy.Host.Tests.csproj : error NU1603: InfernalHierarchy.Host depends on OpenTelemetry (>= 1.10.1) but OpenTelemetry 1.10.1 was not found. OpenTelemetry 1.11.0 was resolved instead. [C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\InfernalHierarchy.sln]
+         C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\tests\InfernalHierarchy.Agents.Tests\InfernalHierarchy.Agents.Tests.csproj : error NU1603: InfernalHierarchy.Host depends on OpenTelemetry (>= 1.10.1) but OpenTelemetry 1.10.1 was not found. OpenTelemetry 1.11.0 was resolved instead. [C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\InfernalHierarchy.sln]
+         C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\tests\InfernalHierarchy.Telegram.Tests\InfernalHierarchy.Telegram.Tests.csproj : error NU1603: InfernalHierarchy.Host depends on OpenTelemetry.Exporter.Console (>= 1.10.1) but OpenTelemetry.Exporter.Console 1.10.1 was not found. OpenTelemetry.Exporter.Console 1.11.0 was resolved instead. [C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\InfernalHierarchy.sln]
+         C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\src\InfernalHierarchy.Host\InfernalHierarchy.Host.csproj : error NU1603: InfernalHierarchy.Host depends on OpenTelemetry.Exporter.Console (>= 1.10.1) but OpenTelemetry.Exporter.Console 1.10.1 was not found. OpenTelemetry.Exporter.Console 1.11.0 was resolved instead. [C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\InfernalHierarchy.sln]
+         C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\tests\InfernalHierarchy.Tools.Tests\InfernalHierarchy.Tools.Tests.csproj : error NU1603: InfernalHierarchy.Host depends on OpenTelemetry.Exporter.Console (>= 1.10.1) but OpenTelemetry.Exporter.Console 1.10.1 was not found. OpenTelemetry.Exporter.Console 1.11.0 was resolved instead. [C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\InfernalHierarchy.sln]
+         C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\tests\InfernalHierarchy.Telegram.Tests\InfernalHierarchy.Telegram.Tests.csproj : error NU1603: InfernalHierarchy.Host depends on OpenTelemetry.Exporter.OpenTelemetryProtocol (>= 1.10.1) but OpenTelemetry.Exporter.OpenTelemetryProtocol 1.10.1 was not found. OpenTelemetry.Exporter.OpenTelemetryProtocol 1.11.0 was resolved instead. [C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\InfernalHierarchy.sln]
+         C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\src\InfernalHierarchy.Host\InfernalHierarchy.Host.csproj : error NU1603: InfernalHierarchy.Host depends on OpenTelemetry.Exporter.OpenTelemetryProtocol (>= 1.10.1) but OpenTelemetry.Exporter.OpenTelemetryProtocol 1.10.1 was not found. OpenTelemetry.Exporter.OpenTelemetryProtocol 1.11.0 was resolved instead. [C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\InfernalHierarchy.sln]
+         C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\tests\InfernalHierarchy.Host.Tests\InfernalHierarchy.Host.Tests.csproj : error NU1603: InfernalHierarchy.Host depends on OpenTelemetry.Exporter.Console (>= 1.10.1) but OpenTelemetry.Exporter.Console 1.10.1 was not found. OpenTelemetry.Exporter.Console 1.11.0 was resolved instead. [C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\InfernalHierarchy.sln]
+         C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\tests\InfernalHierarchy.Telegram.Tests\InfernalHierarchy.Telegram.Tests.csproj : error NU1603: InfernalHierarchy.Host depends on OpenTelemetry.Extensions.Hosting (>= 1.10.1) but OpenTelemetry.Extensions.Hosting 1.10.1 was not found. OpenTelemetry.Extensions.Hosting 1.11.0 was resolved instead. [C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\InfernalHierarchy.sln]
+         C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\tests\InfernalHierarchy.Tools.Tests\InfernalHierarchy.Tools.Tests.csproj : error NU1603: InfernalHierarchy.Host depends on OpenTelemetry.Exporter.OpenTelemetryProtocol (>= 1.10.1) but OpenTelemetry.Exporter.OpenTelemetryProtocol 1.10.1 was not found. OpenTelemetry.Exporter.OpenTelemetryProtocol 1.11.0 was resolved instead. [C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\InfernalHierarchy.sln]
+         C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\src\InfernalHierarchy.Host\InfernalHierarchy.Host.csproj : error NU1603: InfernalHierarchy.Host depends on OpenTelemetry.Extensions.Hosting (>= 1.10.1) but OpenTelemetry.Extensions.Hosting 1.10.1 was not found. OpenTelemetry.Extensions.Hosting 1.11.0 was resolved instead. [C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\InfernalHierarchy.sln]
+         C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\tests\InfernalHierarchy.Host.Tests\InfernalHierarchy.Host.Tests.csproj : error NU1603: InfernalHierarchy.Host depends on OpenTelemetry.Exporter.OpenTelemetryProtocol (>= 1.10.1) but OpenTelemetry.Exporter.OpenTelemetryProtocol 1.10.1 was not found. OpenTelemetry.Exporter.OpenTelemetryProtocol 1.11.0 was resolved instead. [C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\InfernalHierarchy.sln]
+         C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\tests\InfernalHierarchy.Agents.Tests\InfernalHierarchy.Agents.Tests.csproj : error NU1603: InfernalHierarchy.Host depends on OpenTelemetry.Exporter.Console (>= 1.10.1) but OpenTelemetry.Exporter.Console 1.10.1 was not found. OpenTelemetry.Exporter.Console 1.11.0 was resolved instead. [C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\InfernalHierarchy.sln]
+         C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\tests\InfernalHierarchy.Tools.Tests\InfernalHierarchy.Tools.Tests.csproj : error NU1603: InfernalHierarchy.Host depends on OpenTelemetry.Extensions.Hosting (>= 1.10.1) but OpenTelemetry.Extensions.Hosting 1.10.1 was not found. OpenTelemetry.Extensions.Hosting 1.11.0 was resolved instead. [C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\InfernalHierarchy.sln]
+         C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\src\InfernalHierarchy.Host\InfernalHierarchy.Host.csproj : error NU1603: InfernalHierarchy.Host depends on OpenTelemetry.Instrumentation.Http (>= 1.10.1) but OpenTelemetry.Instrumentation.Http 1.10.1 was not found. OpenTelemetry.Instrumentation.Http 1.11.0 was resolved instead. [C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\InfernalHierarchy.sln]
+         C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\tests\InfernalHierarchy.Telegram.Tests\InfernalHierarchy.Telegram.Tests.csproj : error NU1603: InfernalHierarchy.Host depends on OpenTelemetry.Instrumentation.Http (>= 1.10.1) but OpenTelemetry.Instrumentation.Http 1.10.1 was not found. OpenTelemetry.Instrumentation.Http 1.11.0 was resolved instead. [C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\InfernalHierarchy.sln]
+         C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\tests\InfernalHierarchy.Tools.Tests\InfernalHierarchy.Tools.Tests.csproj : error NU1603: InfernalHierarchy.Host depends on OpenTelemetry.Instrumentation.Http (>= 1.10.1) but OpenTelemetry.Instrumentation.Http 1.10.1 was not found. OpenTelemetry.Instrumentation.Http 1.11.0 was resolved instead. [C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\InfernalHierarchy.sln]
+         C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\tests\InfernalHierarchy.Telegram.Tests\InfernalHierarchy.Telegram.Tests.csproj : error NU1902: Package 'OpenTelemetry.Api' 1.11.1 has a known moderate severity vulnerability, https://github.com/advisories/GHSA-8785-wc3w-h8q6 [C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\InfernalHierarchy.sln]
+         C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\src\InfernalHierarchy.Host\InfernalHierarchy.Host.csproj : error NU1902: Package 'OpenTelemetry.Api' 1.11.1 has a known moderate severity vulnerability, https://github.com/advisories/GHSA-8785-wc3w-h8q6 [C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\InfernalHierarchy.sln]
+         C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\tests\InfernalHierarchy.Host.Tests\InfernalHierarchy.Host.Tests.csproj : error NU1603: InfernalHierarchy.Host depends on OpenTelemetry.Extensions.Hosting (>= 1.10.1) but OpenTelemetry.Extensions.Hosting 1.10.1 was not found. OpenTelemetry.Extensions.Hosting 1.11.0 was resolved instead. [C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\InfernalHierarchy.sln]
+         C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\tests\InfernalHierarchy.Tools.Tests\InfernalHierarchy.Tools.Tests.csproj : error NU1902: Package 'OpenTelemetry.Api' 1.11.1 has a known moderate severity vulnerability, https://github.com/advisories/GHSA-8785-wc3w-h8q6 [C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\InfernalHierarchy.sln]
+         C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\tests\InfernalHierarchy.Agents.Tests\InfernalHierarchy.Agents.Tests.csproj : error NU1603: InfernalHierarchy.Host depends on OpenTelemetry.Exporter.OpenTelemetryProtocol (>= 1.10.1) but OpenTelemetry.Exporter.OpenTelemetryProtocol 1.10.1 was not found. OpenTelemetry.Exporter.OpenTelemetryProtocol 1.11.0 was resolved instead. [C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\InfernalHierarchy.sln]
+         C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\tests\InfernalHierarchy.Host.Tests\InfernalHierarchy.Host.Tests.csproj : error NU1603: InfernalHierarchy.Host depends on OpenTelemetry.Instrumentation.Http (>= 1.10.1) but OpenTelemetry.Instrumentation.Http 1.10.1 was not found. OpenTelemetry.Instrumentation.Http 1.11.0 was resolved instead. [C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\InfernalHierarchy.sln]
+         C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\tests\InfernalHierarchy.Host.Tests\InfernalHierarchy.Host.Tests.csproj : error NU1902: Package 'OpenTelemetry.Api' 1.11.1 has a known moderate severity vulnerability, https://github.com/advisories/GHSA-8785-wc3w-h8q6 [C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\InfernalHierarchy.sln]
+         C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\tests\InfernalHierarchy.Agents.Tests\InfernalHierarchy.Agents.Tests.csproj : error NU1603: InfernalHierarchy.Host depends on OpenTelemetry.Extensions.Hosting (>= 1.10.1) but OpenTelemetry.Extensions.Hosting 1.10.1 was not found. OpenTelemetry.Extensions.Hosting 1.11.0 was resolved instead. [C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\InfernalHierarchy.sln]
+         C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\tests\InfernalHierarchy.Agents.Tests\InfernalHierarchy.Agents.Tests.csproj : error NU1603: InfernalHierarchy.Host depends on OpenTelemetry.Instrumentation.Http (>= 1.10.1) but OpenTelemetry.Instrumentation.Http 1.10.1 was not found. OpenTelemetry.Instrumentation.Http 1.11.0 was resolved instead. [C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\InfernalHierarchy.sln]
+         C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\tests\InfernalHierarchy.Agents.Tests\InfernalHierarchy.Agents.Tests.csproj : error NU1902: Package 'OpenTelemetry.Api' 1.11.1 has a known moderate severity vulnerability, https://github.com/advisories/GHSA-8785-wc3w-h8q6 [C:\Users\cedri\OneDrive\Documents\Repos\DaemonLayer\InfernalHierarchy.sln]
+
+    0 Avertissement(s)
+    33 Erreur(s)
+
+Temps écoulé 00:00:02.63

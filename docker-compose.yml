@@ -1,0 +1,71 @@
+# Docker Compose pour services locaux (SearXNG)
+version: '3.8'
+
+services:
+  # InfernalHierarchy .NET Worker Service
+  infernal-hierarchy:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: infernal-hierarchy
+    environment:
+      - Ollama__BaseUrl=http://host.docker.internal:11434/v1
+      - SearXNG__BaseUrl=http://searxng:8080
+      - SearXNG__Enabled=true
+      - Memory__DatabasePath=/app/data/infernal.db
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./souls:/app/souls
+    depends_on:
+      - searxng
+    restart: unless-stopped
+    networks:
+      - infernal-network
+    secrets:
+      - telegram_bot_token
+      - telegram_user_ids
+
+  # SearXNG - Local web search engine
+  searxng:
+    image: searxng/searxng:latest
+    container_name: searxng
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./searxng:/etc/searxng:rw
+    environment:
+      - SEARXNG_BASE_URL=http://localhost:8080/
+    restart: unless-stopped
+    networks:
+      - infernal-network
+
+  # Qdrant - Vector database for semantic search
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: qdrant
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    networks:
+      - infernal-network
+    restart: unless-stopped
+
+networks:
+  infernal-network:
+    driver: bridge
+
+volumes:
+  qdrant_data:
+
+secrets:
+  telegram_bot_token:
+    file: ./secrets/telegram_bot_token.txt
+  telegram_user_ids:
+    file: ./secrets/telegram_user_ids.txt
+
+# Usage:
+# docker-compose up -d
+# Accès: http://localhost:8080

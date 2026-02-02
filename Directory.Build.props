@@ -1,0 +1,41 @@
+<Project>
+  <PropertyGroup>
+    <!-- Enable all .NET analyzers -->
+    <AnalysisMode>All</AnalysisMode>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    <EnableNETAnalyzers>true</EnableNETAnalyzers>
+    <AnalysisLevel>latest</AnalysisLevel>
+    
+    <!-- Nullable reference types -->
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    
+    <!-- Generate XML documentation -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);1591;SA1602;SA1516;SA1611;SA1615;SA1201;SA1202;SA1208;SA1025;SA1513;SA1503;SA1515;SA1116;SA1117;SA1122;SA1124</NoWarn> 
+    <!-- 1591: Missing XML comments -->
+    <!-- SA1602: Enum items documentation -->
+    <!-- SA1516: Missing blank lines -->
+    <!-- SA1611/SA1615: Parameter documentation -->
+    <!-- SA1201/SA1202: Element ordering -->
+    <!-- SA1208: Using directive ordering -->
+    <!-- SA1025: Multiple whitespace -->
+    <!-- SA1513: Closing brace blank line -->
+    <!-- SA1503: Braces omitted -->
+    <!-- SA1515: Single-line comment blank line -->
+    <!-- SA1116/SA1117: Parameter placement -->
+    <!-- SA1122: string.Empty for empty strings -->
+    <!-- SA1124: Regions -->
+    
+    <!-- Code analysis settings -->
+    <CodeAnalysisTreatWarningsAsErrors>false</CodeAnalysisTreatWarningsAsErrors>
+  </PropertyGroup>
+
+  <!-- StyleCop Analyzers -->
+  <ItemGroup>
+    <PackageReference Include="StyleCop.Analyzers" Version="1.2.0-beta.556">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+</Project>
