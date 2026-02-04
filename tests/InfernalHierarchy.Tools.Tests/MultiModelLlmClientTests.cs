@@ -3,13 +3,12 @@ using InfernalHierarchy.Tools;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Moq;
-using OpenAI.Chat;
 using System.Collections;
 using Xunit;
 
 namespace InfernalHierarchy.Tools.Tests;
 
-public class MultiModelLlmClientTests : IDisposable
+public sealed class MultiModelLlmClientTests : IDisposable
 {
     private readonly Mock<ILogger<MultiModelLlmClient>> _mockLogger;
     private readonly TokenUsageTracker _tokenTracker;
@@ -56,19 +55,13 @@ public class MultiModelLlmClientTests : IDisposable
     }
 
     [Fact]
-    public async Task GetCompletionAsync_WithSimpleTask_ShouldUseSimpleModel()
+    public Task GetCompletionAsync_WithSimpleTask_ShouldUseSimpleModel()
     {
-        // Arrange
-        var systemPrompt = "You are a helpful assistant.";
-        var userMessage = "What is 2+2?";
-
-        // This test requires actual Ollama to be running, so we'll skip it in CI
-        // In a real scenario, you'd mock the ChatClient or use TestContainers
-        // For now, we'll test the model selection logic
-
-        // Act & Assert
-        // Skipping actual API call - would require integration test setup
+        // Arrange/Act/Assert
+        // This test intentionally doesn't call Ollama; it validates configuration/model selection inputs.
         _options.Models.Should().Contain(m => m.Complexity == TaskComplexity.Simple);
+
+        return Task.CompletedTask;
     }
 
     [Fact]
@@ -96,7 +89,7 @@ public class MultiModelLlmClientTests : IDisposable
         // Assert
         var clientsField = _sut.GetType()
             .GetField("_modelClients", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-        
+
         clientsField.Should().NotBeNull();
         var clients = clientsField!.GetValue(_sut);
         clients.Should().NotBeNull();
@@ -111,7 +104,7 @@ public class MultiModelLlmClientTests : IDisposable
     }
 
     [Fact]
-    public async Task GetCompletionAsync_WhenAllModelsFail_ShouldThrowException()
+    public Task GetCompletionAsync_WhenAllModelsFail_ShouldThrowException()
     {
         // Arrange - This would require mocking ChatClient responses
         // For a true unit test, we'd need to refactor MultiModelLlmClient to accept IChatClient
@@ -120,6 +113,8 @@ public class MultiModelLlmClientTests : IDisposable
         // Act & Assert
         // When all models fail, should throw aggregated exception
         _options.Models.Should().HaveCount(4); // Verify we have fallbacks configured
+
+        return Task.CompletedTask;
     }
 
     [Theory]
@@ -171,14 +166,9 @@ public class MultiModelLlmClientTests : IDisposable
     }
 
     [Fact]
-    public async Task GetStreamingCompletionAsync_ShouldUseCorrectComplexity()
+    public void GetStreamingCompletionAsync_ShouldUseCorrectComplexity()
     {
-        // Arrange
-        var systemPrompt = "You are a code assistant.";
-        var userMessage = "Write a hello world function.";
-        var complexity = TaskComplexity.Expert;
-
-        // Act & Assert
+        // Arrange/Act/Assert
         // Streaming requires actual Ollama connection
         // This test validates the method signature exists and accepts correct parameters
         var method = _sut.GetType().GetMethod("GetStreamingCompletionAsync");
@@ -205,7 +195,7 @@ public class MultiModelLlmClientTests : IDisposable
 
     public void Dispose()
     {
-        _sut?.Dispose();
+        _sut.Dispose();
         GC.SuppressFinalize(this);
     }
 }

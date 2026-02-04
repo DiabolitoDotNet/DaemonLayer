@@ -1,3 +1,6 @@
+using InfernalHierarchy.Agents;
+using InfernalHierarchy.Memory;
+using InfernalHierarchy.Tools;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;

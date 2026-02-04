@@ -130,8 +130,8 @@ public class ToolExecutionTests
 
         // Assert
         Assert.True(result.Success);
-        Assert.Contains("Test fact 1", result.Output);
-        Assert.Contains("Test fact 2", result.Output);
+        Assert.Contains("Test fact 1", result.Output, StringComparison.Ordinal);
+        Assert.Contains("Test fact 2", result.Output, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -167,7 +167,7 @@ public class ToolExecutionTests
 
         // Assert
         Assert.True(result.Success);
-        Assert.Contains("new_agent_id", result.Output);
+        Assert.Contains("new_agent_id", result.Output, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -189,7 +189,7 @@ public class ToolExecutionTests
 
         // Assert
         Assert.False(result.Success);
-        Assert.NotEmpty(result.Error);
+        Assert.False(string.IsNullOrWhiteSpace(result.Error));
     }
 
     [Fact]
@@ -339,7 +339,7 @@ public class ToolExecutionTests
 
         // Assert
         Assert.True(result.Success);
-        Assert.Contains("Technical fact", result.Output);
+        Assert.Contains("Technical fact", result.Output, StringComparison.Ordinal);
     }
 
     [Fact]

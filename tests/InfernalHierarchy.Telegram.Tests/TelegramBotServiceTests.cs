@@ -1,12 +1,13 @@
+using System;
 using FluentAssertions;
 using InfernalHierarchy.Core.Interfaces;
+using InfernalHierarchy.Host;
 using InfernalHierarchy.Telegram;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Moq;
 using Xunit;
-using InfernalHierarchy.Host;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace InfernalHierarchy.Telegram.Tests;
 
@@ -28,9 +29,9 @@ public class TelegramBotServiceTests
     {
         // Arrange
         var options = Options.Create(new TelegramOptions { BotToken = string.Empty });
-        var service = new TelegramBotService(options, _mockMessageBus.Object, _mockLogger.Object, _mockServiceProvider.Object);
+        using var service = new TelegramBotService(options, _mockMessageBus.Object, _mockLogger.Object, _mockServiceProvider.Object);
 
-        var cts = new CancellationTokenSource();
+        using var cts = new CancellationTokenSource();
         cts.CancelAfter(TimeSpan.FromMilliseconds(100));
 
         // Act

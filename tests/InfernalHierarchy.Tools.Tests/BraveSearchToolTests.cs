@@ -17,7 +17,7 @@ public class BraveSearchToolTests
     {
         // Arrange
         var options = Options.Create(new BraveSearchOptions { Enabled = false });
-        var httpClient = new HttpClient();
+        using var httpClient = new HttpClient();
         var logger = Mock.Of<ILogger<BraveSearchTool>>();
         var tool = new BraveSearchTool(httpClient, options, logger);
 
@@ -39,7 +39,7 @@ public class BraveSearchToolTests
     {
         // Arrange
         var options = Options.Create(new BraveSearchOptions { Enabled = true, ApiKey = "" });
-        var httpClient = new HttpClient();
+        using var httpClient = new HttpClient();
         var logger = Mock.Of<ILogger<BraveSearchTool>>();
         var tool = new BraveSearchTool(httpClient, options, logger);
 
@@ -61,7 +61,7 @@ public class BraveSearchToolTests
     {
         // Arrange
         var options = Options.Create(new BraveSearchOptions { Enabled = true, ApiKey = "test-key" });
-        var httpClient = new HttpClient();
+        using var httpClient = new HttpClient();
         var logger = Mock.Of<ILogger<BraveSearchTool>>();
         var tool = new BraveSearchTool(httpClient, options, logger);
 
@@ -98,13 +98,13 @@ public class BraveSearchToolTests
                 "SendAsync",
                 ItExpr.IsAny<HttpRequestMessage>(),
                 ItExpr.IsAny<CancellationToken>())
-            .ReturnsAsync(new HttpResponseMessage
+            .ReturnsAsync(() => new HttpResponseMessage
             {
                 StatusCode = HttpStatusCode.OK,
                 Content = new StringContent(JsonSerializer.Serialize(mockResponse))
             });
 
-        var httpClient = new HttpClient(mockHttpMessageHandler.Object);
+        using var httpClient = new HttpClient(mockHttpMessageHandler.Object, disposeHandler: false);
         var options = Options.Create(new BraveSearchOptions { Enabled = true, ApiKey = "test-key" });
         var logger = Mock.Of<ILogger<BraveSearchTool>>();
         var tool = new BraveSearchTool(httpClient, options, logger);
@@ -135,13 +135,13 @@ public class BraveSearchToolTests
                 "SendAsync",
                 ItExpr.IsAny<HttpRequestMessage>(),
                 ItExpr.IsAny<CancellationToken>())
-            .ReturnsAsync(new HttpResponseMessage
+            .ReturnsAsync(() => new HttpResponseMessage
             {
                 StatusCode = HttpStatusCode.Unauthorized,
                 Content = new StringContent("Invalid API key")
             });
 
-        var httpClient = new HttpClient(mockHttpMessageHandler.Object);
+        using var httpClient = new HttpClient(mockHttpMessageHandler.Object, disposeHandler: false);
         var options = Options.Create(new BraveSearchOptions { Enabled = true, ApiKey = "invalid-key" });
         var logger = Mock.Of<ILogger<BraveSearchTool>>();
         var tool = new BraveSearchTool(httpClient, options, logger);
@@ -164,7 +164,7 @@ public class BraveSearchToolTests
     {
         // Arrange
         var options = Options.Create(new BraveSearchOptions());
-        var httpClient = new HttpClient();
+        using var httpClient = new HttpClient();
         var logger = Mock.Of<ILogger<BraveSearchTool>>();
         var tool = new BraveSearchTool(httpClient, options, logger);
 

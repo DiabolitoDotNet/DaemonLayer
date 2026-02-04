@@ -1,3 +1,6 @@
+using InfernalHierarchy.Agents;
+using InfernalHierarchy.Memory;
+using InfernalHierarchy.Telegram;
 using InfernalHierarchy.Tools;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;

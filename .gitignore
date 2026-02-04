@@ -5,3 +5,11 @@ obj/
 *.user
 *.suo
 .vs/
+
+# Build/test artifacts & logs
+artifacts/
+coverage-report/
+TestResults/
+*.log
+*.coverage
+*.cobertura.xml

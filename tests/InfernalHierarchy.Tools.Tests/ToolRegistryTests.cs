@@ -10,6 +10,7 @@ namespace InfernalHierarchy.Tools.Tests;
 
 public class ToolRegistryTests
 {
+    private static readonly string[] WebAndReadMemoryToolNames = new[] { "web_search", "read_memory" };
     private readonly ToolRegistry _registry;
 
     public ToolRegistryTests()
@@ -90,7 +91,7 @@ public class ToolRegistryTests
         _registry.RegisterTool(CreateMockTool("send_telegram"));
 
         // Act
-        var agentTools = _registry.GetToolsForAgent(new[] { "web_search", "read_memory" });
+        var agentTools = _registry.GetToolsForAgent(WebAndReadMemoryToolNames);
 
         // Assert
         agentTools.Should().HaveCount(2);
@@ -98,7 +99,7 @@ public class ToolRegistryTests
         agentTools.Select(t => t.Name).Should().Contain("read_memory");
     }
 
-    private ITool CreateMockTool(string name)
+    private static ITool CreateMockTool(string name)
     {
         var mock = new Mock<ITool>();
         mock.Setup(x => x.Name).Returns(name);

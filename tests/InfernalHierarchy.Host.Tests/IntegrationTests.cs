@@ -7,35 +7,36 @@ using InfernalHierarchy.Messaging;
 using InfernalHierarchy.Personas;
 using InfernalHierarchy.Tools;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Moq;
 using Xunit;
-using MemoryOptions = InfernalHierarchy.Memory.MemoryOptions;
 using HierarchyOptions = InfernalHierarchy.Agents.HierarchyOptions;
+using MemoryOptions = InfernalHierarchy.Memory.MemoryOptions;
 
 namespace InfernalHierarchy.Host.Tests;
 
 /// <summary>
 /// End-to-end integration tests for the complete agent system
 /// </summary>
-public class IntegrationTests : IAsyncLifetime
+public sealed class IntegrationTests : IAsyncLifetime, IDisposable
 {
-    private IMessageBus? _messageBus;
-    private ISharedMemory? _sharedMemory;
-    private IToolRegistry? _toolRegistry;
-    private IAgentFactory? _agentFactory;
-    private AgentOrchestrator? _orchestrator;
+    private ChannelMessageBus _messageBus = null!;
+    private LiteDbSharedMemory _sharedMemory = null!;
+    private ToolRegistry _toolRegistry = null!;
+    private AgentFactory _agentFactory = null!;
     private string _testDbPath = null!;
+    private AgentOrchestrator _orchestrator = null!;
+    private bool _disposed;
 
-    public async Task InitializeAsync()
+    public Task InitializeAsync()
     {
         // Setup test database
         _testDbPath = Path.Combine(Path.GetTempPath(), $"test_infernal_{Guid.NewGuid()}.db");
 
         // Initialize real components for integration testing
-        var loggerFactory = LoggerFactory.Create(builder => builder.AddConsole().SetMinimumLevel(LogLevel.Warning));
+        var loggerFactory = NullLoggerFactory.Instance;
 
         _messageBus = new ChannelMessageBus(
             loggerFactory.CreateLogger<ChannelMessageBus>());
@@ -102,42 +103,85 @@ public class IntegrationTests : IAsyncLifetime
             loggerFactory.CreateLogger<AgentOrchestrator>(),
             mockServiceProvider.Object);
 
-        await Task.CompletedTask;
+        return Task.CompletedTask;
     }
 
-    public async Task DisposeAsync()
+    public Task DisposeAsync()
     {
-        if (_orchestrator != null)
+        Dispose();
+        return Task.CompletedTask;
+    }
+
+    public void Dispose()
+    {
+        if (_disposed)
         {
-            var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-            try
-            {
-                await _orchestrator.StopAsync(cts.Token);
-                _orchestrator.Dispose();
-            }
-            catch { /* Best effort cleanup */ }
+            return;
         }
 
-        if (File.Exists(_testDbPath))
+        _disposed = true;
+
+        try
+        {
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            _orchestrator?.StopAsync(cts.Token).GetAwaiter().GetResult();
+        }
+        catch
+        {
+            /* Best effort cleanup */
+        }
+
+        try
+        {
+            (_orchestrator as IDisposable)?.Dispose();
+        }
+        catch
+        {
+            /* Best effort cleanup */
+        }
+
+        try
+        {
+            _sharedMemory?.Dispose();
+        }
+        catch
+        {
+            /* Best effort cleanup */
+        }
+
+        try
+        {
+            _messageBus?.Dispose();
+        }
+        catch
+        {
+            /* Best effort cleanup */
+        }
+
+        if (!string.IsNullOrWhiteSpace(_testDbPath) && File.Exists(_testDbPath))
         {
             try
             {
                 File.Delete(_testDbPath);
             }
-            catch { /* Best effort cleanup */ }
+            catch
+            {
+                /* Best effort cleanup */
+            }
         }
 
-        await Task.CompletedTask;
+        GC.SuppressFinalize(this);
     }
 
     [Fact]
     public async Task EndToEnd_CreateAgent_ProcessTask_StoreMemory()
     {
         // Arrange
-        var cancellationToken = new CancellationTokenSource(5000).Token;
+        using var cts = new CancellationTokenSource(5000);
+        var cancellationToken = cts.Token;
 
         // Act - Create an agent
-        var agent = await _agentFactory!.CreateAgentAsync("TestAgent", AgentRank.Duke, null, cancellationToken);
+        var agent = await _agentFactory.CreateAgentAsync("TestAgent", AgentRank.Duke, null, cancellationToken);
         Assert.NotNull(agent);
         Assert.Equal("TestAgent", agent.Name);
 
@@ -151,7 +195,7 @@ public class IntegrationTests : IAsyncLifetime
             Timestamp = DateTime.UtcNow
         };
 
-        await _messageBus!.PublishAsync(taskMessage, cancellationToken);
+        await _messageBus.PublishAsync(taskMessage, cancellationToken);
         await Task.Delay(500, cancellationToken); // Allow processing
 
         // Assert - Agent was created successfully
@@ -162,10 +206,11 @@ public class IntegrationTests : IAsyncLifetime
     public async Task EndToEnd_AgentHierarchy_ParentChildCommunication()
     {
         // Arrange
-        var cancellationToken = new CancellationTokenSource(5000).Token;
+        using var cts = new CancellationTokenSource(5000);
+        var cancellationToken = cts.Token;
 
         // Act - Create parent agent
-        var parentAgent = await _agentFactory!.CreateAgentAsync("ParentAgent", AgentRank.Prince, null, cancellationToken);
+        var parentAgent = await _agentFactory.CreateAgentAsync("ParentAgent", AgentRank.Prince, null, cancellationToken);
         Assert.NotNull(parentAgent);
 
         // Create child agent with parent reference
@@ -182,7 +227,7 @@ public class IntegrationTests : IAsyncLifetime
             Timestamp = DateTime.UtcNow
         };
 
-        await _messageBus!.PublishAsync(taskMessage, cancellationToken);
+        await _messageBus.PublishAsync(taskMessage, cancellationToken);
         await Task.Delay(500, cancellationToken);
 
         // Assert - Verify agents were created with proper hierarchy
@@ -206,7 +251,7 @@ public class IntegrationTests : IAsyncLifetime
             CreatedAt = DateTime.UtcNow,
             Confidence = 1.0
         };
-        await _sharedMemory!.AddFactAsync(fact1, cancellationToken);
+        await _sharedMemory.AddFactAsync(fact1, cancellationToken);
 
         var fact2 = new Fact
         {
@@ -236,6 +281,7 @@ public class IntegrationTests : IAsyncLifetime
         Assert.Equal("This is test fact 1", retrievedFact1.Content);
 
         var searchResults = await _sharedMemory.SearchFactsAsync("test", cancellationToken);
+        Assert.NotNull(searchResults);
         Assert.NotEmpty(searchResults);
         Assert.True(searchResults.Count() >= 2);
 
@@ -250,31 +296,38 @@ public class IntegrationTests : IAsyncLifetime
         // Arrange
         var agent1Messages = new List<AgentMessage>();
         var agent2Messages = new List<AgentMessage>();
-        var cancellationToken = new CancellationTokenSource(3000).Token;
+        using var cts = new CancellationTokenSource(3000);
+        var cancellationToken = cts.Token;
 
         // Subscribe using IAsyncEnumerable pattern
         var agent1Task = Task.Run(async () =>
         {
-            await foreach (var msg in _messageBus!.SubscribeAsync("agent1", cancellationToken))
+            await foreach (var msg in _messageBus.SubscribeAsync("agent1", cancellationToken))
             {
                 agent1Messages.Add(msg);
-                if (agent1Messages.Count >= 1) break;
+                if (agent1Messages.Count >= 1)
+                {
+                    break;
+                }
             }
         }, cancellationToken);
 
         var agent2Task = Task.Run(async () =>
         {
-            await foreach (var msg in _messageBus!.SubscribeAsync("agent2", cancellationToken))
+            await foreach (var msg in _messageBus.SubscribeAsync("agent2", cancellationToken))
             {
                 agent2Messages.Add(msg);
-                if (agent2Messages.Count >= 1) break;
+                if (agent2Messages.Count >= 1)
+                {
+                    break;
+                }
             }
         }, cancellationToken);
 
         await Task.Delay(100); // Allow subscriptions to be established
 
         // Act
-        await _messageBus!.PublishAsync(new AgentMessage
+        await _messageBus.PublishAsync(new AgentMessage
         {
             Id = Guid.NewGuid().ToString(),
             FromAgentId = "sender",
@@ -317,10 +370,11 @@ public class IntegrationTests : IAsyncLifetime
             CreatedAt = DateTime.UtcNow,
             Confidence = 1.0
         };
-        await _sharedMemory!.AddFactAsync(contextFact, cancellationToken);
+        await _sharedMemory.AddFactAsync(contextFact, cancellationToken);
 
         // Act - Execute memory read tool
-        var readTool = _toolRegistry!.GetTool("read_memory");
+        var readTool = _toolRegistry.GetTool("read_memory")
+            ?? throw new InvalidOperationException("Expected tool 'read_memory' to be registered");
         var parameters = new Dictionary<string, object>
         {
             ["type"] = "facts",
@@ -332,6 +386,7 @@ public class IntegrationTests : IAsyncLifetime
 
         // Assert
         Assert.True(result.Success);
+        Assert.NotNull(result.Output);
         Assert.Contains("context", result.Output, StringComparison.OrdinalIgnoreCase);
     }
 
@@ -339,10 +394,11 @@ public class IntegrationTests : IAsyncLifetime
     public async Task EndToEnd_AgentLifecycle_CreateProcessTerminate()
     {
         // Arrange
-        var cancellationToken = new CancellationTokenSource(5000).Token;
+        using var cts = new CancellationTokenSource(5000);
+        var cancellationToken = cts.Token;
 
         // Act - Create agent
-        var agent = await _agentFactory!.CreateAgentAsync("LifecycleAgent", AgentRank.Duke, null, cancellationToken);
+        var agent = await _agentFactory.CreateAgentAsync("LifecycleAgent", AgentRank.Duke, null, cancellationToken);
         Assert.NotNull(agent);
 
         // Start agent
@@ -358,7 +414,7 @@ public class IntegrationTests : IAsyncLifetime
             Timestamp = DateTime.UtcNow
         };
 
-        await _messageBus!.PublishAsync(taskMessage, cancellationToken);
+        await _messageBus.PublishAsync(taskMessage, cancellationToken);
         await Task.Delay(500, cancellationToken);
 
         // Stop agent
@@ -376,7 +432,8 @@ public class IntegrationTests : IAsyncLifetime
         var cancellationToken = CancellationToken.None;
 
         // Act - Try to execute tool with invalid input (missing required parameters)
-        var tool = _toolRegistry!.GetTool("write_memory");
+        var tool = _toolRegistry.GetTool("write_memory")
+            ?? throw new InvalidOperationException("Expected tool 'write_memory' to be registered");
         var invalidParams = new Dictionary<string, object>
         {
             ["invalid_key"] = "invalid_value"
@@ -385,6 +442,7 @@ public class IntegrationTests : IAsyncLifetime
 
         // Assert - Should handle gracefully
         Assert.False(result.Success);
+        Assert.NotNull(result.Error);
         Assert.NotEmpty(result.Error);
     }
 
@@ -392,17 +450,18 @@ public class IntegrationTests : IAsyncLifetime
     public async Task EndToEnd_ConcurrentAgentOperations()
     {
         // Arrange
-        var cancellationToken = new CancellationTokenSource(10000).Token;
+        using var cts = new CancellationTokenSource(10000);
+        var cancellationToken = cts.Token;
 
         // Act - Create multiple agents concurrently
         var createTasks = Enumerable.Range(0, 5).Select(i =>
-            _agentFactory!.CreateAgentAsync($"Agent{i}", AgentRank.Worker, null, cancellationToken));
+            _agentFactory.CreateAgentAsync($"Agent{i}", AgentRank.Worker, null, cancellationToken));
 
         var agents = await Task.WhenAll(createTasks);
 
         // Send messages to all agents concurrently
         var messageTasks = agents.Select(agent =>
-            _messageBus!.PublishAsync(new AgentMessage
+            _messageBus.PublishAsync(new AgentMessage
             {
                 Id = Guid.NewGuid().ToString(),
                 FromAgentId = "user",

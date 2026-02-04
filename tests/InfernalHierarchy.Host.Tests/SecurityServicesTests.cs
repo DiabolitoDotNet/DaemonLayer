@@ -228,22 +228,22 @@ public class ToolAuthorizationServiceTests
     public ToolAuthorizationServiceTests()
     {
         _mockLogger = new Mock<ILogger<ToolAuthorizationService>>();
-        
+
         var configData = new Dictionary<string, string>
         {
             ["ToolPermissions:web_search:Enabled"] = "true",
             ["ToolPermissions:web_search:AllowedRanks"] = "Supreme,Prince,Duke",
-            
+
             ["ToolPermissions:create_sub_agent:Enabled"] = "true",
             ["ToolPermissions:create_sub_agent:AllowedRanks"] = "Supreme,Prince",
-            
+
             ["ToolPermissions:dangerous_tool:Enabled"] = "false",
-            
+
             ["ToolPermissions:whitelist_tool:Enabled"] = "true",
             ["ToolPermissions:whitelist_tool:AllowedRanks"] = "Supreme",
             ["ToolPermissions:whitelist_tool:WhitelistedAgents:0"] = "lucifer",
             ["ToolPermissions:whitelist_tool:WhitelistedAgents:1"] = "baal",
-            
+
             ["ToolPermissions:blacklist_tool:Enabled"] = "true",
             ["ToolPermissions:blacklist_tool:AllowedRanks"] = "Supreme,Prince",
             ["ToolPermissions:blacklist_tool:BlacklistedAgents:0"] = "asmodeus"

@@ -2,6 +2,7 @@ using FluentAssertions;
 using InfernalHierarchy.Core.Interfaces;
 using InfernalHierarchy.Host;
 using InfernalHierarchy.Memory;
+using InfernalHierarchy.Telegram;
 using InfernalHierarchy.Tools;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Options;
@@ -24,7 +25,7 @@ public class OllamaHealthCheckTests
     {
         _mockHttpClientFactory = new Mock<IHttpClientFactory>();
         _mockHttpHandler = new Mock<HttpMessageHandler>();
-        
+
         _options = new OllamaOptions
         {
             BaseUrl = new Uri("http://localhost:11434/v1"),
@@ -42,12 +43,12 @@ public class OllamaHealthCheckTests
                 "SendAsync",
                 ItExpr.IsAny<HttpRequestMessage>(),
                 ItExpr.IsAny<CancellationToken>())
-            .ReturnsAsync(new HttpResponseMessage(HttpStatusCode.OK)
+            .ReturnsAsync(() => new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent("{\"models\":[]}")
             });
 
-        var httpClient = new HttpClient(_mockHttpHandler.Object);
+        using var httpClient = new HttpClient(_mockHttpHandler.Object, disposeHandler: false);
         _mockHttpClientFactory
             .Setup(x => x.CreateClient(It.IsAny<string>()))
             .Returns(httpClient);
@@ -76,9 +77,9 @@ public class OllamaHealthCheckTests
                 "SendAsync",
                 ItExpr.IsAny<HttpRequestMessage>(),
                 ItExpr.IsAny<CancellationToken>())
-            .ReturnsAsync(new HttpResponseMessage(HttpStatusCode.InternalServerError));
+            .ReturnsAsync(() => new HttpResponseMessage(HttpStatusCode.InternalServerError));
 
-        var httpClient = new HttpClient(_mockHttpHandler.Object);
+        using var httpClient = new HttpClient(_mockHttpHandler.Object, disposeHandler: false);
         _mockHttpClientFactory
             .Setup(x => x.CreateClient(It.IsAny<string>()))
             .Returns(httpClient);
@@ -107,7 +108,7 @@ public class OllamaHealthCheckTests
                 ItExpr.IsAny<CancellationToken>())
             .ThrowsAsync(new HttpRequestException("Connection refused"));
 
-        var httpClient = new HttpClient(_mockHttpHandler.Object);
+        using var httpClient = new HttpClient(_mockHttpHandler.Object, disposeHandler: false);
         _mockHttpClientFactory
             .Setup(x => x.CreateClient(It.IsAny<string>()))
             .Returns(httpClient);
@@ -137,7 +138,7 @@ public class OllamaHealthCheckTests
                 ItExpr.IsAny<CancellationToken>())
             .ThrowsAsync(new TaskCanceledException("Request timed out"));
 
-        var httpClient = new HttpClient(_mockHttpHandler.Object);
+        using var httpClient = new HttpClient(_mockHttpHandler.Object, disposeHandler: false);
         _mockHttpClientFactory
             .Setup(x => x.CreateClient(It.IsAny<string>()))
             .Returns(httpClient);
@@ -215,7 +216,7 @@ public class QdrantHealthCheckTests
             VectorDimensions = 384,
         };
 
-        var httpClient = new HttpClient(_mockHttpHandler.Object);
+        using var httpClient = new HttpClient(_mockHttpHandler.Object, disposeHandler: false);
         _mockHttpClientFactory
             .Setup(x => x.CreateClient(It.IsAny<string>()))
             .Returns(httpClient);
@@ -244,12 +245,12 @@ public class QdrantHealthCheckTests
                 "SendAsync",
                 ItExpr.IsAny<HttpRequestMessage>(),
                 ItExpr.IsAny<CancellationToken>())
-            .ReturnsAsync(new HttpResponseMessage(HttpStatusCode.OK)
+            .ReturnsAsync(() => new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent("{\"result\":{\"collections\":[]},\"status\":\"ok\"}")
             });
 
-        var httpClient = new HttpClient(_mockHttpHandler.Object);
+        using var httpClient = new HttpClient(_mockHttpHandler.Object, disposeHandler: false);
         _mockHttpClientFactory
             .Setup(x => x.CreateClient(It.IsAny<string>()))
             .Returns(httpClient);
@@ -286,9 +287,9 @@ public class QdrantHealthCheckTests
                 "SendAsync",
                 ItExpr.IsAny<HttpRequestMessage>(),
                 ItExpr.IsAny<CancellationToken>())
-            .ReturnsAsync(new HttpResponseMessage(HttpStatusCode.InternalServerError));
+            .ReturnsAsync(() => new HttpResponseMessage(HttpStatusCode.InternalServerError));
 
-        var httpClient = new HttpClient(_mockHttpHandler.Object);
+        using var httpClient = new HttpClient(_mockHttpHandler.Object, disposeHandler: false);
         _mockHttpClientFactory
             .Setup(x => x.CreateClient(It.IsAny<string>()))
             .Returns(httpClient);
@@ -325,7 +326,7 @@ public class QdrantHealthCheckTests
                 ItExpr.IsAny<CancellationToken>())
             .ThrowsAsync(new HttpRequestException("Connection refused"));
 
-        var httpClient = new HttpClient(_mockHttpHandler.Object);
+        using var httpClient = new HttpClient(_mockHttpHandler.Object, disposeHandler: false);
         _mockHttpClientFactory
             .Setup(x => x.CreateClient(It.IsAny<string>()))
             .Returns(httpClient);
@@ -363,7 +364,7 @@ public class QdrantHealthCheckTests
                 ItExpr.IsAny<CancellationToken>())
             .ThrowsAsync(new TaskCanceledException("Request timed out"));
 
-        var httpClient = new HttpClient(_mockHttpHandler.Object);
+        using var httpClient = new HttpClient(_mockHttpHandler.Object, disposeHandler: false);
         _mockHttpClientFactory
             .Setup(x => x.CreateClient(It.IsAny<string>()))
             .Returns(httpClient);
@@ -431,7 +432,7 @@ public class LiteDbHealthCheckTests
         // Arrange
         _mockSharedMemory
             .Setup(x => x.GetRecentDecisionsAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
-            .ThrowsAsync(new Exception("Database connection failed"));
+            .ThrowsAsync(new InvalidOperationException("Database connection failed"));
 
         var healthCheck = new LiteDbHealthCheck(
             _mockSharedMemory.Object,
@@ -522,7 +523,7 @@ public class AgentHierarchyHealthCheckTests
         // Arrange
         _mockFactory
             .Setup(x => x.GetAllAgents())
-            .Throws(new Exception("Factory access failed"));
+            .Throws(new InvalidOperationException("Factory access failed"));
 
         var healthCheck = new AgentHierarchyHealthCheck(_mockFactory.Object);
 
@@ -560,7 +561,7 @@ public class AgentHierarchyHealthCheckTests
         result.Data.Should().ContainKey("prince_count");
         result.Data.Should().ContainKey("duke_count");
         result.Data.Should().ContainKey("worker_count");
-        
+
         result.Data["supreme_count"].Should().Be(1);
         result.Data["prince_count"].Should().Be(2);
         result.Data["duke_count"].Should().Be(1);

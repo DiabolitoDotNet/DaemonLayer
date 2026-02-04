@@ -100,7 +100,7 @@ public class AgentLearningTests
         double expectedRate)
     {
         // Arrange
-        var agentId = $"agent_{rank.ToLowerInvariant()}";
+        var agentId = $"agent_{rank.ToUpperInvariant()}";
         var failureCount = successCount - actualSuccess;
 
         // Act

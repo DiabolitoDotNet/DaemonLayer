@@ -68,7 +68,7 @@ public class TelegramBotService : BackgroundService
         }
     }
 
-    private async Task HandleUpdateAsync(ITelegramBotClient botClient, Update update, CancellationToken ct)
+    internal async Task HandleUpdateAsync(ITelegramBotClient botClient, Update update, CancellationToken ct)
     {
         if (update.Message is not { } message || message.Text is not { } messageText)
             return;

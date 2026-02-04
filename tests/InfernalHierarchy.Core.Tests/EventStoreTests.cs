@@ -7,7 +7,7 @@ using Xunit;
 
 namespace InfernalHierarchy.Core.Tests;
 
-public class EventStoreTests : IDisposable
+public sealed class EventStoreTests : IDisposable
 {
     private readonly string _testStorePath;
     private readonly Mock<ILogger<EventStore>> _mockLogger;
@@ -343,8 +343,8 @@ public class EventStoreTests : IDisposable
 
     public void Dispose()
     {
-        _sut?.Dispose();
-        
+        _sut.Dispose();
+
         // Cleanup test directory
         if (Directory.Exists(_testStorePath))
         {

@@ -182,7 +182,7 @@ public class MetricsCollectorTests
     }
 
     [Fact]
-    public void MetricsCollector_ShouldBeThreadSafe()
+    public async Task MetricsCollector_ShouldBeThreadSafe()
     {
         // Arrange
         var counterName = "concurrent.counter";
@@ -194,18 +194,19 @@ public class MetricsCollectorTests
             tasks.Add(Task.Run(() => _sut.IncrementCounter(counterName, 1)));
         }
 
-        Task.WaitAll(tasks.ToArray());
+        await Task.WhenAll(tasks);
 
         // Assert
         _sut.GetCounter(counterName).Should().Be(100);
     }
 }
 
-public class PerformanceMonitorTests : IDisposable
+public sealed class PerformanceMonitorTests : IDisposable
 {
     private readonly Mock<ILogger<PerformanceMonitor>> _mockLogger;
     private readonly MetricsCollector _metricsCollector;
     private readonly PerformanceMonitor _sut;
+    private bool _disposed;
 
     public PerformanceMonitorTests()
     {
@@ -277,36 +278,35 @@ public class PerformanceMonitorTests : IDisposable
     {
         // Act
         var snapshot1 = _sut.GetCurrentSnapshot();
-        
+
         // Force some memory allocation
         var largeArray = new byte[1024 * 1024 * 10]; // 10MB
-        
+
         var snapshot2 = _sut.GetCurrentSnapshot();
 
-        // Assert - Memory should be higher in second snapshot
-        snapshot2.WorkingSetMB.Should().BeGreaterThanOrEqualTo(snapshot1.WorkingSetMB);
+        // Assert - Managed memory should be higher in second snapshot
+        snapshot2.GcTotalMemoryMB.Should().BeGreaterThan(snapshot1.GcTotalMemoryMB);
 
         // Cleanup
         GC.KeepAlive(largeArray);
     }
 
     [Fact]
-    public void PerformanceMonitor_ShouldUpdateGaugesInMetricsCollector()
+    public async Task PerformanceMonitor_ShouldUpdateGaugesInMetricsCollector()
     {
         // Arrange - Create fresh instances
         var logger = new Mock<ILogger<PerformanceMonitor>>();
         var collector = new MetricsCollector();
-        var monitor = new PerformanceMonitor(logger.Object, collector);
+        using var monitor = new PerformanceMonitor(logger.Object, collector);
 
         // Act - Wait for metrics update
-        Task.Delay(6000).Wait();
+        await Task.Delay(6000);
 
         // Assert
         var memoryGauge = collector.GetGauge("system.memory.working_set.mb");
         memoryGauge.Should().BeGreaterThan(0);
 
-        // Cleanup
-        monitor.Dispose();
+        // Cleanup handled by using
     }
 
     [Fact]
@@ -326,8 +326,23 @@ public class PerformanceMonitorTests : IDisposable
 
     public void Dispose()
     {
-        _sut?.Dispose();
+        Dispose(true);
         GC.SuppressFinalize(this);
+    }
+
+    private void Dispose(bool disposing)
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        if (disposing)
+        {
+            _sut.Dispose();
+        }
+
+        _disposed = true;
     }
 }
 
@@ -337,7 +352,7 @@ public class DistributedTracingTests
     public void ActivitySource_ShouldBeNamed()
     {
         // Arrange & Act
-        var activitySource = new ActivitySource("InfernalHierarchy", "1.0.0");
+        using var activitySource = new ActivitySource("InfernalHierarchy", "1.0.0");
 
         // Assert
         activitySource.Name.Should().Be("InfernalHierarchy");
@@ -348,8 +363,8 @@ public class DistributedTracingTests
     public void Activity_ShouldRecordTags()
     {
         // Arrange
-        var activitySource = new ActivitySource("InfernalHierarchy");
-        
+        using var activitySource = new ActivitySource("InfernalHierarchy");
+
         using var listener = new ActivityListener
         {
             ShouldListenTo = _ => true,
@@ -372,8 +387,8 @@ public class DistributedTracingTests
     public void Activity_ShouldRecordError()
     {
         // Arrange
-        var activitySource = new ActivitySource("InfernalHierarchy");
-        
+        using var activitySource = new ActivitySource("InfernalHierarchy");
+
         using var listener = new ActivityListener
         {
             ShouldListenTo = _ => true,
@@ -384,7 +399,7 @@ public class DistributedTracingTests
         // Act
         using var activity = activitySource.StartActivity("test.error");
         var exception = new InvalidOperationException("Test error");
-        
+
         activity?.SetStatus(ActivityStatusCode.Error, exception.Message);
         activity?.AddEvent(new ActivityEvent(
             "exception",
@@ -403,8 +418,8 @@ public class DistributedTracingTests
     public void Activity_ShouldSupportNesting()
     {
         // Arrange
-        var activitySource = new ActivitySource("InfernalHierarchy");
-        
+        using var activitySource = new ActivitySource("InfernalHierarchy");
+
         using var listener = new ActivityListener
         {
             ShouldListenTo = _ => true,
@@ -415,7 +430,7 @@ public class DistributedTracingTests
         // Act
         using var parentActivity = activitySource.StartActivity("parent.operation");
         var parentId = parentActivity?.Id;
-        
+
         using var childActivity = activitySource.StartActivity("child.operation");
         var childParentId = childActivity?.ParentId;
 
