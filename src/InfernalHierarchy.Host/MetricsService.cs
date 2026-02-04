@@ -146,20 +146,20 @@ public class MetricsService
     }
 
     // Agent metrics
-    public void RecordAgentCreated(string rank) => _collector.IncrementCounter($"agents.created.{rank.ToLower()}");
-    public void RecordAgentTerminated(string rank) => _collector.IncrementCounter($"agents.terminated.{rank.ToLower()}");
-    public void SetActiveAgentCount(string rank, int count) => _collector.SetGauge($"agents.active.{rank.ToLower()}", count);
+    public void RecordAgentCreated(string rank) => _collector.IncrementCounter($"agents.created.{rank.ToLowerInvariant()}");
+    public void RecordAgentTerminated(string rank) => _collector.IncrementCounter($"agents.terminated.{rank.ToLowerInvariant()}");
+    public void SetActiveAgentCount(string rank, int count) => _collector.SetGauge($"agents.active.{rank.ToLowerInvariant()}", count);
 
     // Message metrics
-    public void RecordMessageSent(string messageType) => _collector.IncrementCounter($"messages.sent.{messageType.ToLower()}");
-    public void RecordMessageReceived(string messageType) => _collector.IncrementCounter($"messages.received.{messageType.ToLower()}");
+    public void RecordMessageSent(string messageType) => _collector.IncrementCounter($"messages.sent.{messageType.ToLowerInvariant()}");
+    public void RecordMessageReceived(string messageType) => _collector.IncrementCounter($"messages.received.{messageType.ToLowerInvariant()}");
     public void RecordMessageLatency(double milliseconds) => _collector.RecordValue("message.latency.ms", milliseconds);
 
     // Tool metrics
-    public void RecordToolExecution(string toolName) => _collector.IncrementCounter($"tools.executed.{toolName.ToLower()}");
-    public void RecordToolSuccess(string toolName) => _collector.IncrementCounter($"tools.success.{toolName.ToLower()}");
-    public void RecordToolFailure(string toolName) => _collector.IncrementCounter($"tools.failure.{toolName.ToLower()}");
-    public void RecordToolLatency(string toolName, double milliseconds) => _collector.RecordValue($"tool.latency.{toolName.ToLower()}.ms", milliseconds);
+    public void RecordToolExecution(string toolName) => _collector.IncrementCounter($"tools.executed.{toolName.ToLowerInvariant()}");
+    public void RecordToolSuccess(string toolName) => _collector.IncrementCounter($"tools.success.{toolName.ToLowerInvariant()}");
+    public void RecordToolFailure(string toolName) => _collector.IncrementCounter($"tools.failure.{toolName.ToLowerInvariant()}");
+    public void RecordToolLatency(string toolName, double milliseconds) => _collector.RecordValue($"tool.latency.{toolName.ToLowerInvariant()}.ms", milliseconds);
 
     // LLM metrics
     public void RecordLlmCall() => _collector.IncrementCounter("llm.calls");
@@ -168,12 +168,12 @@ public class MetricsService
     public void RecordLlmError() => _collector.IncrementCounter("llm.errors");
 
     // Memory metrics
-    public void RecordMemoryWrite(string type) => _collector.IncrementCounter($"memory.write.{type.ToLower()}");
-    public void RecordMemoryRead(string type) => _collector.IncrementCounter($"memory.read.{type.ToLower()}");
+    public void RecordMemoryWrite(string type) => _collector.IncrementCounter($"memory.write.{type.ToLowerInvariant()}");
+    public void RecordMemoryRead(string type) => _collector.IncrementCounter($"memory.read.{type.ToLowerInvariant()}");
     public void SetMemorySize(long bytes) => _collector.SetGauge("memory.database.size.bytes", bytes);
 
     // System metrics
-    public void RecordError(string source) => _collector.IncrementCounter($"errors.{source.ToLower()}");
+    public void RecordError(string source) => _collector.IncrementCounter($"errors.{source.ToLowerInvariant()}");
     public void SetUptimeSeconds() => _collector.SetGauge("system.uptime.seconds", _uptime.Elapsed.TotalSeconds);
 
     // Get all metrics

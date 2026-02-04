@@ -1,6 +1,8 @@
+using InfernalHierarchy.Core;
 using InfernalHierarchy.Core.Entities;
 using InfernalHierarchy.Core.Interfaces;
 using InfernalHierarchy.Messaging;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -16,18 +18,21 @@ public class AgentOrchestrator : BackgroundService
     private readonly IAgentFactory _agentFactory;
     private readonly IMessageBus _messageBus;
     private readonly HierarchyOptions _options;
+    private readonly IServiceProvider _serviceProvider;
     private IAgent? _mainAgent;
 
     public AgentOrchestrator(
         IAgentFactory agentFactory,
         IMessageBus messageBus,
         IOptions<HierarchyOptions> options,
-        ILogger<AgentOrchestrator> logger)
+        ILogger<AgentOrchestrator> logger,
+        IServiceProvider serviceProvider)
     {
         _agentFactory = agentFactory;
         _messageBus = messageBus;
         _options = options.Value;
         _logger = logger;
+        _serviceProvider = serviceProvider;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -59,7 +64,26 @@ public class AgentOrchestrator : BackgroundService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "💀 Orchestrator failed");
+            // Use centralized exception handling if available
+            var exceptionHandler = _serviceProvider.GetService<GlobalExceptionHandler>();
+            
+            if (exceptionHandler != null)
+            {
+                var handlingResult = await exceptionHandler.HandleExceptionAsync(
+                    ex,
+                    "OrchestratorStartup");
+                
+                _logger.LogCritical(
+                    ex,
+                    "🔥 Orchestrator failed | Category: {Category} | Retry: {ShouldRetry} | CorrelationId: {CorrelationId}",
+                    handlingResult.Category,
+                    handlingResult.ShouldRetry,
+                    handlingResult.CorrelationId);
+            }
+            else
+            {
+                _logger.LogError(ex, "💀 Orchestrator failed");
+            }
         }
         finally
         {
@@ -83,7 +107,24 @@ public class AgentOrchestrator : BackgroundService
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to stop main agent {AgentName}", _mainAgent.Name);
+                var exceptionHandler = _serviceProvider.GetService<GlobalExceptionHandler>();
+                if (exceptionHandler != null)
+                {
+                    var handlingResult = await exceptionHandler.HandleExceptionAsync(
+                        ex,
+                        $"StopAgent_{_mainAgent.Name}");
+                    
+                    _logger.LogError(
+                        ex,
+                        "Failed to stop main agent {AgentName} | Category: {Category} | CorrelationId: {CorrelationId}",
+                        _mainAgent.Name,
+                        handlingResult.Category,
+                        handlingResult.CorrelationId);
+                }
+                else
+                {
+                    _logger.LogError(ex, "Failed to stop main agent {AgentName}", _mainAgent.Name);
+                }
             }
         }
 
@@ -99,7 +140,24 @@ public class AgentOrchestrator : BackgroundService
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to stop agent {AgentName}", agent.Name);
+                var exceptionHandler = _serviceProvider.GetService<GlobalExceptionHandler>();
+                if (exceptionHandler != null)
+                {
+                    var handlingResult = await exceptionHandler.HandleExceptionAsync(
+                        ex,
+                        $"StopAgent_{agent.Name}");
+                    
+                    _logger.LogError(
+                        ex,
+                        "Failed to stop agent {AgentName} | Category: {Category} | CorrelationId: {CorrelationId}",
+                        agent.Name,
+                        handlingResult.Category,
+                        handlingResult.CorrelationId);
+                }
+                else
+                {
+                    _logger.LogError(ex, "Failed to stop agent {AgentName}", agent.Name);
+                }
             }
         }
 

@@ -3,7 +3,7 @@
 // InfernalHierarchy.Core
 public class OllamaOptions
 {
-    public string BaseUrl { get; set; } = string.Empty;
+    public Uri BaseUrl { get; set; } = new Uri("http://localhost:11434/v1");
     public string DefaultModel { get; set; } = string.Empty;
     public string AlternativeModel { get; set; } = string.Empty;
     public int MaxTokens { get; set; }
@@ -30,7 +30,7 @@ public class HierarchyOptions
 
 public class SearXNGOptions
 {
-    public string BaseUrl { get; set; } = string.Empty;
+    public Uri BaseUrl { get; set; } = new Uri("http://localhost:8080");
     public bool Enabled { get; set; }
 }
 

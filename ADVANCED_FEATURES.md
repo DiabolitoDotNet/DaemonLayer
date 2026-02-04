@@ -6,6 +6,192 @@ This document details the newly implemented advanced features for production-gra
 
 ---
 
+## 📊 Token Usage Tracking & Model Management
+
+### Telegram Commands for Monitoring
+
+**Added in:** ReActAgent.cs (HandleCommandAsync)
+
+The Supreme Agent (Lucifer) can respond to system monitoring commands via Telegram:
+
+#### `/usage` - Token Usage Report
+Displays comprehensive token consumption statistics across all LLM calls.
+
+**Example Output:**
+```
+📊 **Token Usage Report**
+
+**Overall Statistics:**
+• Total Input: 125,430 tokens
+• Total Output: 58,720 tokens
+• Total Duration: 00:45:32
+• Average Speed: 67.5 tokens/sec
+
+**Per-Model Breakdown:**
+  • llama3.2:latest: 85 calls, 98,500 tokens
+  • mistral:latest: 42 calls, 45,300 tokens
+  • gemma2:2b: 20 calls, 40,350 tokens
+```
+
+**Usage:**
+```bash
+# In Telegram, send to bot:
+/usage
+```
+
+#### `/models` - Available Models List
+Lists all configured LLM models with their settings.
+
+**Example Output:**
+```
+🤖 **Available LLM Models**
+
+1. **llama3.2:latest**
+   • Complexity: medium
+   • Max Tokens: 8,192
+   • Temperature: 0.7
+   • Priority: 1 (Primary)
+
+2. **mistral:latest**
+   • Complexity: high
+   • Max Tokens: 32,768
+   • Temperature: 0.8
+   • Priority: 2 (Fallback)
+
+3. **gemma2:2b**
+   • Complexity: simple
+   • Max Tokens: 4,096
+   • Temperature: 0.5
+   • Priority: 3 (Fast tasks)
+```
+
+**Usage:**
+```bash
+# In Telegram, send to bot:
+/models
+```
+
+**Implementation Details:**
+- Command routing checks `Payload["command"]` in AgentMessage
+- `GenerateUsageReportAsync()` calls `TokenUsageTracker.GetOverallStats()`
+- `GenerateModelsReportAsync()` calls `MultiModelLlmClient.GetAvailableModels()`
+- Reports sent via `TelegramSendTool` to requesting user
+
+**Configuration:**
+```json
+{
+  "Telegram": {
+    "BotToken": "YOUR_BOT_TOKEN",
+    "AllowedUserIds": [123456789, 987654321]
+  },
+  "Tools": {
+    "Models": [
+      {
+        "Name": "llama3.2:latest",
+        "Complexity": "medium",
+        "MaxTokens": 8192,
+        "Temperature": 0.7,
+        "Priority": 1
+      }
+    ]
+  }
+}
+```
+
+---
+
+## 🎓 Agent Learning System
+
+### ToolRegistry Integration with Learning Metrics
+
+**Files:**
+- `InfernalHierarchy.Tools/ToolRegistry.cs` (ExecuteToolWithTrackingAsync)
+- `InfernalHierarchy.Tools/AgentLearningService.cs`
+
+Agents now track tool execution performance and learn optimal tool usage patterns.
+
+**Features:**
+- ✅ Automatic recording of tool success/failure rates
+- ✅ Latency tracking per tool per agent
+- ✅ Tool recommendation system based on historical performance
+- ✅ Rank-specific learning (different metrics per hierarchy level)
+
+**Implementation:**
+```csharp
+// In ToolRegistry.ExecuteAsync - transparent tracking wrapper
+var stopwatch = Stopwatch.StartNew();
+try
+{
+    var result = await tool.ExecuteAsync(parameters, ct);
+    stopwatch.Stop();
+    
+    await _learningService?.RecordToolExecution(
+        agentId, 
+        agentRank, 
+        toolName, 
+        result.Success, 
+        stopwatch.Elapsed);
+    
+    return result;
+}
+catch (Exception ex)
+{
+    stopwatch.Stop();
+    await _learningService?.RecordToolExecution(
+        agentId, 
+        agentRank, 
+        toolName, 
+        success: false, 
+        stopwatch.Elapsed);
+    throw;
+}
+```
+
+**Tool Metrics Stored:**
+```json
+{
+  "tool_name": "web_search",
+  "agent_id": "vassago",
+  "agent_rank": "Duke",
+  "success_count": 45,
+  "failure_count": 5,
+  "total_executions": 50,
+  "success_rate": 0.90,
+  "avg_duration_ms": 1250,
+  "min_duration_ms": 850,
+  "max_duration_ms": 3200,
+  "last_execution_timestamp": "2024-01-15T10:30:00Z"
+}
+```
+
+**Querying Tool Recommendations:**
+```csharp
+// Get recommended tools for an agent based on past performance
+var recommendations = await learningService.GetToolRecommendations(
+    agentId: "vassago",
+    agentRank: "Duke",
+    ct);
+
+foreach (var rec in recommendations.OrderByDescending(r => r.SuccessRate))
+{
+    logger.LogInformation(
+        "Tool: {Tool}, Success Rate: {Rate:P}, Avg Duration: {Duration}ms",
+        rec.ToolName, rec.SuccessRate, rec.AverageDurationMs);
+}
+```
+
+**Practical Use Cases:**
+1. **Automatic Tool Selection**: ReActAgent can query recommendations when multiple tools could solve a task
+2. **Performance Alerts**: Log warnings when tool success rate drops below threshold (e.g., < 70%)
+3. **Load Balancing**: Prefer faster tools when multiple options have similar success rates
+4. **Hierarchy Optimization**: Supreme agents might prefer different tools than Worker agents
+
+**Tests:**
+- `AgentLearningTests.cs`: RecordToolExecution, GetToolRecommendations
+- `ToolRegistryTests.cs`: Verifies tracking integration
+
+---
+
 ## 📋 Code Quality Enhancements
 
 ### .NET Analyzers & StyleCop

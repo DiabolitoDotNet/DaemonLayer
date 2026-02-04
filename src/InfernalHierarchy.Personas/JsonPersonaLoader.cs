@@ -13,6 +13,7 @@ public class JsonPersonaLoader : IPersonaLoader
     private readonly ILogger<JsonPersonaLoader> _logger;
     private readonly string _soulsDirectory;
     private readonly Dictionary<string, Persona> _cache = new();
+    private static readonly JsonSerializerOptions _jsonOptions = new() { PropertyNameCaseInsensitive = true };
 
     public JsonPersonaLoader(ILogger<JsonPersonaLoader> logger, string? customSoulsDirectory = null)
     {
@@ -41,13 +42,15 @@ public class JsonPersonaLoader : IPersonaLoader
 
     public async Task<Persona?> LoadPersonaAsync(string name, CancellationToken ct = default)
     {
+        var normalizedName = name.ToLowerInvariant();
+        
         // Check cache first
-        if (_cache.TryGetValue(name.ToLower(), out var cached))
+        if (_cache.TryGetValue(normalizedName, out var cached))
         {
             return cached;
         }
 
-        var filePath = Path.Combine(_soulsDirectory, $"{name.ToLower()}.json");
+        var filePath = Path.Combine(_soulsDirectory, $"{normalizedName}.json");
 
         if (!File.Exists(filePath))
         {
@@ -58,14 +61,11 @@ public class JsonPersonaLoader : IPersonaLoader
         try
         {
             var json = await File.ReadAllTextAsync(filePath, ct);
-            var persona = JsonSerializer.Deserialize<Persona>(json, new JsonSerializerOptions
-            {
-                PropertyNameCaseInsensitive = true
-            });
+            var persona = JsonSerializer.Deserialize<Persona>(json, _jsonOptions);
 
             if (persona != null)
             {
-                _cache[name.ToLower()] = persona;
+                _cache[normalizedName] = persona;
                 _logger.LogInformation("😈 Loaded persona: {Name} - {Title}", persona.Name, persona.DemonTitle);
             }
 

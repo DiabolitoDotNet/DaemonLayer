@@ -28,7 +28,7 @@ public class OllamaHealthCheck : IHealthCheck
             var httpClient = _httpClientFactory.CreateClient();
             httpClient.Timeout = TimeSpan.FromSeconds(5);
 
-            var baseUrl = _options.BaseUrl.TrimEnd('/');
+            var baseUrl = _options.BaseUrl.ToString().TrimEnd('/');
             var healthUrl = baseUrl.Replace("/v1", "") + "/api/tags"; // Ollama health endpoint
 
             var response = await httpClient.GetAsync(healthUrl, cancellationToken);
@@ -37,7 +37,7 @@ public class OllamaHealthCheck : IHealthCheck
             {
                 var data = new Dictionary<string, object>
                 {
-                    ["url"] = _options.BaseUrl,
+                    ["url"] = _options.BaseUrl.ToString(),
                     ["model"] = _options.DefaultModel,
                     ["status"] = "connected"
                 };

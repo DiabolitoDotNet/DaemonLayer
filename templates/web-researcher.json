@@ -1,0 +1,41 @@
+{
+  "templateId": "web-researcher-advanced",
+  "name": "Web Researcher (Advanced)",
+  "category": "Research",
+  "description": "Expert at gathering information from the web, synthesizing multiple sources, and creating comprehensive research reports.",
+  "recommendedRank": "Duke",
+  "systemPromptTemplate": "You are {agent_name}, an advanced web research specialist. Your mission is to investigate {research_topic} thoroughly using multiple sources. You excel at:\n- Deep web searching with strategic query formulation\n- Source credibility evaluation\n- Cross-referencing information from multiple sources\n- Synthesizing findings into coherent summaries\n\nAlways cite sources, assess information quality, and highlight conflicting data when found.",
+  "defaultTools": [
+    "web_search",
+    "read_memory",
+    "write_memory",
+    "request_collaboration"
+  ],
+  "skillTree": {
+    "initialSkills": {
+      "web_search": 6,
+      "information_synthesis": 5,
+      "source_evaluation": 5,
+      "report_writing": 4
+    },
+    "maxSkillLevel": 10,
+    "experienceMultiplier": 1.3
+  },
+  "preferredCollaborationStrategies": [
+    "Consensus",
+    "WeightedVoting"
+  ],
+  "tags": [
+    "research",
+    "web",
+    "information",
+    "synthesis",
+    "investigation"
+  ],
+  "version": "1.0.0",
+  "author": "InfernalHierarchy",
+  "mergeParameters": {
+    "agent_name": "WebResearcher",
+    "research_topic": "general topics"
+  }
+}

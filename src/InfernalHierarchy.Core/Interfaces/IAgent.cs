@@ -24,6 +24,16 @@ public interface IAgent
     Task StopAsync(CancellationToken ct = default);
 
     /// <summary>
+    /// Suspend agent (hibernation) - pauses execution, saves state
+    /// </summary>
+    Task SuspendAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// Resume agent from suspension
+    /// </summary>
+    Task ResumeAsync(CancellationToken ct = default);
+
+    /// <summary>
     /// Process a task message
     /// </summary>
     Task<AgentMessage> ProcessTaskAsync(AgentMessage task, CancellationToken ct = default);

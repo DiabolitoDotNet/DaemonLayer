@@ -43,13 +43,13 @@ public class ConfigurationValidator : IHostedService
         var errors = new List<string>();
 
         // Validate Ollama configuration
-        if (string.IsNullOrWhiteSpace(_ollamaOptions.BaseUrl))
+        if (_ollamaOptions.BaseUrl is null)
         {
             errors.Add("Ollama:BaseUrl is required");
         }
-        else if (!Uri.TryCreate(_ollamaOptions.BaseUrl, UriKind.Absolute, out _))
+        else if (!_ollamaOptions.BaseUrl.IsAbsoluteUri)
         {
-            errors.Add($"Ollama:BaseUrl is not a valid URL: {_ollamaOptions.BaseUrl}");
+            errors.Add($"Ollama:BaseUrl must be an absolute URI: {_ollamaOptions.BaseUrl}");
         }
 
         if (string.IsNullOrWhiteSpace(_ollamaOptions.DefaultModel))
@@ -138,13 +138,13 @@ public class ConfigurationValidator : IHostedService
 
         if (_searxngOptions.Enabled)
         {
-            if (string.IsNullOrWhiteSpace(_searxngOptions.BaseUrl))
+            if (_searxngOptions.BaseUrl is null)
             {
                 errors.Add("SearXNG:BaseUrl is required when SearXNG is enabled");
             }
-            else if (!Uri.TryCreate(_searxngOptions.BaseUrl, UriKind.Absolute, out _))
+            else if (!_searxngOptions.BaseUrl.IsAbsoluteUri)
             {
-                errors.Add($"SearXNG:BaseUrl is not a valid URL: {_searxngOptions.BaseUrl}");
+                errors.Add($"SearXNG:BaseUrl must be an absolute URI: {_searxngOptions.BaseUrl}");
             }
         }
 

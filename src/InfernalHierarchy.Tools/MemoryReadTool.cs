@@ -31,6 +31,13 @@ public class MemoryReadTool : ITool
             };
         }
 
+        // Extract agent context for visibility filtering
+        parameters.TryGetValue("agent_id", out var agentIdObj);
+        var agentId = agentIdObj as string ?? "unknown";
+        
+        parameters.TryGetValue("agent_rank", out var rankObj);
+        var agentRank = ParseAgentRank(rankObj as string);
+
         parameters.TryGetValue("query", out var queryObj);
         var query = queryObj as string;
 
@@ -39,11 +46,11 @@ public class MemoryReadTool : ITool
 
         try
         {
-            string output = type.ToLower() switch
+            string output = type switch
             {
-                "decisions" => await GetDecisionsAsync(query, count, ct),
-                "facts" => await GetFactsAsync(query, ct),
-                "tasks" => await GetTasksAsync(query, ct),
+                var t when t.Equals("decisions", StringComparison.OrdinalIgnoreCase) => await GetDecisionsAsync(query, count, ct),
+                var t when t.Equals("facts", StringComparison.OrdinalIgnoreCase) => await GetFactsAsync(query, agentId, agentRank, ct),
+                var t when t.Equals("tasks", StringComparison.OrdinalIgnoreCase) => await GetTasksAsync(query, ct),
                 _ => throw new ArgumentException($"Invalid type: {type}")
             };
 
@@ -78,11 +85,11 @@ public class MemoryReadTool : ITool
             $"[{d.CreatedAt:yyyy-MM-dd HH:mm}] {d.CreatedBy}: {d.Action}\nReasoning: {d.Reasoning}"));
     }
 
-    private async Task<string> GetFactsAsync(string? query, CancellationToken ct)
+    private async Task<string> GetFactsAsync(string? query, string agentId, Core.Entities.AgentRank agentRank, CancellationToken ct)
     {
         var facts = string.IsNullOrEmpty(query)
-            ? await _memory.GetFactsByCategoryAsync("general", ct)
-            : await _memory.SearchFactsAsync(query, ct);
+            ? await _memory.GetVisibleFactsAsync(agentId, agentRank, ct)
+            : await _memory.SearchVisibleFactsAsync(query, agentId, agentRank, ct);
 
         if (!facts.Any())
             return "No facts found.";
@@ -102,5 +109,15 @@ public class MemoryReadTool : ITool
 
         return string.Join("\n\n", tasks.Select(t =>
             $"[{t.Status}] {t.Description}\nAssigned to: {t.AssignedTo}"));
+    }
+
+    private Core.Entities.AgentRank ParseAgentRank(string? rankString)
+    {
+        if (string.IsNullOrEmpty(rankString))
+            return Core.Entities.AgentRank.Worker; // Default to least privileged
+
+        return Enum.TryParse<Core.Entities.AgentRank>(rankString, true, out var rank)
+            ? rank
+            : Core.Entities.AgentRank.Worker;
     }
 }

@@ -27,13 +27,13 @@ public class OllamaClient
         // Create a fake API key credential (Ollama doesn't need it but the client requires it)
         var apiKey = new ApiKeyCredential("ollama-local");
 
-        var endpoint = new Uri(_options.BaseUrl);
+        var endpoint = _options.BaseUrl;
         var azureClient = new AzureOpenAIClient(endpoint, apiKey, clientOptions);
 
         _chatClient = azureClient.GetChatClient(_options.DefaultModel);
 
         _logger.LogInformation("🧠 Ollama client initialized: {BaseUrl} with model {Model}",
-            _options.BaseUrl, _options.DefaultModel);
+            _options.BaseUrl.ToString(), _options.DefaultModel);
     }
 
     /// <summary>

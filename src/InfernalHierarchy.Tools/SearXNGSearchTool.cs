@@ -49,7 +49,7 @@ public class SearXNGSearchTool : IWebSearchTool
 
         try
         {
-            var url = $"{_options.BaseUrl}/search?q={Uri.EscapeDataString(query)}&format=json&language=en";
+            var url = $"{_options.BaseUrl.ToString().TrimEnd('/')}/search?q={Uri.EscapeDataString(query)}&format=json&language=en";
 
             _logger.LogInformation("🔍 Searching: {Query}", query);
 
@@ -111,6 +111,6 @@ public class SearXNGSearchTool : IWebSearchTool
 
 public class SearXNGOptions
 {
-    public string BaseUrl { get; set; } = "http://localhost:8080";
+    public Uri BaseUrl { get; set; } = new Uri("http://localhost:8080");
     public bool Enabled { get; set; } = true;
 }

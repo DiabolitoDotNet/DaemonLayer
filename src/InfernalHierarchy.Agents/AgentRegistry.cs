@@ -8,7 +8,7 @@ namespace InfernalHierarchy.Agents;
 /// <summary>
 /// Registry tracking all active agents in the hierarchy
 /// </summary>
-public class AgentRegistry
+public class AgentRegistry : IAgentRegistry
 {
     private readonly ConcurrentDictionary<string, IAgent> _agents = new();
     private readonly ConcurrentDictionary<string, DateTime> _agentCreationTimes = new();
@@ -79,6 +79,10 @@ public class AgentRegistry
     public IEnumerable<IAgent> GetChildAgents(string parentId)
         => _agents.Values.Where(a => a is BaseAgent ba && ba.ParentAgentId == parentId);
 
+    public int Count() => _agents.Count;
+
+    public bool IsRegistered(string agentId) => _agents.ContainsKey(agentId);
+
     public async Task TerminateAgentAsync(string agentId, CancellationToken ct = default)
     {
         var agent = GetAgent(agentId);
@@ -119,8 +123,6 @@ public class AgentRegistry
                 : TimeSpan.Zero
         };
     }
-
-    public int Count => _agents.Count;
 }
 
 public class AgentStats

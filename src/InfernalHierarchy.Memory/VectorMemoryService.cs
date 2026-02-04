@@ -16,19 +16,22 @@ public sealed class VectorMemoryService : IDisposable
     private readonly ILogger<VectorMemoryService> _logger;
     private readonly VectorMemoryOptions _options;
     private readonly ISharedMemory _sharedMemory;
+    private readonly OnnxEmbeddingService _embeddingService;
 
     public VectorMemoryService(
         HttpClient httpClient,
         IOptions<VectorMemoryOptions> options,
         ISharedMemory sharedMemory,
+        OnnxEmbeddingService embeddingService,
         ILogger<VectorMemoryService> logger)
     {
         _httpClient = httpClient;
         _options = options.Value;
         _logger = logger;
         _sharedMemory = sharedMemory;
+        _embeddingService = embeddingService;
 
-        _httpClient.BaseAddress = new Uri(_options.QdrantUrl);
+        _httpClient.BaseAddress = _options.QdrantUrl;
     }
 
     /// <summary>
@@ -174,34 +177,17 @@ public sealed class VectorMemoryService : IDisposable
     }
 
     /// <summary>
-    /// Generate embeddings using a simple mock (in production, use an embedding model)
+    /// Generate embeddings using ONNX sentence-transformers model
     /// </summary>
     public async Task<float[]> GenerateEmbeddingAsync(string text, CancellationToken ct = default)
     {
-        // TODO: Replace with actual embedding model (e.g., sentence-transformers via ONNX or API)
-        // For now, return a mock embedding
-        await Task.CompletedTask;
-
-        var random = new Random(text.GetHashCode());
-        var embedding = new float[_options.VectorDimensions];
-        for (int i = 0; i < embedding.Length; i++)
-        {
-            embedding[i] = (float)(random.NextDouble() * 2 - 1); // Random values between -1 and 1
-        }
-
-        // Normalize
-        var magnitude = Math.Sqrt(embedding.Sum(x => x * x));
-        for (int i = 0; i < embedding.Length; i++)
-        {
-            embedding[i] /= (float)magnitude;
-        }
-
-        return embedding;
+        return await _embeddingService.GenerateEmbeddingAsync(text, ct);
     }
 
     public void Dispose()
     {
         _httpClient?.Dispose();
+        _embeddingService?.Dispose();
     }
 
     private class QdrantSearchResponse
@@ -219,8 +205,8 @@ public sealed class VectorMemoryService : IDisposable
 
 public class VectorMemoryOptions
 {
-    public string QdrantUrl { get; set; } = "http://localhost:6333";
+    public Uri QdrantUrl { get; set; } = new Uri("http://localhost:6333");
     public string CollectionName { get; set; } = "infernal_facts";
     public int VectorDimensions { get; set; } = 384; // Default for sentence-transformers/all-MiniLM-L6-v2
-    public bool Enabled { get; set; } = false;
+    public bool Enabled { get; set; }
 }

@@ -86,6 +86,21 @@ public sealed class LiteDbSharedMemory : ISharedMemory, IDisposable
         return Task.FromResult<IEnumerable<Decision>>(decisions);
     }
 
+    public Task DeleteDecisionAsync(string id, CancellationToken ct = default)
+    {
+        var deleted = Decisions.Delete(id);
+        if (deleted)
+        {
+            _logger.LogInformation("Decision deleted: {Id}", id);
+        }
+        else
+        {
+            _logger.LogWarning("Decision not found for deletion: {Id}", id);
+        }
+
+        return Task.CompletedTask;
+    }
+
     #endregion
 
     #region Facts
@@ -122,6 +137,63 @@ public sealed class LiteDbSharedMemory : ISharedMemory, IDisposable
             .ToList();
 
         return Task.FromResult<IEnumerable<Fact>>(facts);
+    }
+
+    public Task UpdateFactAsync(Fact fact, string changeReason, CancellationToken ct = default)
+    {
+        var existing = Facts.FindById(fact.Id);
+        if (existing is not null)
+        {
+            // Create version history entry
+            var version = new FactVersion
+            {
+                VersionNumber = existing.Version,
+                Content = existing.Content,
+                Confidence = existing.Confidence,
+                ModifiedAt = existing.LastModifiedAt,
+                ModifiedBy = existing.LastModifiedBy,
+                ChangeReason = changeReason
+            };
+
+            fact.VersionHistory.Insert(0, version);
+            fact.Version = existing.Version + 1;
+            fact.LastModifiedAt = DateTime.UtcNow;
+
+            Facts.Update(fact);
+            _logger.LogInformation("Fact updated: {Id} (v{Version}) - {Reason}", fact.Id, fact.Version, changeReason);
+        }
+        else
+        {
+            _logger.LogWarning("Fact not found for update: {Id}", fact.Id);
+        }
+
+        return Task.CompletedTask;
+    }
+
+    public Task<IEnumerable<FactVersion>> GetFactHistoryAsync(string factId, CancellationToken ct = default)
+    {
+        var fact = Facts.FindById(factId);
+        if (fact is not null)
+        {
+            return Task.FromResult<IEnumerable<FactVersion>>(fact.VersionHistory);
+        }
+
+        return Task.FromResult<IEnumerable<FactVersion>>(Array.Empty<FactVersion>());
+    }
+
+    public Task DeleteFactAsync(string id, CancellationToken ct = default)
+    {
+        var deleted = Facts.Delete(id);
+        if (deleted)
+        {
+            _logger.LogInformation("Fact deleted: {Id}", id);
+        }
+        else
+        {
+            _logger.LogWarning("Fact not found for deletion: {Id}", id);
+        }
+
+        return Task.CompletedTask;
     }
 
     #endregion
@@ -168,6 +240,89 @@ public sealed class LiteDbSharedMemory : ISharedMemory, IDisposable
             .ToList();
 
         return Task.FromResult<IEnumerable<TaskEntry>>(tasks);
+    }
+
+    public Task DeleteTaskAsync(string id, CancellationToken ct = default)
+    {
+        var deleted = Tasks.Delete(id);
+        if (deleted)
+        {
+            _logger.LogInformation("Task deleted: {Id}", id);
+        }
+        else
+        {
+            _logger.LogWarning("Task not found for deletion: {Id}", id);
+        }
+
+        return Task.CompletedTask;
+    }
+
+    #endregion
+
+    #region Visibility-Aware Memory Sharing
+
+    public Task<IEnumerable<Fact>> GetVisibleFactsAsync(string requestingAgentId, AgentRank requestingAgentRank, CancellationToken ct = default)
+    {
+        var allFacts = Facts.FindAll().ToList();
+        var visibleFacts = allFacts.Where(fact => IsFactVisibleToAgent(fact, requestingAgentId, requestingAgentRank)).ToList();
+        
+        _logger.LogDebug("Found {Count} visible facts for agent {AgentId} (rank: {Rank})", 
+            visibleFacts.Count, requestingAgentId, requestingAgentRank);
+        
+        return Task.FromResult<IEnumerable<Fact>>(visibleFacts);
+    }
+
+    public Task<IEnumerable<Fact>> SearchVisibleFactsAsync(
+        string query, 
+        string requestingAgentId, 
+        AgentRank requestingAgentRank, 
+        CancellationToken ct = default)
+    {
+        var matchingFacts = Facts
+            .Query()
+            .Where(x => x.Content.Contains(query) || x.Category.Contains(query))
+            .ToList();
+
+        var visibleFacts = matchingFacts
+            .Where(fact => IsFactVisibleToAgent(fact, requestingAgentId, requestingAgentRank))
+            .ToList();
+        
+        _logger.LogDebug("Found {Count} visible facts matching '{Query}' for agent {AgentId}", 
+            visibleFacts.Count, query, requestingAgentId);
+        
+        return Task.FromResult<IEnumerable<Fact>>(visibleFacts);
+    }
+
+    private bool IsFactVisibleToAgent(Fact fact, string requestingAgentId, AgentRank requestingAgentRank)
+    {
+        // Creator always has access
+        if (fact.CreatedBy == requestingAgentId)
+        {
+            return true;
+        }
+
+        switch (fact.Visibility)
+        {
+            case MemoryVisibility.Public:
+                return true;
+
+            case MemoryVisibility.Private:
+                return false;
+
+            case MemoryVisibility.Shared:
+                return fact.SharedWithAgents.Contains(requestingAgentId);
+
+            case MemoryVisibility.RankBased:
+                if (fact.MinimumRankToView.HasValue)
+                {
+                    // Higher ranks have access (Supreme > Prince > Duke > Worker)
+                    return requestingAgentRank <= fact.MinimumRankToView.Value;
+                }
+                return false;
+
+            default:
+                return false;
+        }
     }
 
     #endregion

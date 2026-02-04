@@ -35,6 +35,22 @@ public class ReActAgent : BaseAgent
 
     public override async Task<AgentMessage> ProcessTaskAsync(AgentMessage task, CancellationToken ct = default)
     {
+        // Handle collaboration requests
+        if (task.Content.StartsWith("[COLLABORATION_REQUEST:", StringComparison.OrdinalIgnoreCase))
+        {
+            return await HandleCollaborationRequestAsync(task, ct);
+        }
+
+        // Handle special commands from Telegram
+        if (task.Payload?.ContainsKey("command") == true)
+        {
+            var command = task.Payload["command"]?.ToString();
+            if (command == "usage" || command == "models")
+            {
+                return await HandleCommandAsync(command, task, ct);
+            }
+        }
+
         Status = AgentStatus.Thinking;
 
         _logger.LogInformation("🔥 {AgentName} processing task: {Content}", Name, task.Content);
@@ -198,18 +214,26 @@ public class ReActAgent : BaseAgent
                 {
                     var parameters = ParseActionInput(actionInput, action);
 
-                    // Add agent_id for memory and agent tools
+                    // Add agent context for memory and agent tools
                     if (action.Contains("memory", StringComparison.OrdinalIgnoreCase) ||
                         action.Contains("agent", StringComparison.OrdinalIgnoreCase))
                     {
                         parameters["agent_id"] = Id;
+                        parameters["agent_rank"] = Rank.ToString();
                         parameters["parent_agent_id"] = Id;
                     }
 
                     _logger.LogDebug("Executing tool {Tool} with parameters: {Parameters}",
                         action, JsonSerializer.Serialize(parameters));
 
-                    var toolResult = await tool.ExecuteAsync(parameters, ct);
+                    // Use ExecuteToolWithTrackingAsync for automatic learning integration
+                    var toolResult = await _toolRegistry.ExecuteToolWithTrackingAsync(
+                        action.Trim(),
+                        parameters,
+                        Id,
+                        Rank.ToString(),
+                        ct);
+                    
                     toolCalls.Add($"{action}({actionInput})");
 
                     var observation = toolResult.Success
@@ -306,6 +330,248 @@ public class ReActAgent : BaseAgent
             ["content"] = input,
             ["text"] = input,
             ["message"] = input
+        };
+    }
+
+    /// <summary>
+    /// Handles special Telegram commands (usage, models)
+    /// </summary>
+    private async Task<AgentMessage> HandleCommandAsync(string command, AgentMessage task, CancellationToken ct)
+    {
+        _logger.LogInformation("📊 {AgentName} handling command: {Command}", Name, command);
+
+        try
+        {
+            var response = command switch
+            {
+                "usage" => await GenerateUsageReportAsync(ct),
+                "models" => await GenerateModelsReportAsync(ct),
+                _ => $"❌ Unknown command: {command}"
+            };
+
+            // Get chat ID from payload
+            var chatId = task.Payload?.ContainsKey("telegram_chat_id") == true
+                ? Convert.ToInt64(task.Payload["telegram_chat_id"])
+                : 0;
+
+            // Send response via Telegram if chat ID available
+            if (chatId != 0)
+            {
+                var telegramTool = _toolRegistry.GetTool("telegram_send");
+                if (telegramTool != null)
+                {
+                    await telegramTool.ExecuteAsync(new Dictionary<string, object>
+                    {
+                        ["chat_id"] = chatId,
+                        ["message"] = response
+                    }, ct);
+                }
+            }
+
+            return new AgentMessage
+            {
+                FromAgentId = Id,
+                ToAgentId = task.FromAgentId,
+                Type = MessageType.Report,
+                Content = response
+            };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to handle command: {Command}", command);
+            return new AgentMessage
+            {
+                FromAgentId = Id,
+                ToAgentId = task.FromAgentId,
+                Type = MessageType.Report,
+                Content = $"❌ Error handling command: {ex.Message}"
+            };
+        }
+    }
+
+    /// <summary>
+    /// Generate token usage statistics report
+    /// </summary>
+    private async Task<string> GenerateUsageReportAsync(CancellationToken ct)
+    {
+        // Get TokenUsageTracker from tool registry
+        var tokenTracker = _toolRegistry.GetService<TokenUsageTracker>();
+        
+        if (tokenTracker == null)
+        {
+            _logger.LogWarning("TokenUsageTracker not available");
+            return "⚠️ Token usage tracking not available";
+        }
+
+        var stats = tokenTracker.GetOverallStats();
+        
+        var report = new StringBuilder();
+        report.AppendLine("📊 **Token Usage Statistics**\n");
+        report.AppendLine($"**Total Calls:** {stats.TotalCalls:N0}");
+        report.AppendLine($"**Input Tokens:** {stats.TotalInputTokens:N0}");
+        report.AppendLine($"**Output Tokens:** {stats.TotalOutputTokens:N0}");
+        report.AppendLine($"**Total Tokens:** {stats.TotalTokens:N0}");
+        report.AppendLine($"**Avg Duration:** {stats.AverageDuration.TotalMilliseconds:F0}ms\n");
+
+        if (stats.ModelBreakdown.Any())
+        {
+            report.AppendLine("**Per-Model Breakdown:**");
+            foreach (var kvp in stats.ModelBreakdown.OrderByDescending(x => x.Value.CallCount))
+            {
+                var totalTokens = kvp.Value.TotalInputTokens + kvp.Value.TotalOutputTokens;
+                report.AppendLine($"  • {kvp.Key}: {kvp.Value.CallCount:N0} calls, {totalTokens:N0} tokens");
+            }
+        }
+
+        await Task.CompletedTask; // Keep async signature for consistency
+        return report.ToString();
+    }
+
+    /// <summary>
+    /// Generate available LLM models report
+    /// </summary>
+    private async Task<string> GenerateModelsReportAsync(CancellationToken ct)
+    {
+        // Get MultiModelLlmClient from tool registry
+        var llmClient = _toolRegistry.GetService<MultiModelLlmClient>();
+        
+        if (llmClient == null)
+        {
+            _logger.LogWarning("MultiModelLlmClient not available");
+            return "⚠️ LLM model information not available";
+        }
+
+        var models = llmClient.GetAvailableModels();
+        
+        var report = new StringBuilder();
+        report.AppendLine("🧠 **Available LLM Models**\n");
+        
+        foreach (var model in models)
+        {
+            report.AppendLine($"**{model.Name}**");
+            report.AppendLine($"  Complexity: {model.Complexity}");
+            report.AppendLine($"  Max Tokens: {model.MaxTokens:N0}");
+            report.AppendLine($"  Temperature: {model.Temperature}");
+            report.AppendLine();
+        }
+
+        await Task.CompletedTask; // Keep async signature for consistency
+        return report.ToString();
+    }
+
+    /// <summary>
+    /// Handle collaboration request from other agents
+    /// </summary>
+    private async Task<AgentMessage> HandleCollaborationRequestAsync(AgentMessage message, CancellationToken ct)
+    {
+        try
+        {
+            // Parse collaboration request ID and task
+            var match = Regex.Match(message.Content, @"\[COLLABORATION_REQUEST:([^\]]+)\]\s*(.+)", RegexOptions.Singleline);
+            if (!match.Success)
+            {
+                _logger.LogWarning("Invalid collaboration request format: {Content}", message.Content);
+                return CreateErrorResponse(message.FromAgentId, "Invalid collaboration request format");
+            }
+
+            var requestId = match.Groups[1].Value;
+            var task = match.Groups[2].Value;
+
+            _logger.LogInformation(
+                "🤝 {AgentName} processing collaboration request {RequestId}: {Task}",
+                Name,
+                requestId,
+                task.Length > 100 ? task[..100] + "..." : task);
+
+            Status = AgentStatus.Thinking;
+
+            // Process the task to generate response
+            var context = await BuildContextAsync(message, ct);
+            var result = await RunReActLoopAsync(context, task, ct);
+
+            Status = AgentStatus.Idle;
+
+            // Calculate confidence based on reasoning quality and tool success
+            var confidence = CalculateConfidence(result);
+
+            // Submit response to collaboration service
+            var collaborationService = _toolRegistry.GetService<IAgentCollaborationService>();
+            if (collaborationService != null)
+            {
+                var response = new AgentResponse
+                {
+                    AgentId = Id,
+                    AgentRank = Rank,
+                    Response = result.FinalAnswer,
+                    Confidence = confidence,
+                    Reasoning = result.Reasoning,
+                    Timestamp = DateTime.UtcNow,
+                    ProcessingTimeMs = result.Iterations * 1000 // Rough estimate
+                };
+
+                await collaborationService.SubmitResponseAsync(requestId, response, ct);
+
+                _logger.LogInformation(
+                    "✅ {AgentName} submitted collaboration response with confidence {Confidence:F2}",
+                    Name,
+                    confidence);
+            }
+            else
+            {
+                _logger.LogWarning("IAgentCollaborationService not available");
+            }
+
+            // Return acknowledgment (collaboration service handles actual result aggregation)
+            return new AgentMessage
+            {
+                FromAgentId = Id,
+                ToAgentId = message.FromAgentId,
+                Type = MessageType.Report,
+                Content = $"Collaboration response submitted: {result.FinalAnswer[..Math.Min(100, result.FinalAnswer.Length)]}..."
+            };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to handle collaboration request");
+            Status = AgentStatus.Idle;
+            return CreateErrorResponse(message.FromAgentId, $"Error: {ex.Message}");
+        }
+    }
+
+    private double CalculateConfidence(ReActResult result)
+    {
+        // Base confidence on successful completion
+        var confidence = 0.5;
+
+        // Increase confidence if reached conclusion within iterations
+        if (result.Iterations < MaxIterations)
+        {
+            confidence += 0.2;
+        }
+
+        // Increase confidence if tools were used successfully
+        if (result.ToolCalls.Count > 0)
+        {
+            confidence += 0.2;
+        }
+
+        // Increase confidence if reasoning is detailed
+        if (result.Reasoning.Length > 200)
+        {
+            confidence += 0.1;
+        }
+
+        return Math.Min(1.0, confidence);
+    }
+
+    private AgentMessage CreateErrorResponse(string toAgentId, string errorMessage)
+    {
+        return new AgentMessage
+        {
+            FromAgentId = Id,
+            ToAgentId = toAgentId,
+            Type = MessageType.Report,
+            Content = $"❌ {errorMessage}"
         };
     }
 

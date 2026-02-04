@@ -13,7 +13,7 @@ public class MemoryWriteTool : ITool
     private readonly ILogger<MemoryWriteTool> _logger;
 
     public string Name => "write_memory";
-    public string Description => "Write to shared memory. Types: decision, fact, task. Requires type-specific parameters.";
+    public string Description => "Write to shared memory. Types: decision, fact, task. Requires type-specific parameters. For facts: optional visibility (Private/RankBased/Shared/Public), shared_with (comma-separated agent IDs), min_rank (Supreme/Prince/Duke/Worker).";
 
     public MemoryWriteTool(ISharedMemory memory, ILogger<MemoryWriteTool> logger)
     {
@@ -43,11 +43,11 @@ public class MemoryWriteTool : ITool
 
         try
         {
-            var output = type.ToLower() switch
+            var output = type switch
             {
-                "decision" => await WriteDecisionAsync(parameters, agentId, ct),
-                "fact" => await WriteFactAsync(parameters, agentId, ct),
-                "task" => await WriteTaskAsync(parameters, agentId, ct),
+                var t when t.Equals("decision", StringComparison.OrdinalIgnoreCase) => await WriteDecisionAsync(parameters, agentId, ct),
+                var t when t.Equals("fact", StringComparison.OrdinalIgnoreCase) => await WriteFactAsync(parameters, agentId, ct),
+                var t when t.Equals("task", StringComparison.OrdinalIgnoreCase) => await WriteTaskAsync(parameters, agentId, ct),
                 _ => throw new ArgumentException($"Invalid type: {type}")
             };
 
@@ -96,17 +96,55 @@ public class MemoryWriteTool : ITool
         var confidenceObj = parameters.GetValueOrDefault("confidence");
         var confidence = confidenceObj is double d ? d : 1.0;
 
+        // Support visibility settings (default: Private)
+        var visibilityStr = parameters.GetValueOrDefault("visibility") as string;
+        var visibility = ParseVisibility(visibilityStr);
+
+        var sharedWithStr = parameters.GetValueOrDefault("shared_with") as string;
+        var sharedWith = string.IsNullOrEmpty(sharedWithStr)
+            ? new List<string>()
+            : sharedWithStr.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
+
+        var minRankStr = parameters.GetValueOrDefault("min_rank") as string;
+        AgentRank? minRank = null;
+        if (!string.IsNullOrEmpty(minRankStr) && Enum.TryParse<AgentRank>(minRankStr, true, out var parsedRank))
+        {
+            minRank = parsedRank;
+        }
+
         var fact = new Fact
         {
             CreatedBy = agentId,
             Category = category,
             Content = content,
             Source = source,
-            Confidence = confidence
+            Confidence = confidence,
+            Visibility = visibility,
+            SharedWithAgents = sharedWith,
+            MinimumRankToView = minRank
         };
 
         await _memory.AddFactAsync(fact, ct);
-        return $"Fact recorded in category: {category}";
+        
+        var visibilityInfo = visibility switch
+        {
+            MemoryVisibility.Public => " (public - visible to all)",
+            MemoryVisibility.RankBased => $" (rank-based - {minRank}+)",
+            MemoryVisibility.Shared => $" (shared with: {string.Join(", ", sharedWith)})",
+            _ => " (private)"
+        };
+        
+        return $"Fact recorded in category: {category}{visibilityInfo}";
+    }
+
+    private MemoryVisibility ParseVisibility(string? visibilityStr)
+    {
+        if (string.IsNullOrEmpty(visibilityStr))
+            return MemoryVisibility.Private; // Default: private
+
+        return Enum.TryParse<MemoryVisibility>(visibilityStr, true, out var visibility)
+            ? visibility
+            : MemoryVisibility.Private;
     }
 
     private async Task<string> WriteTaskAsync(Dictionary<string, object> parameters, string agentId, CancellationToken ct)

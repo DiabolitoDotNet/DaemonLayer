@@ -29,5 +29,6 @@ public enum AgentStatus
     Thinking,
     ActingWithTool,
     Waiting,
+    Suspended,  // Hibernated, can be resumed
     Terminated
 }

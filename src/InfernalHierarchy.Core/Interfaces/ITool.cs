@@ -28,4 +28,6 @@ public interface IToolRegistry
     ITool? GetTool(string name);
     IEnumerable<ITool> GetAllTools();
     IEnumerable<ITool> GetToolsForAgent(string[] toolNames);
+    T? GetService<T>() where T : class;
+    Task<ToolResult> ExecuteToolWithTrackingAsync(string toolName, Dictionary<string, object> parameters, string? agentId = null, string? agentRank = null, CancellationToken ct = default);
 }

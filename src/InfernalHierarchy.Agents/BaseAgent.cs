@@ -68,6 +68,53 @@ public abstract class BaseAgent : IAgent
         }
     }
 
+    public virtual async Task SuspendAsync(CancellationToken ct = default)
+    {
+        _logger.LogInformation("😴 {AgentName} suspending (hibernation)...", Name);
+
+        if (Status == AgentStatus.Suspended)
+        {
+            _logger.LogWarning("{AgentName} is already suspended", Name);
+            return;
+        }
+
+        if (Status == AgentStatus.Terminated)
+        {
+            _logger.LogWarning("Cannot suspend terminated agent {AgentName}", Name);
+            return;
+        }
+
+        Status = AgentStatus.Suspended;
+        _cts?.Cancel(); // Stop execution loop
+
+        if (_executionTask != null)
+        {
+            await _executionTask;
+        }
+
+        _logger.LogInformation("✅ {AgentName} suspended successfully", Name);
+    }
+
+    public virtual async Task ResumeAsync(CancellationToken ct = default)
+    {
+        _logger.LogInformation("🔥 {AgentName} resuming from suspension...", Name);
+
+        if (Status != AgentStatus.Suspended)
+        {
+            _logger.LogWarning("{AgentName} is not suspended (Status: {Status})", Name, Status);
+            return;
+        }
+
+        // Restart execution loop
+        _cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        _executionTask = RunExecutionLoopAsync(_cts.Token);
+
+        Status = AgentStatus.Idle;
+        _logger.LogInformation("✅ {AgentName} resumed successfully", Name);
+
+        await Task.CompletedTask;
+    }
+
     /// <summary>
     /// Main execution loop - listens to message bus and processes tasks
     /// </summary>

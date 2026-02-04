@@ -80,6 +80,9 @@ builder.Services.AddOpenTelemetry()
 builder.Services.AddSingleton<ResiliencePolicies>();
 builder.Services.AddSingleton<IResiliencePolicyProvider, ResiliencePolicyProvider>();
 
+// Exception handling
+builder.Services.AddSingleton<GlobalExceptionHandler>();
+
 // Health checks
 builder.Services.AddHealthChecks()
     .AddCheck<OllamaHealthCheck>("ollama", HealthStatus.Degraded, tags: new[] { "llm", "external" })
@@ -97,19 +100,41 @@ builder.Services.AddSingleton<IPersonaLoader, JsonPersonaLoader>();
 
 // Agent system
 builder.Services.AddSingleton<AgentRegistry>();
+builder.Services.AddSingleton<IAgentRegistry>(sp => sp.GetRequiredService<AgentRegistry>());
 builder.Services.AddSingleton<IAgentFactory, AgentFactory>();
 
-// Tools
-builder.Services.AddSingleton<IToolRegistry, ToolRegistry>();
+// Tools - inject IServiceProvider for command handlers
+builder.Services.AddSingleton<IToolRegistry>(sp =>
+{
+    var logger = sp.GetRequiredService<ILogger<ToolRegistry>>();
+    var learningService = sp.GetRequiredService<AgentLearningService>();
+    return new ToolRegistry(logger, learningService, sp);
+});
 builder.Services.AddSingleton<OllamaClient>();
 
 // Advanced LLM Services
 builder.Services.AddSingleton<MultiModelLlmClient>();
 builder.Services.AddSingleton<TokenUsageTracker>();
+builder.Services.AddSingleton<AgentLearningService>();
 
 // Advanced Memory Services
+builder.Services.AddSingleton<OnnxEmbeddingService>();
 builder.Services.AddSingleton<VectorMemoryService>();
+builder.Services.AddSingleton<ISkillTreeService, SkillTreeService>();
 builder.Services.AddHostedService<MemoryPruningService>();
+
+// Agent Collaboration
+builder.Services.AddSingleton<IAgentCollaborationService, AgentCollaborationService>();
+
+// Agent Templates
+builder.Services.AddSingleton<ITemplateService>(sp =>
+{
+    var logger = sp.GetRequiredService<ILogger<TemplateService>>();
+    var agentFactory = sp.GetRequiredService<IAgentFactory>();
+    var skillTreeService = sp.GetRequiredService<ISkillTreeService>();
+    var templatesDirectory = Path.Combine(AppContext.BaseDirectory, "../../../../../../templates");
+    return new TemplateService(logger, agentFactory, skillTreeService, templatesDirectory);
+});
 
 // Event Sourcing
 builder.Services.AddSingleton<EventStore>();
@@ -127,7 +152,10 @@ builder.Services.AddSingleton<ITool>(sp => sp.GetRequiredService<WebSearchTool>(
 builder.Services.AddSingleton<ITool, CreateSubAgentTool>();
 builder.Services.AddSingleton<ITool, MemoryReadTool>();
 builder.Services.AddSingleton<ITool, MemoryWriteTool>();
+builder.Services.AddSingleton<ITool, RequestCollaborationTool>();
 builder.Services.AddSingleton<ITool, TelegramSendTool>();
+builder.Services.AddSingleton<ITool, CreateAgentFromTemplateTool>();
+builder.Services.AddSingleton<ITool, ListTemplatesTool>();
 
 // Register all tools in the registry
 builder.Services.AddHostedService<ToolRegistrationService>();

@@ -57,11 +57,11 @@ public class ResourceLimitService
 
     public bool CanAddMemoryEntry(string entryType, int currentCount)
     {
-        return entryType.ToLower() switch
+        return entryType switch
         {
-            "decision" => currentCount < _limits.MaxMemoryDecisions,
-            "fact" => currentCount < _limits.MaxMemoryFacts,
-            "task" => currentCount < _limits.MaxMemoryTasks,
+            var t when t.Equals("decision", StringComparison.OrdinalIgnoreCase) => currentCount < _limits.MaxMemoryDecisions,
+            var t when t.Equals("fact", StringComparison.OrdinalIgnoreCase) => currentCount < _limits.MaxMemoryFacts,
+            var t when t.Equals("task", StringComparison.OrdinalIgnoreCase) => currentCount < _limits.MaxMemoryTasks,
             _ => true
         };
     }

@@ -80,6 +80,107 @@ Add the `ToolPermissions` section to `appsettings.json`:
    ├─ Agent blacklisted → DENY
    └─ Not blacklisted → Continue
 
+5. Check WhitelistedAgents (if configured)
+   ├─ List empty → ALLOW (rank check passed)
+   ├─ Agent in whitelist → ALLOW
+   └─ Agent not in whitelist → DENY
+
+6. ALLOW: Tool execution proceeds
+```
+
+### Usage Example
+
+```csharp
+// Inject ToolAuthorizationService
+private readonly IToolAuthorizationService _authService;
+
+public async Task<ToolResult> ExecuteToolAsync(
+    string agentId, 
+    string agentName, 
+    AgentRank agentRank, 
+    string toolName)
+{
+    if (!await _authService.IsAuthorizedAsync(agentId, agentName, agentRank, toolName))
+    {
+        _logger.LogWarning(
+            "Agent {AgentId} ({Rank}) denied access to tool {Tool}",
+            agentId, agentRank, toolName);
+            
+        return new ToolResult 
+        { 
+            Success = false, 
+            Output = "Access denied: Insufficient permissions" 
+        };
+    }
+    
+    // Proceed with tool execution
+    return await _tool.ExecuteAsync(parameters, ct);
+}
+```
+
+### Auditing
+
+All authorization attempts are logged:
+
+```
+[INF] Tool authorization check: Agent=vassago, Rank=Duke, Tool=web_search, Authorized=True
+[WRN] Tool authorization denied: Agent=generic_worker_5, Rank=Worker, Tool=create_sub_agent, Reason=RankNotAllowed
+```
+
+### Security Considerations
+
+#### System Monitoring Commands (New)
+The `/usage` and `/models` commands in ReActAgent provide **read-only system monitoring** capabilities:
+
+- **Risk Level**: Low (no write operations, no external API calls)
+- **Authorization**: Commands only execute when sent via Telegram by **AllowedUserIds**
+- **Data Exposure**: 
+  - Token usage stats (aggregate numbers only, no prompt content)
+  - Model configurations (names, parameters - already visible in appsettings.json)
+- **Recommendations**:
+  1. Restrict `Telegram.AllowedUserIds` to system administrators only
+  2. Consider rate limiting if agents generate high message volume
+  3. Audit Telegram chat logs for command usage patterns
+
+**Example Telegram Security Configuration:**
+```json
+{
+  "Telegram": {
+    "BotToken": "${TELEGRAM_BOT_TOKEN}",  // User secret
+    "AllowedUserIds": [123456789],         // Single admin only
+    "CommandRateLimit": {
+      "MaxCommandsPerMinute": 10,
+      "BurstSize": 3
+    }
+  }
+}
+```
+
+#### Agent Learning Metrics
+The AgentLearningService stores performance metrics in shared memory:
+
+- **Data Stored**: Tool names, success rates, latency measurements, agent IDs
+- **Privacy**: No user input or LLM response content is stored
+- **Retention**: Subject to MemoryPruningService cleanup policies (default 30 days)
+- **Recommendations**:
+  1. Set appropriate `MemoryOptions.FactRetentionDays` for metric archival
+  2. Ensure LiteDB file permissions restrict read access to application user
+  3. Implement backup encryption if metrics contain sensitive operation patterns
+
+**Example Learning Metrics Configuration:**
+```json
+{
+  "MemoryOptions": {
+    "FactRetentionDays": 30,
+    "LowConfidenceThreshold": 0.3,
+    "PruningIntervalHours": 24
+  }
+}
+```
+
+---
+   └─ Not blacklisted → Continue
+
 5. Check WhitelistedAgents (if populated)
    ├─ List is empty → ALLOW
    ├─ Agent in whitelist → ALLOW

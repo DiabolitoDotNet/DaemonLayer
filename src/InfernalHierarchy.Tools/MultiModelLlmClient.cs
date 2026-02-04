@@ -36,7 +36,7 @@ public class MultiModelLlmClient : IDisposable
         {
             var clientOptions = new AzureOpenAIClientOptions();
             var apiKey = new ApiKeyCredential(model.ApiKey ?? "ollama-local");
-            var endpoint = new Uri(model.BaseUrl);
+            var endpoint = model.BaseUrl;
             var azureClient = new AzureOpenAIClient(endpoint, apiKey, clientOptions);
 
             _modelClients[model.Name] = azureClient.GetChatClient(model.Name);
@@ -232,6 +232,14 @@ public class MultiModelLlmClient : IDisposable
         return (int)Math.Ceiling(text.Length / 4.0);
     }
 
+    /// <summary>
+    /// Get list of all available models
+    /// </summary>
+    public List<ModelConfig> GetAvailableModels()
+    {
+        return _options.Models.OrderBy(m => m.Priority).ToList();
+    }
+
     public void Dispose()
     {
         // ChatClients are managed by AzureOpenAIClient
@@ -247,7 +255,7 @@ public class LlmOptions
 public class ModelConfig
 {
     public string Name { get; set; } = string.Empty;
-    public string BaseUrl { get; set; } = "http://localhost:11434/v1";
+    public Uri BaseUrl { get; set; } = new Uri("http://localhost:11434/v1");
     public string? ApiKey { get; set; }
     public TaskComplexity Complexity { get; set; } = TaskComplexity.Medium;
     public int Priority { get; set; } = 10;

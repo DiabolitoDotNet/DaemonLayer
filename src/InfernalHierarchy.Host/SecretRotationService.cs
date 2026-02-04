@@ -20,7 +20,7 @@ public class SecretRotationService : BackgroundService
     private readonly TimeSpan _checkInterval = TimeSpan.FromMinutes(5);
 
     private string? _lastTelegramToken;
-    private string? _lastOllamaUrl;
+    private Uri? _lastOllamaUrl;
     private string? _lastBraveApiKey;
 
     public SecretRotationService(
@@ -101,9 +101,9 @@ public class SecretRotationService : BackgroundService
 
     private void OnOllamaOptionsChanged(OllamaOptions newOptions, string? name)
     {
-        if (newOptions.BaseUrl != _lastOllamaUrl && !string.IsNullOrEmpty(newOptions.BaseUrl))
+        if (newOptions.BaseUrl != _lastOllamaUrl && newOptions.BaseUrl is not null)
         {
-            _logger.LogWarning("🔄 Ollama base URL changed: {OldUrl} → {NewUrl}", _lastOllamaUrl, newOptions.BaseUrl);
+            _logger.LogWarning("🔄 Ollama base URL changed: {OldUrl} → {NewUrl}", _lastOllamaUrl?.ToString() ?? "null", newOptions.BaseUrl.ToString());
             _lastOllamaUrl = newOptions.BaseUrl;
 
             // Note: OllamaClient should use IOptionsMonitor to pick up changes automatically

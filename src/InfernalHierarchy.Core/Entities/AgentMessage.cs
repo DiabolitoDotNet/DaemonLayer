@@ -22,5 +22,6 @@ public enum MessageType
     Command,
     Notification,
     ToolResult,
-    Broadcast
+    Broadcast,
+    CollaborationRequest
 }
