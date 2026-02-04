@@ -18,7 +18,7 @@ public class CommandHandlerTests
     private readonly Mock<ISharedMemory> _mockSharedMemory;
     private readonly Mock<IToolRegistry> _mockToolRegistry;
     private readonly Mock<IAgentFactory> _mockAgentFactory;
-    private readonly Mock<OllamaClient> _mockOllamaClient;
+    private readonly Mock<ILlmClient> _mockOllamaClient;
     private readonly Mock<ILogger<ReActAgent>> _mockLogger;
 
     public CommandHandlerTests()
@@ -27,7 +27,7 @@ public class CommandHandlerTests
         _mockSharedMemory = new Mock<ISharedMemory>();
         _mockToolRegistry = new Mock<IToolRegistry>();
         _mockAgentFactory = new Mock<IAgentFactory>();
-        _mockOllamaClient = new Mock<OllamaClient>();
+        _mockOllamaClient = new Mock<ILlmClient>();
         _mockLogger = new Mock<ILogger<ReActAgent>>();
     }
 

@@ -1,4 +1,5 @@
 using FluentAssertions;
+using InfernalHierarchy.Core;
 using InfernalHierarchy.Core.Interfaces;
 using InfernalHierarchy.Tools;
 using Microsoft.Extensions.Logging;
@@ -103,5 +104,57 @@ public class ToolRegistryTests
         mock.Setup(x => x.Name).Returns(name);
         mock.Setup(x => x.Description).Returns($"Description for {name}");
         return mock.Object;
+    }
+
+    [Fact]
+    public async Task ExecuteToolWithTrackingAsync_ShouldAppendEvent_OnSuccess()
+    {
+        var logger = Mock.Of<ILogger<ToolRegistry>>();
+        var eventSink = new Mock<IAgentEventSink>();
+        var registry = new ToolRegistry(logger, eventSink: eventSink.Object);
+
+        var tool = new Mock<ITool>();
+        tool.Setup(x => x.Name).Returns("test_tool");
+        tool.Setup(x => x.Description).Returns("test");
+        tool.Setup(x => x.ExecuteAsync(It.IsAny<Dictionary<string, object>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ToolResult { Success = true, Output = "ok" });
+        registry.RegisterTool(tool.Object);
+
+        var result = await registry.ExecuteToolWithTrackingAsync(
+            "test_tool",
+            new Dictionary<string, object> { ["a"] = 1 },
+            agentId: "agent-1",
+            agentRank: "Duke",
+            ct: CancellationToken.None);
+
+        result.Success.Should().BeTrue();
+        eventSink.Verify(x => x.AppendEvent(It.Is<AgentEvent>(e =>
+            e.AgentId == "agent-1" && e.Type == EventType.ToolExecuted && (string)e.Metadata["tool"] == "test_tool")), Times.Once);
+    }
+
+    [Fact]
+    public async Task ExecuteToolWithTrackingAsync_ShouldAppendErrorEvent_OnException()
+    {
+        var logger = Mock.Of<ILogger<ToolRegistry>>();
+        var eventSink = new Mock<IAgentEventSink>();
+        var registry = new ToolRegistry(logger, eventSink: eventSink.Object);
+
+        var tool = new Mock<ITool>();
+        tool.Setup(x => x.Name).Returns("boom");
+        tool.Setup(x => x.Description).Returns("boom");
+        tool.Setup(x => x.ExecuteAsync(It.IsAny<Dictionary<string, object>>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("nope"));
+        registry.RegisterTool(tool.Object);
+
+        var result = await registry.ExecuteToolWithTrackingAsync(
+            "boom",
+            new Dictionary<string, object>(),
+            agentId: "agent-1",
+            agentRank: "Duke",
+            ct: CancellationToken.None);
+
+        result.Success.Should().BeFalse();
+        eventSink.Verify(x => x.AppendEvent(It.Is<AgentEvent>(e =>
+            e.AgentId == "agent-1" && e.Type == EventType.ErrorOccurred && (string)e.Metadata["tool"] == "boom")), Times.Once);
     }
 }

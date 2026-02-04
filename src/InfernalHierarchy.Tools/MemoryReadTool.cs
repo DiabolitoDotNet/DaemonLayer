@@ -61,6 +61,10 @@ public class MemoryReadTool : ITool
                 Metadata = new Dictionary<string, object> { ["type"] = type }
             };
         }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to read memory: {Type}", type);

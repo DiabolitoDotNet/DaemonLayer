@@ -27,6 +27,8 @@ public class ToolExecutionTests
 
         var parameters = new Dictionary<string, object>
         {
+            { "type", "fact" },
+            { "agent_id", "agent1" },
             { "content", "Test fact content" },
             { "category", "test" },
             { "source", "unit_test" },
@@ -39,8 +41,44 @@ public class ToolExecutionTests
         // Assert
         Assert.True(result.Success);
         mockMemory.Verify(x => x.AddFactAsync(
-            It.Is<Fact>(f => f.Content == "Test fact content" && f.Category == "test"),
+            It.Is<Fact>(f => f.Content == "Test fact content" && f.Category == "test" && f.CreatedBy == "agent1"),
             It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task MemoryWriteTool_AddFact_WhenVectorMemoryAvailable_IndexesFact()
+    {
+        // Arrange
+        var mockMemory = new Mock<ISharedMemory>();
+        var mockVectorMemory = new Mock<IVectorMemory>();
+        var mockLogger = new Mock<ILogger<MemoryWriteTool>>();
+
+        mockVectorMemory
+            .Setup(x => x.IndexFactAsync(It.IsAny<Fact>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        var tool = new MemoryWriteTool(mockMemory.Object, mockVectorMemory.Object, mockLogger.Object);
+
+        var parameters = new Dictionary<string, object>
+        {
+            { "type", "fact" },
+            { "agent_id", "agent1" },
+            { "content", "Test fact content" },
+            { "category", "test" },
+            { "source", "unit_test" },
+            { "confidence", 1.0 }
+        };
+
+        // Act
+        var result = await tool.ExecuteAsync(parameters, CancellationToken.None);
+
+        // Assert
+        Assert.True(result.Success);
+        mockVectorMemory.Verify(x => x.IndexFactAsync(
+            It.Is<Fact>(f => f.Content == "Test fact content" && f.Category == "test" && f.CreatedBy == "agent1"),
+            It.IsAny<CancellationToken>()), Times.Once);
+
+        mockMemory.Verify(x => x.AddFactAsync(It.IsAny<Fact>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
@@ -70,14 +108,21 @@ public class ToolExecutionTests
             }
         };
 
-        mockMemory.Setup(x => x.SearchFactsAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+        mockMemory.Setup(x => x.SearchVisibleFactsAsync(
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<AgentRank>(),
+                It.IsAny<CancellationToken>()))
             .ReturnsAsync(facts);
 
         var tool = new MemoryReadTool(mockMemory.Object, mockLogger.Object);
 
         var parameters = new Dictionary<string, object>
         {
-            { "query", "test" }
+            { "type", "facts" },
+            { "query", "test" },
+            { "agent_id", "agent1" },
+            { "agent_rank", "Worker" }
         };
 
         // Act
@@ -99,6 +144,7 @@ public class ToolExecutionTests
         var mockAgent = new Mock<IAgent>();
         mockAgent.SetupGet(x => x.Id).Returns("new_agent_id");
         mockAgent.SetupGet(x => x.Name).Returns("TestAgent");
+        mockAgent.Setup(x => x.StartAsync(It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
 
         mockFactory.Setup(x => x.CreateAgentAsync(
             It.IsAny<string>(),
@@ -111,9 +157,9 @@ public class ToolExecutionTests
 
         var parameters = new Dictionary<string, object>
         {
-            { "name", "TestAgent" },
+            { "persona_name", "TestAgent" },
             { "rank", "Duke" },
-            { "parent_agent_id", "parent1" }
+            { "parent_id", "parent1" }
         };
 
         // Act
@@ -153,8 +199,12 @@ public class ToolExecutionTests
         var mockMemory = new Mock<ISharedMemory>();
         var mockLogger = new Mock<ILogger<MemoryReadTool>>();
 
-        mockMemory.Setup(x => x.SearchFactsAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .Returns(async (string query, CancellationToken ct) =>
+        mockMemory.Setup(x => x.SearchVisibleFactsAsync(
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<AgentRank>(),
+                It.IsAny<CancellationToken>()))
+            .Returns(async (string query, string agentId, AgentRank agentRank, CancellationToken ct) =>
             {
                 await Task.Delay(10000, ct); // Long delay
                 return new List<Fact>();
@@ -164,10 +214,16 @@ public class ToolExecutionTests
 
         using var cts = new CancellationTokenSource(100); // 100ms timeout
 
-        var parameters = new Dictionary<string, object> { { "query", "test" } };
+        var parameters = new Dictionary<string, object>
+        {
+            { "type", "facts" },
+            { "query", "test" },
+            { "agent_id", "agent1" },
+            { "agent_rank", "Worker" }
+        };
 
         // Act & Assert
-        await Assert.ThrowsAsync<OperationCanceledException>(async () =>
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(async () =>
         {
             await tool.ExecuteAsync(parameters, cts.Token);
         });
@@ -180,7 +236,11 @@ public class ToolExecutionTests
         var mockMemory = new Mock<ISharedMemory>();
         var mockLogger = new Mock<ILogger<MemoryReadTool>>();
 
-        mockMemory.Setup(x => x.SearchFactsAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+        mockMemory.Setup(x => x.SearchVisibleFactsAsync(
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<AgentRank>(),
+                It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<Fact>
             {
                 new Fact
@@ -194,7 +254,13 @@ public class ToolExecutionTests
             });
 
         var tool = new MemoryReadTool(mockMemory.Object, mockLogger.Object);
-        var parameters = new Dictionary<string, object> { { "query", "test" } };
+        var parameters = new Dictionary<string, object>
+        {
+            { "type", "facts" },
+            { "query", "test" },
+            { "agent_id", "agent1" },
+            { "agent_rank", "Worker" }
+        };
 
         // Act
         var tasks = Enumerable.Range(0, 10).Select(_ =>
@@ -222,6 +288,7 @@ public class ToolExecutionTests
         var parameters = new Dictionary<string, object>
         {
             { "type", "decision" },
+            { "agent_id", "agent1" },
             { "context", "Test context" },
             { "action", "Test action" },
             { "reasoning", "Test reasoning" }
@@ -250,14 +317,21 @@ public class ToolExecutionTests
             new Fact { Id = "2", Category = "technical", Content = "Another technical fact", Source = "test", CreatedBy = "agent1" }
         };
 
-        mockMemory.Setup(x => x.GetFactsByCategoryAsync("technical", It.IsAny<CancellationToken>()))
+        mockMemory.Setup(x => x.SearchVisibleFactsAsync(
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<AgentRank>(),
+                It.IsAny<CancellationToken>()))
             .ReturnsAsync(facts);
 
         var tool = new MemoryReadTool(mockMemory.Object, mockLogger.Object);
 
         var parameters = new Dictionary<string, object>
         {
-            { "category", "technical" }
+            { "type", "facts" },
+            { "query", "technical" },
+            { "agent_id", "agent1" },
+            { "agent_rank", "Worker" }
         };
 
         // Act
@@ -289,13 +363,16 @@ public class ToolExecutionTests
     }
 
     [Fact]
-    public void ToolRegistry_GetNonExistentTool_ThrowsException()
+    public void ToolRegistry_GetNonExistentTool_ReturnsNull()
     {
         // Arrange
         var mockLogger = new Mock<ILogger<ToolRegistry>>();
         var registry = new ToolRegistry(mockLogger.Object);
 
-        // Act & Assert
-        Assert.Throws<KeyNotFoundException>(() => registry.GetTool("non_existent_tool"));
+        // Act
+        var tool = registry.GetTool("non_existent_tool");
+
+        // Assert
+        Assert.Null(tool);
     }
 }

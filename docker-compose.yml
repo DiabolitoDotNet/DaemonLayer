@@ -13,15 +13,22 @@ services:
       - SearXNG__BaseUrl=http://searxng:8080
       - SearXNG__Enabled=true
       - Memory__DatabasePath=/app/data/infernal.db
+      - Http__Enabled=true
+      - Http__Urls=http://0.0.0.0:5080
+      - VectorMemoryOptions__Enabled=true
+      - VectorMemoryOptions__QdrantUrl=http://qdrant:6333
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs
       - ./souls:/app/souls
     depends_on:
       - searxng
+      - qdrant
     restart: unless-stopped
     networks:
       - infernal-network
+    ports:
+      - "5080:5080"
     secrets:
       - telegram_bot_token
       - telegram_user_ids

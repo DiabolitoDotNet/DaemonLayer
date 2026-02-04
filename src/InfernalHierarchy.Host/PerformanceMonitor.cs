@@ -86,6 +86,11 @@ public class PerformanceMonitor : IDisposable
 
     public PerformanceSnapshot GetCurrentSnapshot()
     {
+        if (_disposed)
+        {
+            throw new ObjectDisposedException(nameof(PerformanceMonitor));
+        }
+
         _currentProcess.Refresh();
         return new PerformanceSnapshot
         {

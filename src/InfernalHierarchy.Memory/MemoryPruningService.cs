@@ -64,22 +64,23 @@ public class MemoryPruningService : BackgroundService
         var cutoffDate = DateTime.UtcNow.AddDays(-_options.RetentionDays);
 
         // Prune old facts with low confidence
-        await PruneOldFactsWithLowConfidenceAsync(cutoffDate, ct);
+        prunedCount += await PruneOldFactsWithLowConfidenceAsync(cutoffDate, ct);
 
         // Prune completed tasks
-        await PruneCompletedTasksAsync(cutoffDate, ct);
+        prunedCount += await PruneCompletedTasksAsync(cutoffDate, ct);
 
         // Archive old decisions (if archival is enabled)
         if (_options.EnableArchival)
         {
-            await ArchiveOldDecisionsAsync(cutoffDate, ct);
+            prunedCount += await ArchiveOldDecisionsAsync(cutoffDate, ct);
         }
 
         _logger.LogInformation("✅ Memory pruning complete - removed {Count} entries", prunedCount);
     }
 
-    private async Task PruneOldFactsWithLowConfidenceAsync(DateTime cutoffDate, CancellationToken ct)
+    private async Task<int> PruneOldFactsWithLowConfidenceAsync(DateTime cutoffDate, CancellationToken ct)
     {
+        var pruned = 0;
         try
         {
             // Search all facts
@@ -93,9 +94,8 @@ public class MemoryPruningService : BackgroundService
                     _logger.LogDebug("Pruning low-confidence fact: {FactId} (confidence: {Confidence})",
                         fact.Id, fact.Confidence);
 
-                    // Note: ISharedMemory doesn't have Delete methods yet
-                    // This would need to be added to the interface
-                    // await _sharedMemory.DeleteFactAsync(fact.Id, ct);
+                    await _sharedMemory.DeleteFactAsync(fact.Id, ct);
+                    pruned++;
                 }
             }
         }
@@ -103,10 +103,13 @@ public class MemoryPruningService : BackgroundService
         {
             _logger.LogError(ex, "Error pruning old facts");
         }
+
+        return pruned;
     }
 
-    private async Task PruneCompletedTasksAsync(DateTime cutoffDate, CancellationToken ct)
+    private async Task<int> PruneCompletedTasksAsync(DateTime cutoffDate, CancellationToken ct)
     {
+        var pruned = 0;
         try
         {
             var completedTasks = await _sharedMemory.GetTasksByStatusAsync(Core.Entities.TaskStatus.Completed, ct);
@@ -116,7 +119,8 @@ public class MemoryPruningService : BackgroundService
                 if (task.CompletedAt.HasValue && task.CompletedAt.Value < cutoffDate)
                 {
                     _logger.LogDebug("Pruning old completed task: {TaskId}", task.Id);
-                    // await _sharedMemory.DeleteTaskAsync(task.Id, ct);
+                    await _sharedMemory.DeleteTaskAsync(task.Id, ct);
+                    pruned++;
                 }
             }
         }
@@ -124,12 +128,16 @@ public class MemoryPruningService : BackgroundService
         {
             _logger.LogError(ex, "Error pruning completed tasks");
         }
+
+        return pruned;
     }
 
-    private async Task ArchiveOldDecisionsAsync(DateTime cutoffDate, CancellationToken ct)
+    private async Task<int> ArchiveOldDecisionsAsync(DateTime cutoffDate, CancellationToken ct)
     {
+        var pruned = 0;
         try
         {
+            Directory.CreateDirectory(_options.ArchivePath);
             var oldDecisions = await _sharedMemory.GetRecentDecisionsAsync(1000, ct);
 
             foreach (var decision in oldDecisions.Where(d => d.CreatedAt < cutoffDate))
@@ -146,13 +154,16 @@ public class MemoryPruningService : BackgroundService
                 await File.WriteAllTextAsync(archivePath, json, ct);
 
                 // Then delete from active memory
-                // await _sharedMemory.DeleteDecisionAsync(decision.Id, ct);
+                await _sharedMemory.DeleteDecisionAsync(decision.Id, ct);
+                pruned++;
             }
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error archiving old decisions");
         }
+
+        return pruned;
     }
 
     public override void Dispose()

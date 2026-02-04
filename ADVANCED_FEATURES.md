@@ -192,6 +192,77 @@ foreach (var rec in recommendations.OrderByDescending(r => r.SuccessRate))
 
 ---
 
+## 🤝 Agent Collaboration & Consensus
+
+The collaboration system allows an initiating agent to gather responses from multiple other agents and aggregate them into a single decision using configurable strategies.
+
+**Core concepts:**
+- `IAgentCollaborationService` orchestrates collaboration rounds and aggregation.
+- Collaboration requests are sent over the MessageBus as `MessageType.CollaborationRequest`.
+- Agents that support collaboration respond by submitting an `AgentResponse` back to the collaboration service.
+
+### Collaboration Strategies
+
+Supported aggregation strategies:
+- `voting` - majority vote
+- `weighted` - vote weighted by agent rank/weight (default)
+- `consensus` - iterative refinement to converge
+- `highest_confidence` - selects the response with highest confidence
+- `hierarchical` - prioritizes higher-rank agent responses
+
+### Tool: `request_collaboration`
+
+**File:** `InfernalHierarchy.Tools/RequestCollaborationTool.cs`
+
+Use this tool from an agent to request consensus on a task.
+
+**Parameters:**
+- `task` (string, required) - the prompt/problem statement
+- `strategy` (string, optional) - one of `voting|weighted|consensus|highest_confidence|hierarchical` (default: `weighted`)
+- `min_participants` (int, optional) - minimum number of participating agents (default: 2; clamped 2–10)
+- `min_confidence` (double, optional) - minimum confidence threshold (default: 0.7; clamped 0–1)
+- `participant_ranks` (string, optional) - comma-separated rank filter (`supreme,prince,duke,worker`)
+- `agent_id` (string, optional) - initiator agent id (defaults to `system` if omitted)
+
+**Participant selection rules:**
+- If `participant_ranks` is provided, participants are selected from those ranks via the `IAgentRegistry`.
+- Otherwise, the tool auto-selects up to 5 active agents (Idle/Thinking) excluding the initiator.
+- Collaboration timeout is currently set to 30 seconds.
+
+**Example (ReAct JSON tool call):**
+```json
+{
+  "thought": "I want a second opinion before deciding.",
+  "action": "request_collaboration",
+  "actionInput": {
+    "task": "Propose the best plan to roll out feature X safely.",
+    "strategy": "weighted",
+    "min_participants": 2,
+    "min_confidence": 0.7,
+    "participant_ranks": "prince,duke"
+  }
+}
+```
+
+**Result:** a structured summary including `decision`, `confidence`, `agreement_score`, `participant_count`, `strategy`, and aggregated `reasoning`.
+
+### Internal Message Flow (End-to-End)
+
+1. Initiator calls `request_collaboration`.
+2. `IAgentCollaborationService` publishes collaboration requests to participants on the MessageBus using `MessageType.CollaborationRequest`.
+3. Agents receive the request and handle it (e.g., `ReActAgent.HandleCollaborationRequestAsync`) by producing a response and confidence score.
+4. The response is submitted back into the collaboration service, which aggregates once thresholds are met (participants/confidence/timeout).
+
+Collaboration requests are tagged with a request id using a prefix like:
+`[COLLABORATION_REQUEST:<id>] ...`
+
+### Tests
+
+End-to-end collaboration over the real MessageBus is covered by:
+- `tests/InfernalHierarchy.Agents.Tests/AgentCollaborationEndToEndTests.cs`
+
+---
+
 ## 📋 Code Quality Enhancements
 
 ### .NET Analyzers & StyleCop
@@ -425,6 +496,47 @@ var pricing = new Dictionary<string, ModelPricing>
 };
 var cost = tokenTracker.CalculateEstimatedCost(pricing);
 ```
+
+### 4. Prompt Optimization (A/B Testing Runner)
+**File:** `InfernalHierarchy.Tools/PromptAbTestTool.cs`
+
+Runs repeatable A/B (or A/B/C/...) experiments across multiple system prompts for the same task and returns a structured JSON report with a computed winner.
+
+**Tool name:** `prompt_ab_test`
+
+**Parameters:**
+- `task` (required) - The task prompt to run against each variant
+- `trials` (optional, default 3; clamped 1–50) - Number of runs per variant
+- `variants_json` (optional) - A JSON string containing an array of variants
+- `variants` (optional) - Variants as an array (when invoked programmatically)
+
+**Variant fields:**
+- `name` (required)
+- `system_prompt` (optional) - Direct system prompt for the variant
+- `persona` (optional) - Persona name to load and use as the base system prompt
+- `prepend` / `append` (optional) - Text to add before/after the base prompt
+
+**Scoring criteria (optional):**
+- `must_be_json` (bool) - Rewards responses that are valid JSON
+- `expected_contains` (string[]) - Rewards responses containing specific substrings
+- `expected_regex` (string) - Rewards responses matching a regex
+
+**Example (ReAct JSON tool call):**
+```json
+{
+  "thought": "I want to compare two system prompts for this task.",
+  "action": "prompt_ab_test",
+  "actionInput": {
+    "task": "Return a JSON object with fields: title, summary.",
+    "trials": 5,
+    "must_be_json": true,
+    "expected_contains": ["title", "summary"],
+    "variants_json": "[{\"name\":\"A\",\"system_prompt\":\"You are a concise assistant. Always output JSON.\"},{\"name\":\"B\",\"system_prompt\":\"You are a helpful assistant.\"}]"
+  }
+}
+```
+
+**Output:** A JSON report with per-variant average score, sample responses, and a `winner` summary.
 
 ---
 

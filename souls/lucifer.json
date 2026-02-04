@@ -13,7 +13,8 @@
     "create_sub_agent",
     "read_memory",
     "write_memory",
-    "send_telegram"
+    "send_telegram",
+    "prompt_ab_test"
   ],
   "personality": {
     "tone": "Authoritative and strategic",

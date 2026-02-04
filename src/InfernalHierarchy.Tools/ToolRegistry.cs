@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.DependencyInjection;
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.Text.Json;
 
 namespace InfernalHierarchy.Tools;
 
@@ -16,15 +17,18 @@ public class ToolRegistry : IToolRegistry
     private readonly ILogger<ToolRegistry> _logger;
     private readonly AgentLearningService? _learningService;
     private readonly IServiceProvider? _serviceProvider;
+    private readonly IAgentEventSink? _eventSink;
 
     public ToolRegistry(
         ILogger<ToolRegistry> logger,
         AgentLearningService? learningService = null,
-        IServiceProvider? serviceProvider = null)
+        IServiceProvider? serviceProvider = null,
+        IAgentEventSink? eventSink = null)
     {
         _logger = logger;
         _learningService = learningService;
         _serviceProvider = serviceProvider;
+        _eventSink = eventSink;
     }
 
     public void RegisterTool(ITool tool)
@@ -132,6 +136,15 @@ public class ToolRegistry : IToolRegistry
                     stopwatch.Elapsed);
             }
 
+            TryAppendToolEvent(
+                toolName,
+                agentId,
+                agentRank,
+                parameters,
+                result.Success,
+                stopwatch.Elapsed,
+                errorMessage: result.Success ? null : (result.Error ?? "Tool returned failure"));
+
             return result;
         }
         catch (Exception ex)
@@ -170,12 +183,84 @@ public class ToolRegistry : IToolRegistry
                     stopwatch.Elapsed);
             }
 
+            TryAppendToolEvent(
+                toolName,
+                agentId,
+                agentRank,
+                parameters,
+                success: false,
+                duration: stopwatch.Elapsed,
+                errorMessage: ex.Message);
+
             return new ToolResult
             {
                 Success = false,
                 Output = string.Empty,
                 Error = ex.Message
             };
+        }
+    }
+
+    private void TryAppendToolEvent(
+        string toolName,
+        string? agentId,
+        string? agentRank,
+        Dictionary<string, object> parameters,
+        bool success,
+        TimeSpan duration,
+        string? errorMessage)
+    {
+        if (_eventSink == null || string.IsNullOrWhiteSpace(agentId))
+        {
+            return;
+        }
+
+        // Ensure the metadata is JSON-serializable.
+        var safeParametersJson = SafeSerialize(parameters);
+
+        var evt = new AgentEvent
+        {
+            AgentId = agentId,
+            Type = success ? EventType.ToolExecuted : EventType.ErrorOccurred,
+            Description = success
+                ? $"Tool executed: {toolName}"
+                : $"Tool failed: {toolName}",
+            Metadata = new Dictionary<string, object>
+            {
+                ["tool"] = toolName,
+                ["success"] = success,
+                ["duration_ms"] = (long)duration.TotalMilliseconds,
+                ["agent_rank"] = agentRank ?? "Worker",
+                ["parameters_json"] = safeParametersJson
+            }
+        };
+
+        if (!success && !string.IsNullOrWhiteSpace(errorMessage))
+        {
+            evt.Metadata["error"] = errorMessage;
+        }
+
+        try
+        {
+            _eventSink.AppendEvent(evt);
+        }
+        catch (Exception ex)
+        {
+            // Never fail tool execution due to auditing failures.
+            _logger.LogDebug(ex, "Failed to append tool event");
+        }
+    }
+
+    private static string SafeSerialize(Dictionary<string, object> parameters)
+    {
+        try
+        {
+            return JsonSerializer.Serialize(parameters);
+        }
+        catch
+        {
+            // Fallback to a lossy but safe string representation.
+            return string.Join(", ", parameters.Select(kvp => $"{kvp.Key}={kvp.Value}"));
         }
     }
 }

@@ -76,10 +76,39 @@ public class ResourceLimitService
         await _toolExecutionSemaphore.WaitAsync(ct);
         try
         {
+            var toolTask = toolFunc();
+            var timeoutTask = Task.Delay(TimeSpan.FromSeconds(_limits.MaxToolExecutionTimeSeconds), ct);
+
+            var completed = await Task.WhenAny(toolTask, timeoutTask);
+            if (completed == timeoutTask)
+            {
+                throw new TimeoutException($"Tool execution exceeded {_limits.MaxToolExecutionTimeSeconds} seconds.");
+            }
+
+            return await toolTask;
+        }
+        finally
+        {
+            _toolExecutionSemaphore.Release();
+        }
+    }
+
+    public async Task<T> ExecuteToolWithLimitAsync<T>(Func<CancellationToken, Task<T>> toolFunc, CancellationToken ct = default)
+    {
+        await _toolExecutionSemaphore.WaitAsync(ct);
+        try
+        {
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             cts.CancelAfter(TimeSpan.FromSeconds(_limits.MaxToolExecutionTimeSeconds));
 
-            return await toolFunc();
+            try
+            {
+                return await toolFunc(cts.Token);
+            }
+            catch (OperationCanceledException) when (!ct.IsCancellationRequested && cts.IsCancellationRequested)
+            {
+                throw new TimeoutException($"Tool execution exceeded {_limits.MaxToolExecutionTimeSeconds} seconds.");
+            }
         }
         finally
         {

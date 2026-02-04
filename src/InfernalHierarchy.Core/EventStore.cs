@@ -1,4 +1,5 @@
 using InfernalHierarchy.Core.Entities;
+using InfernalHierarchy.Core.Interfaces;
 using Microsoft.Extensions.Logging;
 using System.Collections.Concurrent;
 using System.Text.Json;
@@ -8,7 +9,7 @@ namespace InfernalHierarchy.Core;
 /// <summary>
 /// Event sourcing store for complete audit trail of all agent actions
 /// </summary>
-public sealed class EventStore : IDisposable
+public sealed class EventStore : IAgentEventSink, IDisposable
 {
     private readonly string _storePath;
     private readonly ILogger<EventStore> _logger;

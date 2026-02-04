@@ -1,4 +1,5 @@
 using InfernalHierarchy.Core.Interfaces;
+using InfernalHierarchy.Memory;
 using InfernalHierarchy.Tools;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Options;
@@ -58,6 +59,71 @@ public class OllamaHealthCheck : IHealthCheck
         catch (Exception ex)
         {
             return HealthCheckResult.Unhealthy("Ollama health check failed", ex);
+        }
+    }
+}
+
+/// <summary>
+/// Health check for Qdrant (vector database)
+/// </summary>
+public class QdrantHealthCheck : IHealthCheck
+{
+    private readonly VectorMemoryOptions _options;
+    private readonly IHttpClientFactory _httpClientFactory;
+
+    public QdrantHealthCheck(IOptions<VectorMemoryOptions> options, IHttpClientFactory httpClientFactory)
+    {
+        _options = options.Value;
+        _httpClientFactory = httpClientFactory;
+    }
+
+    public async Task<HealthCheckResult> CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken = default)
+    {
+        var data = new Dictionary<string, object>
+        {
+            ["enabled"] = _options.Enabled,
+            ["url"] = _options.QdrantUrl.ToString(),
+            ["collection"] = _options.CollectionName,
+            ["vector_dimensions"] = _options.VectorDimensions,
+        };
+
+        if (!_options.Enabled)
+        {
+            return HealthCheckResult.Healthy("Qdrant health check disabled (vector memory disabled)", data: data);
+        }
+
+        try
+        {
+            var httpClient = _httpClientFactory.CreateClient();
+            httpClient.Timeout = TimeSpan.FromSeconds(5);
+
+            var collectionsUrl = new Uri(_options.QdrantUrl.ToString().TrimEnd('/') + "/collections");
+            var response = await httpClient.GetAsync(collectionsUrl, cancellationToken);
+
+            if (response.IsSuccessStatusCode)
+            {
+                data["status"] = "connected";
+                return HealthCheckResult.Healthy("Qdrant is accessible", data: data);
+            }
+
+            data["status"] = "error";
+            data["http_status"] = (int)response.StatusCode;
+            return HealthCheckResult.Degraded($"Qdrant returned {response.StatusCode}", data: data);
+        }
+        catch (HttpRequestException ex)
+        {
+            data["status"] = "unreachable";
+            return HealthCheckResult.Unhealthy("Cannot connect to Qdrant", ex, data);
+        }
+        catch (TaskCanceledException)
+        {
+            data["status"] = "timeout";
+            return HealthCheckResult.Unhealthy("Qdrant health check timed out", data: data);
+        }
+        catch (Exception ex)
+        {
+            data["status"] = "failed";
+            return HealthCheckResult.Unhealthy("Qdrant health check failed", ex, data);
         }
     }
 }

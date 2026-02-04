@@ -8,14 +8,27 @@ using InfernalHierarchy.Telegram;
 using InfernalHierarchy.Tools;
 using InfernalHierarchy.Host;
 using Serilog;
-using Microsoft.Extensions.Hosting;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Hosting;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
+using System.Text.Json;
 
-var builder = Host.CreateApplicationBuilder(args);
+var builder = WebApplication.CreateBuilder(args);
+
+// HTTP endpoint options
+builder.Services.Configure<HttpEndpointOptions>(builder.Configuration.GetSection("Http"));
+var httpOptions = builder.Configuration.GetSection("Http").Get<HttpEndpointOptions>() ?? new HttpEndpointOptions();
+if (httpOptions.Enabled && !string.IsNullOrWhiteSpace(httpOptions.Urls))
+{
+    builder.WebHost.UseUrls(httpOptions.Urls.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+}
 
 // Configure Serilog with enrichers
 var agentContextEnricher = new AgentContextEnricher();
@@ -47,6 +60,10 @@ builder.Services.Configure<BraveSearchOptions>(builder.Configuration.GetSection(
 builder.Services.Configure<LlmOptions>(builder.Configuration.GetSection("LlmOptions"));
 builder.Services.Configure<VectorMemoryOptions>(builder.Configuration.GetSection("VectorMemoryOptions"));
 builder.Services.Configure<MemoryPruningOptions>(builder.Configuration.GetSection("MemoryPruningOptions"));
+builder.Services.Configure<MemoryLearningOptions>(builder.Configuration.GetSection("MemoryLearningOptions"));
+builder.Services.Configure<RagOptions>(builder.Configuration.GetSection("RagOptions"));
+builder.Services.Configure<ReActOptions>(builder.Configuration.GetSection("ReActOptions"));
+builder.Services.Configure<OpenTelemetryExportOptions>(builder.Configuration.GetSection("OpenTelemetry:Exporters"));
 
 // Register resource limits
 var resourceLimits = new ResourceLimits();
@@ -65,16 +82,28 @@ builder.Services.AddSingleton<PerformanceMonitor>();
 builder.Services.AddSingleton<DistributedTracing>();
 
 // OpenTelemetry configuration
+var otelExporterOptions = builder.Configuration.GetSection("OpenTelemetry:Exporters").Get<OpenTelemetryExportOptions>() ?? new OpenTelemetryExportOptions();
+
 builder.Services.AddOpenTelemetry()
     .ConfigureResource(resource => resource
         .AddService(serviceName: "InfernalHierarchy", serviceVersion: "1.0.0"))
-    .WithTracing(tracing => tracing
-        .AddSource("InfernalHierarchy")
-        .AddHttpClientInstrumentation()
-        .AddConsoleExporter()
-        // Uncomment to export to OTLP (e.g., Jaeger, Zipkin, etc.)
-        // .AddOtlpExporter(options => options.Endpoint = new Uri("http://localhost:4317"))
-    );
+    .WithTracing(tracing =>
+    {
+        tracing
+            .AddSource("InfernalHierarchy")
+            .AddHttpClientInstrumentation();
+
+        if (otelExporterOptions.Console.Enabled)
+        {
+            tracing.AddConsoleExporter();
+        }
+
+        if (otelExporterOptions.Otlp.Enabled &&
+            Uri.TryCreate(otelExporterOptions.Otlp.Endpoint, UriKind.Absolute, out var endpoint))
+        {
+            tracing.AddOtlpExporter(options => options.Endpoint = endpoint);
+        }
+    });
 
 // Resilience policies
 builder.Services.AddSingleton<ResiliencePolicies>();
@@ -86,6 +115,7 @@ builder.Services.AddSingleton<GlobalExceptionHandler>();
 // Health checks
 builder.Services.AddHealthChecks()
     .AddCheck<OllamaHealthCheck>("ollama", HealthStatus.Degraded, tags: new[] { "llm", "external" })
+    .AddCheck<QdrantHealthCheck>("qdrant", HealthStatus.Degraded, tags: new[] { "vector", "external" })
     .AddCheck<TelegramHealthCheck>("telegram", HealthStatus.Degraded, tags: new[] { "bot", "external" })
     .AddCheck<LiteDbHealthCheck>("litedb", HealthStatus.Unhealthy, tags: new[] { "database", "storage" })
     .AddCheck<AgentHierarchyHealthCheck>("agents", HealthStatus.Degraded, tags: new[] { "agents", "system" });
@@ -108,9 +138,10 @@ builder.Services.AddSingleton<IToolRegistry>(sp =>
 {
     var logger = sp.GetRequiredService<ILogger<ToolRegistry>>();
     var learningService = sp.GetRequiredService<AgentLearningService>();
-    return new ToolRegistry(logger, learningService, sp);
+    var eventSink = sp.GetService<IAgentEventSink>();
+    return new ToolRegistry(logger, learningService, sp, eventSink);
 });
-builder.Services.AddSingleton<OllamaClient>();
+builder.Services.AddSingleton<ILlmClient, OllamaClient>();
 
 // Advanced LLM Services
 builder.Services.AddSingleton<MultiModelLlmClient>();
@@ -119,9 +150,11 @@ builder.Services.AddSingleton<AgentLearningService>();
 
 // Advanced Memory Services
 builder.Services.AddSingleton<OnnxEmbeddingService>();
-builder.Services.AddSingleton<VectorMemoryService>();
+builder.Services.AddHttpClient<IVectorMemory, VectorMemoryService>();
+builder.Services.AddHostedService<VectorMemoryInitializationService>();
 builder.Services.AddSingleton<ISkillTreeService, SkillTreeService>();
 builder.Services.AddHostedService<MemoryPruningService>();
+builder.Services.AddHostedService<MemoryLearningService>();
 
 // Agent Collaboration
 builder.Services.AddSingleton<IAgentCollaborationService, AgentCollaborationService>();
@@ -137,7 +170,19 @@ builder.Services.AddSingleton<ITemplateService>(sp =>
 });
 
 // Event Sourcing
-builder.Services.AddSingleton<EventStore>();
+builder.Services.AddSingleton<EventStore>(sp =>
+{
+    var configuredPath = builder.Configuration.GetValue<string>("EventStore:Path");
+    var storePath = string.IsNullOrWhiteSpace(configuredPath)
+        ? Path.Combine(builder.Environment.ContentRootPath, "events")
+        : (Path.IsPathRooted(configuredPath)
+            ? configuredPath
+            : Path.Combine(builder.Environment.ContentRootPath, configuredPath));
+
+    var logger = sp.GetRequiredService<ILogger<EventStore>>();
+    return new EventStore(storePath, logger);
+});
+builder.Services.AddSingleton<IAgentEventSink>(sp => sp.GetRequiredService<EventStore>());
 
 // Register search tools
 builder.Services.AddHttpClient<SearXNGSearchTool>();
@@ -156,6 +201,7 @@ builder.Services.AddSingleton<ITool, RequestCollaborationTool>();
 builder.Services.AddSingleton<ITool, TelegramSendTool>();
 builder.Services.AddSingleton<ITool, CreateAgentFromTemplateTool>();
 builder.Services.AddSingleton<ITool, ListTemplatesTool>();
+builder.Services.AddSingleton<ITool, PromptAbTestTool>();
 
 // Register all tools in the registry
 builder.Services.AddHostedService<ToolRegistrationService>();
@@ -171,12 +217,53 @@ builder.Services.AddHostedService<SecretRotationService>();
 builder.Services.AddHostedService<TelegramBotService>();
 builder.Services.AddHostedService<AgentOrchestrator>();
 
-var host = builder.Build();
+var app = builder.Build();
+
+if (httpOptions.Enabled)
+{
+    // Health endpoints
+    app.MapHealthChecks("/health", new HealthCheckOptions
+    {
+        ResponseWriter = async (context, report) =>
+        {
+            context.Response.ContentType = "application/json";
+            var payload = new
+            {
+                status = report.Status.ToString(),
+                totalDurationMs = report.TotalDuration.TotalMilliseconds,
+                checks = report.Entries.ToDictionary(
+                    kvp => kvp.Key,
+                    kvp => new
+                    {
+                        status = kvp.Value.Status.ToString(),
+                        description = kvp.Value.Description,
+                        durationMs = kvp.Value.Duration.TotalMilliseconds,
+                        data = kvp.Value.Data
+                    })
+            };
+
+            await context.Response.WriteAsync(JsonSerializer.Serialize(payload, new JsonSerializerOptions
+            {
+                WriteIndented = true
+            }));
+        }
+    });
+
+    // Prometheus metrics endpoint
+    app.MapGet("/metrics", (MetricsService metricsService) =>
+    {
+        var metrics = metricsService.GetAllMetrics();
+        var body = PrometheusMetricsFormatter.Format(metrics);
+        return Results.Text(body, "text/plain; version=0.0.4; charset=utf-8");
+    });
+
+    app.MapGet("/", () => Results.Text("InfernalHierarchy is running"));
+}
 
 try
 {
     Log.Information("🔥 InfernalHierarchy starting...");
-    await host.RunAsync();
+    await app.RunAsync();
 }
 catch (Exception ex)
 {

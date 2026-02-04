@@ -323,8 +323,10 @@ public class IntegrationTests : IAsyncLifetime
         var readTool = _toolRegistry!.GetTool("read_memory");
         var parameters = new Dictionary<string, object>
         {
-            ["type"] = "search",
-            ["query"] = "context"
+            ["type"] = "facts",
+            ["query"] = "context",
+            ["agent_id"] = "test_agent",
+            ["agent_rank"] = "Worker"
         };
         var result = await readTool.ExecuteAsync(parameters, cancellationToken);
 

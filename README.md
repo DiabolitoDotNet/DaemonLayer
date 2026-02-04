@@ -143,6 +143,8 @@ Les personas se trouvent dans `souls/*.json`. Structure :
 - **create_sub_agent** - Création dynamique d'agents subordonnés
 - **read_memory / write_memory** - Accès à la mémoire partagée LiteDB
 - **send_telegram** - Envoi de messages aux utilisateurs
+- **request_collaboration** - Collaboration multi-agents (consensus / vote pondéré)
+- **prompt_ab_test** - A/B testing de prompts (comparaison de variantes + rapport JSON)
 
 ### Mémoire Partagée (LiteDB)
 

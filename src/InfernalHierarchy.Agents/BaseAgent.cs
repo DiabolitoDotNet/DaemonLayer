@@ -130,7 +130,10 @@ public abstract class BaseAgent : IAgent
             {
                 try
                 {
-                    if (message.Type == MessageType.Task || message.Type == MessageType.Query || message.Type == MessageType.Command)
+                    if (message.Type == MessageType.Task ||
+                        message.Type == MessageType.Query ||
+                        message.Type == MessageType.Command ||
+                        message.Type == MessageType.CollaborationRequest)
                     {
                         _logger.LogInformation("📨 {AgentName} received {MessageType}: {Content}",
                             Name, message.Type, message.Content);
@@ -213,7 +216,7 @@ public abstract class BaseAgent : IAgent
     /// <summary>
     /// Build context for LLM prompt including system prompt, memory, and current task
     /// </summary>
-    protected async Task<string> BuildContextAsync(AgentMessage task, CancellationToken ct)
+    protected virtual async Task<string> BuildContextAsync(AgentMessage task, CancellationToken ct)
     {
         var context = $"""
             # System Prompt

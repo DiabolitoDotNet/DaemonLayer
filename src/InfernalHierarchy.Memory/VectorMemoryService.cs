@@ -1,5 +1,6 @@
 using InfernalHierarchy.Core.Entities;
 using InfernalHierarchy.Core.Interfaces;
+using InfernalHierarchy.Core;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using System.Net.Http.Json;
@@ -10,7 +11,7 @@ namespace InfernalHierarchy.Memory;
 /// <summary>
 /// Vector-based semantic memory using Qdrant for similarity search
 /// </summary>
-public sealed class VectorMemoryService : IDisposable
+public sealed class VectorMemoryService : IVectorMemory
 {
     private readonly HttpClient _httpClient;
     private readonly ILogger<VectorMemoryService> _logger;
@@ -39,6 +40,12 @@ public sealed class VectorMemoryService : IDisposable
     /// </summary>
     public async Task InitializeCollectionAsync(CancellationToken ct = default)
     {
+        if (!_options.Enabled)
+        {
+            _logger.LogDebug("Vector memory disabled; skipping Qdrant collection initialization");
+            return;
+        }
+
         try
         {
             var collectionName = _options.CollectionName;
@@ -74,6 +81,54 @@ public sealed class VectorMemoryService : IDisposable
         }
     }
 
+    public async Task IndexFactAsync(Fact fact, CancellationToken ct = default)
+    {
+        var embedding = await GenerateEmbeddingAsync(fact.Content, ct).ConfigureAwait(false);
+        await StoreFactWithVectorAsync(fact, embedding, ct).ConfigureAwait(false);
+    }
+
+    public async Task<IReadOnlyList<Fact>> SearchSimilarVisibleFactsAsync(
+        string query,
+        string requestingAgentId,
+        AgentRank requestingAgentRank,
+        int limit = 8,
+        double minScore = 0.70,
+        CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(query))
+        {
+            return Array.Empty<Fact>();
+        }
+
+        IEnumerable<Fact> facts;
+
+        if (_options.Enabled)
+        {
+            var embedding = await GenerateEmbeddingAsync(query, ct).ConfigureAwait(false);
+            facts = await SearchSimilarAsync(embedding, limit: limit, minScore: minScore, ct).ConfigureAwait(false);
+
+            // Vector search does not enforce visibility; filter here.
+            facts = facts.Where(f => MemoryVisibilityRules.CanView(f, requestingAgentId, requestingAgentRank));
+        }
+        else
+        {
+            facts = Enumerable.Empty<Fact>();
+        }
+
+        // Keyword fallback (visibility-aware) when vector search is unavailable or returns nothing.
+        var factList = facts.Take(limit).ToList();
+        if (factList.Count == 0)
+        {
+            var fallback = await _sharedMemory
+                .SearchVisibleFactsAsync(query, requestingAgentId, requestingAgentRank, ct)
+                .ConfigureAwait(false);
+
+            factList = fallback.Take(limit).ToList();
+        }
+
+        return factList;
+    }
+
     /// <summary>
     /// Store fact with vector embedding
     /// </summary>
@@ -83,6 +138,12 @@ public sealed class VectorMemoryService : IDisposable
         {
             // Store fact in LiteDB
             await _sharedMemory.AddFactAsync(fact, ct);
+
+            if (!_options.Enabled)
+            {
+                _logger.LogDebug("Vector memory disabled; stored fact {FactId} in LiteDB only", fact.Id);
+                return;
+            }
 
             // Store vector in Qdrant
             var point = new
@@ -130,6 +191,11 @@ public sealed class VectorMemoryService : IDisposable
         double minScore = 0.7,
         CancellationToken ct = default)
     {
+        if (!_options.Enabled)
+        {
+            return Enumerable.Empty<Fact>();
+        }
+
         try
         {
             var searchRequest = new
@@ -182,12 +248,6 @@ public sealed class VectorMemoryService : IDisposable
     public async Task<float[]> GenerateEmbeddingAsync(string text, CancellationToken ct = default)
     {
         return await _embeddingService.GenerateEmbeddingAsync(text, ct);
-    }
-
-    public void Dispose()
-    {
-        _httpClient?.Dispose();
-        _embeddingService?.Dispose();
     }
 
     private class QdrantSearchResponse

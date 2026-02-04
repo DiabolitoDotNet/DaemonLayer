@@ -222,6 +222,29 @@ using var _ = _metricsService.TrackToolExecution(toolName);
 using var __ = _metricsService.TrackLlmCall(model);
 ```
 
+### Prometheus Metrics Endpoint
+InfernalHierarchy exposes a Prometheus-compatible text endpoint at `/metrics` when HTTP hosting is enabled.
+
+**Default URL (from** `src/InfernalHierarchy.Host/appsettings.json` **):**
+- `Http:Enabled: true`
+- `Http:Urls: http://localhost:5080`
+
+**Quick check:**
+```bash
+curl -s http://localhost:5080/metrics
+```
+
+**Prometheus scrape config (example):**
+```yaml
+scrape_configs:
+    - job_name: infernal_hierarchy
+        metrics_path: /metrics
+        static_configs:
+            - targets: ["localhost:5080"]
+```
+
+If you disable HTTP hosting (`Http:Enabled: false`), the `/metrics` endpoint is not mapped.
+
 ## Health Checks
 
 ### Accessing Health Status

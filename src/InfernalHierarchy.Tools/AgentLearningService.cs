@@ -179,9 +179,11 @@ public class AgentLearningService
         return new LearningSystemStats
         {
             TotalAgentsTracked = _agentProfiles.Count,
-            TotalToolsTracked = _toolStats.Count(kv => !kv.Key.Contains('_')),
+            // Global tool stats are tracked with AgentId == null.
+            // Do not rely on key naming, since tool names can contain '_' (e.g., web_search).
+            TotalToolsTracked = _toolStats.Count(kv => kv.Value.AgentId == null),
             GlobalToolStats = _toolStats
-                .Where(kv => !kv.Key.Contains('_'))
+                .Where(kv => kv.Value.AgentId == null)
                 .Select(kv => new ToolStatsInfo
                 {
                     ToolName = kv.Value.ToolName,

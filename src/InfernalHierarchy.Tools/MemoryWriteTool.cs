@@ -10,14 +10,21 @@ namespace InfernalHierarchy.Tools;
 public class MemoryWriteTool : ITool
 {
     private readonly ISharedMemory _memory;
+    private readonly IVectorMemory? _vectorMemory;
     private readonly ILogger<MemoryWriteTool> _logger;
 
     public string Name => "write_memory";
     public string Description => "Write to shared memory. Types: decision, fact, task. Requires type-specific parameters. For facts: optional visibility (Private/RankBased/Shared/Public), shared_with (comma-separated agent IDs), min_rank (Supreme/Prince/Duke/Worker).";
 
     public MemoryWriteTool(ISharedMemory memory, ILogger<MemoryWriteTool> logger)
+        : this(memory, vectorMemory: null, logger)
+    {
+    }
+
+    public MemoryWriteTool(ISharedMemory memory, IVectorMemory? vectorMemory, ILogger<MemoryWriteTool> logger)
     {
         _memory = memory;
+        _vectorMemory = vectorMemory;
         _logger = logger;
     }
 
@@ -57,6 +64,10 @@ public class MemoryWriteTool : ITool
                 Output = output,
                 Metadata = new Dictionary<string, object> { ["type"] = type }
             };
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -124,7 +135,14 @@ public class MemoryWriteTool : ITool
             MinimumRankToView = minRank
         };
 
-        await _memory.AddFactAsync(fact, ct);
+        if (_vectorMemory != null)
+        {
+            await _vectorMemory.IndexFactAsync(fact, ct);
+        }
+        else
+        {
+            await _memory.AddFactAsync(fact, ct);
+        }
         
         var visibilityInfo = visibility switch
         {

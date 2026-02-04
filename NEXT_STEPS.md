@@ -1,7 +1,7 @@
 # 🚀 Next Steps - Getting Advanced Features Running
 
-**Last Updated**: February 2, 2026  
-**Status**: Solution builds successfully, advanced features implemented but not yet integrated
+**Last Updated**: February 4, 2026  
+**Status**: Solution builds and tests pass in Release; advanced features are integrated and ready to run (some require local dependencies)
 
 ---
 
@@ -19,34 +19,20 @@ All advanced features have been **implemented and compile successfully**:
 
 **Build Status**: ✅ 0 compilation errors, 1551 warnings (mostly StyleCop style violations)
 
+**Test Status**: ✅ `dotnet test -c Release` passes solution-wide (some integration-only tests are skipped by design)
+
 ---
 
 ## 🎯 What You Need To Do
 
-### 1️⃣ **Register Services in Program.cs** (REQUIRED)
+### 1️⃣ **Configure Secrets** (REQUIRED)
 
-Open `src/InfernalHierarchy.Host/Program.cs` and add these service registrations:
-
-```csharp
-// Add after existing service registrations
-
-// Advanced LLM Services
-builder.Services.AddSingleton<MultiModelLlmClient>();
-builder.Services.AddSingleton<TokenUsageTracker>();
-
-// Advanced Memory Services
-builder.Services.AddSingleton<VectorMemoryService>();
-builder.Services.AddHostedService<MemoryPruningService>();
-
-// Event Sourcing
-builder.Services.AddSingleton<EventStore>();
-```
-
-**Location**: Add these lines in the service configuration section, before `builder.Build()`.
+- Set Telegram bot token (and optionally AllowedUserIds) using user-secrets or a secrets file.
+- Ensure `src/InfernalHierarchy.Host/appsettings.json` has non-empty `Telegram:BotToken` at runtime.
 
 ---
 
-### 2️⃣ **Pull Ollama Models** (REQUIRED for multi-model LLM)
+### 2️⃣ **Start Ollama + Pull Models** (REQUIRED for LLM)
 
 Open a terminal and run:
 
@@ -88,17 +74,17 @@ Edit `src/InfernalHierarchy.Host/appsettings.json`:
 ```json
 {
   "VectorMemoryOptions": {
-    "Enabled": true,  // ← Change from false
+    "Enabled": true,
     "QdrantUrl": "http://localhost:6333",
     "CollectionName": "infernal_facts",
-    "VectorSize": 384
+    "VectorDimensions": 384
   },
   "MemoryPruningOptions": {
     "Enabled": true,  // ← Change from false
     "PruningIntervalHours": 24,
     "RetentionDays": 30,
-    "ConfidenceThreshold": 0.3,
-    "ArchiveEnabled": true
+    "MinConfidenceThreshold": 0.3,
+    "EnableArchival": true
   }
 }
 ```
@@ -107,58 +93,44 @@ Edit `src/InfernalHierarchy.Host/appsettings.json`:
 
 ---
 
-### 5️⃣ **Add ISharedMemory Delete Methods** (OPTIONAL for pruning)
+### 4️⃣b **(Recommended) Enable ONNX Embeddings**
 
-The `MemoryPruningService` needs delete methods. Add to `src/InfernalHierarchy.Core/Interfaces/ISharedMemory.cs`:
+For higher-quality semantic search, enable ONNX embeddings and ensure model assets exist (see `models/README.md`):
 
-```csharp
-public interface ISharedMemory
+```json
 {
-    // ... existing methods ...
-    
-    // Add these new methods:
-    Task DeleteFactAsync(int factId, CancellationToken ct = default);
-    Task DeleteDecisionAsync(int decisionId, CancellationToken ct = default);
-    Task DeleteTaskAsync(int taskId, CancellationToken ct = default);
+  "OnnxEmbeddingOptions": {
+    "Enabled": true,
+    "ModelPath": "./models/sentence-transformers/model.onnx",
+    "TokenizerPath": "./models/sentence-transformers/tokenizer.json",
+    "MaxSequenceLength": 128,
+    "EmbeddingDimension": 384
+  }
 }
 ```
-
-Then implement them in `src/InfernalHierarchy.Memory/LiteDbSharedMemory.cs`:
-
-```csharp
-public async Task DeleteFactAsync(int factId, CancellationToken ct = default)
-{
-    await Task.Run(() => 
-    {
-        var col = _db.GetCollection<Fact>("Facts");
-        col.Delete(factId);
-    }, ct);
-}
-
-public async Task DeleteDecisionAsync(int decisionId, CancellationToken ct = default)
-{
-    await Task.Run(() => 
-    {
-        var col = _db.GetCollection<Decision>("Decisions");
-        col.Delete(decisionId);
-    }, ct);
-}
-
-public async Task DeleteTaskAsync(int taskId, CancellationToken ct = default)
-{
-    await Task.Run(() => 
-    {
-        var col = _db.GetCollection<AgentTask>("Tasks");
-        col.Delete(taskId);
-    }, ct);
-}
-```
-
-**Note**: Only needed if you enable `MemoryPruningService`.
 
 ---
 
-### 6️⃣ **Test the Build**
+### 5️⃣ **(Optional) Enable OTLP Export**
+
+Edit `src/InfernalHierarchy.Host/appsettings.json`:
+
+```json
+{
+  "OpenTelemetry": {
+    "Exporters": {
+      "Otlp": {
+        "Enabled": true,
+        "Endpoint": "http://localhost:4317"
+      }
+    }
+  }
+}
+```
+
+---
+
+### 6️⃣ **Run the Application**
 
 ```bash
 # Clean and rebuild

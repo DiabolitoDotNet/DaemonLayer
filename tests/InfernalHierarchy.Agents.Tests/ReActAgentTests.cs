@@ -1,4 +1,6 @@
+using FluentAssertions;
 using InfernalHierarchy.Agents;
+using InfernalHierarchy.Core;
 using InfernalHierarchy.Core.Entities;
 using InfernalHierarchy.Core.Interfaces;
 using InfernalHierarchy.Tools;
@@ -17,9 +19,10 @@ public class ReActAgentTests
     private readonly Mock<IMessageBus> _mockMessageBus;
     private readonly Mock<ISharedMemory> _mockMemory;
     private readonly Mock<IToolRegistry> _mockToolRegistry;
-    private readonly Mock<OllamaClient> _mockOllama;
+    private readonly Mock<ILlmClient> _mockOllama;
     private readonly Mock<IAgentFactory> _mockAgentFactory;
     private readonly Mock<ILogger<ReActAgent>> _mockLogger;
+    private readonly Mock<IAgentEventSink> _mockEventSink;
     private readonly Persona _testPersona;
 
     public ReActAgentTests()
@@ -27,9 +30,10 @@ public class ReActAgentTests
         _mockMessageBus = new Mock<IMessageBus>();
         _mockMemory = new Mock<ISharedMemory>();
         _mockToolRegistry = new Mock<IToolRegistry>();
-        _mockOllama = new Mock<OllamaClient>(null!, null!);
+        _mockOllama = new Mock<ILlmClient>();
         _mockAgentFactory = new Mock<IAgentFactory>();
         _mockLogger = new Mock<ILogger<ReActAgent>>();
+        _mockEventSink = new Mock<IAgentEventSink>();
 
         _testPersona = new Persona
         {
@@ -44,6 +48,174 @@ public class ReActAgentTests
                 Verbosity = 5
             }
         };
+    }
+
+    [Fact]
+    public async Task ProcessTaskAsync_FinalAnswer_ShouldAppendTaskAndDecisionEvents()
+    {
+        // Arrange
+        var agentEntity = CreateTestAgent();
+        agentEntity.Id = "agent-1";
+
+        _mockMemory.Setup(x => x.GetRecentDecisionsAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Array.Empty<Decision>());
+        _mockMemory.Setup(x => x.AddDecisionAsync(It.IsAny<Decision>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        _mockOllama.Setup(x => x.GetCompletionAsync(
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync("""
+Thought: I can answer immediately.
+Action: FINAL_ANSWER
+Action Input: done
+""");
+
+        var reactAgent = new ReActAgent(
+            agentEntity,
+            _testPersona,
+            _mockMessageBus.Object,
+            _mockMemory.Object,
+            _mockToolRegistry.Object,
+            _mockAgentFactory.Object,
+            _mockOllama.Object,
+            _mockLogger.Object,
+            _mockEventSink.Object);
+
+        var task = new AgentMessage
+        {
+            Id = "task-1",
+            FromAgentId = "sender",
+            ToAgentId = "agent-1",
+            Type = MessageType.Task,
+            Content = "say hi"
+        };
+
+        // Act
+        var response = await reactAgent.ProcessTaskAsync(task, CancellationToken.None);
+
+        // Assert
+        response.Content.Should().Contain("done");
+        _mockEventSink.Verify(x => x.AppendEvent(It.Is<AgentEvent>(e => e.AgentId == "agent-1" && e.Type == EventType.TaskReceived)), Times.Once);
+        _mockEventSink.Verify(x => x.AppendEvent(It.Is<AgentEvent>(e => e.AgentId == "agent-1" && e.Type == EventType.TaskStarted)), Times.Once);
+        _mockEventSink.Verify(x => x.AppendEvent(It.Is<AgentEvent>(e => e.AgentId == "agent-1" && e.Type == EventType.DecisionMade)), Times.Once);
+        _mockEventSink.Verify(x => x.AppendEvent(It.Is<AgentEvent>(e => e.AgentId == "agent-1" && e.Type == EventType.TaskCompleted)), Times.Once);
+    }
+
+    [Fact]
+    public async Task ProcessTaskAsync_JsonFinalAnswer_ParsesCorrectly()
+    {
+        // Arrange
+        var agentEntity = CreateTestAgent();
+        agentEntity.Id = "agent-1";
+
+        _mockMemory.Setup(x => x.GetRecentDecisionsAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Array.Empty<Decision>());
+        _mockMemory.Setup(x => x.AddDecisionAsync(It.IsAny<Decision>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        _mockOllama.Setup(x => x.GetCompletionAsync(
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync("{\"thought\":\"done\",\"action\":\"FINAL_ANSWER\",\"actionInput\":\"ok\"}");
+
+        var reactAgent = new ReActAgent(
+            agentEntity,
+            _testPersona,
+            _mockMessageBus.Object,
+            _mockMemory.Object,
+            _mockToolRegistry.Object,
+            _mockAgentFactory.Object,
+            _mockOllama.Object,
+            _mockLogger.Object,
+            _mockEventSink.Object,
+            vectorMemory: null,
+            ragOptions: null,
+            reActOptions: new ReActOptions { UseJsonResponse = true });
+
+        var task = new AgentMessage
+        {
+            Id = "task-1",
+            FromAgentId = "sender",
+            ToAgentId = "agent-1",
+            Type = MessageType.Task,
+            Content = "say hi"
+        };
+
+        // Act
+        var response = await reactAgent.ProcessTaskAsync(task, CancellationToken.None);
+
+        // Assert
+        response.Content.Should().Contain("ok");
+    }
+
+    [Fact]
+    public async Task ProcessTaskAsync_JsonToolCall_ExecutesToolThenReturnsFinalAnswer()
+    {
+        // Arrange
+        var agentEntity = CreateTestAgent();
+        agentEntity.Id = "agent-1";
+
+        _mockMemory.Setup(x => x.GetRecentDecisionsAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Array.Empty<Decision>());
+        _mockMemory.Setup(x => x.AddDecisionAsync(It.IsAny<Decision>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        var mockTool = new Mock<ITool>();
+        mockTool.SetupGet(x => x.Name).Returns("test_tool");
+
+        _mockToolRegistry.Setup(x => x.GetTool("test_tool")).Returns(mockTool.Object);
+        _mockToolRegistry.Setup(x => x.ExecuteToolWithTrackingAsync(
+                "test_tool",
+                It.IsAny<Dictionary<string, object>>(),
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ToolResult { Success = true, Output = "tool ok" });
+
+        _mockOllama.SetupSequence(x => x.GetCompletionAsync(
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync("{\"thought\":\"use tool\",\"action\":\"test_tool\",\"actionInput\":{\"param1\":\"value1\"}}")
+            .ReturnsAsync("{\"thought\":\"done\",\"action\":\"FINAL_ANSWER\",\"actionInput\":\"finished\"}");
+
+        var reactAgent = new ReActAgent(
+            agentEntity,
+            _testPersona,
+            _mockMessageBus.Object,
+            _mockMemory.Object,
+            _mockToolRegistry.Object,
+            _mockAgentFactory.Object,
+            _mockOllama.Object,
+            _mockLogger.Object,
+            _mockEventSink.Object,
+            vectorMemory: null,
+            ragOptions: null,
+            reActOptions: new ReActOptions { UseJsonResponse = true });
+
+        var task = new AgentMessage
+        {
+            Id = "task-1",
+            FromAgentId = "sender",
+            ToAgentId = "agent-1",
+            Type = MessageType.Task,
+            Content = "do thing"
+        };
+
+        // Act
+        var response = await reactAgent.ProcessTaskAsync(task, CancellationToken.None);
+
+        // Assert
+        response.Content.Should().Contain("finished");
+        _mockToolRegistry.Verify(x => x.ExecuteToolWithTrackingAsync(
+            "test_tool",
+            It.Is<Dictionary<string, object>>(d => d.ContainsKey("param1")),
+            It.IsAny<string>(),
+            It.IsAny<string>(),
+            It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]

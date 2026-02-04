@@ -1,4 +1,5 @@
 using InfernalHierarchy.Core.Entities;
+using InfernalHierarchy.Core;
 using InfernalHierarchy.Core.Interfaces;
 using InfernalHierarchy.Tools;
 using Microsoft.Extensions.Logging;
@@ -14,8 +15,12 @@ namespace InfernalHierarchy.Agents;
 /// </summary>
 public class ReActAgent : BaseAgent
 {
-    private readonly OllamaClient _ollamaClient;
+    private readonly ILlmClient _ollamaClient;
     private readonly IAgentFactory _agentFactory;
+    private readonly IAgentEventSink? _eventSink;
+    private readonly IVectorMemory? _vectorMemory;
+    private readonly RagOptions _ragOptions;
+    private readonly ReActOptions _reActOptions;
     private const int MaxIterations = 5;
 
     public ReActAgent(
@@ -25,16 +30,105 @@ public class ReActAgent : BaseAgent
         ISharedMemory sharedMemory,
         IToolRegistry toolRegistry,
         IAgentFactory agentFactory,
-        OllamaClient ollamaClient,
+        ILlmClient ollamaClient,
         ILogger<ReActAgent> logger)
+        : this(
+            agent,
+            persona,
+            messageBus,
+            sharedMemory,
+            toolRegistry,
+            agentFactory,
+            ollamaClient,
+            logger,
+            eventSink: null)
+    {
+    }
+
+    public ReActAgent(
+        Agent agent,
+        Persona persona,
+        IMessageBus messageBus,
+        ISharedMemory sharedMemory,
+        IToolRegistry toolRegistry,
+        IAgentFactory agentFactory,
+        ILlmClient ollamaClient,
+        ILogger<ReActAgent> logger,
+        IAgentEventSink? eventSink,
+        IVectorMemory? vectorMemory = null,
+        RagOptions? ragOptions = null,
+        ReActOptions? reActOptions = null)
         : base(agent, persona, messageBus, sharedMemory, toolRegistry, logger)
     {
         _agentFactory = agentFactory;
         _ollamaClient = ollamaClient;
+        _eventSink = eventSink;
+        _vectorMemory = vectorMemory;
+        _ragOptions = ragOptions ?? new RagOptions();
+        _reActOptions = reActOptions ?? new ReActOptions();
+    }
+
+    protected override async Task<string> BuildContextAsync(AgentMessage task, CancellationToken ct)
+    {
+        var context = await base.BuildContextAsync(task, ct).ConfigureAwait(false);
+
+        if (!_ragOptions.Enabled)
+        {
+            return context;
+        }
+
+        if (_vectorMemory == null)
+        {
+            return context;
+        }
+
+        IReadOnlyList<Fact> facts;
+        try
+        {
+            facts = await _vectorMemory.SearchSimilarVisibleFactsAsync(
+                task.Content,
+                requestingAgentId: Id,
+                requestingAgentRank: Rank,
+                limit: _ragOptions.MaxFacts,
+                minScore: _ragOptions.MinScore,
+                ct: ct).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "RAG retrieval failed; continuing without retrieved facts");
+            return context;
+        }
+
+        if (facts.Count == 0)
+        {
+            return context;
+        }
+
+        var sb = new StringBuilder(context);
+        sb.AppendLine("\n\n## Retrieved Facts (RAG)");
+
+        foreach (var fact in facts)
+        {
+            var content = fact.Content ?? string.Empty;
+            if (_ragOptions.MaxCharsPerFact > 0 && content.Length > _ragOptions.MaxCharsPerFact)
+            {
+                content = content[.._ragOptions.MaxCharsPerFact] + "…";
+            }
+
+            sb.AppendLine($"- [{fact.Category}] {content} (Source: {fact.Source}, Confidence: {fact.Confidence:P0})");
+        }
+
+        return sb.ToString();
     }
 
     public override async Task<AgentMessage> ProcessTaskAsync(AgentMessage task, CancellationToken ct = default)
     {
+        TryAppendTaskEvent(task, InfernalHierarchy.Core.EventType.TaskReceived, "Task received");
+
         // Handle collaboration requests
         if (task.Content.StartsWith("[COLLABORATION_REQUEST:", StringComparison.OrdinalIgnoreCase))
         {
@@ -57,6 +151,8 @@ public class ReActAgent : BaseAgent
 
         try
         {
+            TryAppendTaskEvent(task, InfernalHierarchy.Core.EventType.TaskStarted, "Task started");
+
             var context = await BuildContextAsync(task, ct);
             var result = await RunReActLoopAsync(context, task.Content, ct);
 
@@ -68,6 +164,18 @@ public class ReActAgent : BaseAgent
                 Action = result.FinalAnswer,
                 Reasoning = result.Reasoning
             }, ct);
+
+            TryAppendDecisionEvent(task, result);
+
+            TryAppendTaskEvent(
+                task,
+                InfernalHierarchy.Core.EventType.TaskCompleted,
+                "Task completed",
+                new Dictionary<string, object>
+                {
+                    ["iterations"] = result.Iterations,
+                    ["tool_calls"] = result.ToolCalls.Count
+                });
 
             Status = AgentStatus.Idle;
 
@@ -90,6 +198,16 @@ public class ReActAgent : BaseAgent
             _logger.LogError(ex, "Failed to process task");
             Status = AgentStatus.Idle;
 
+            TryAppendTaskEvent(
+                task,
+                InfernalHierarchy.Core.EventType.TaskFailed,
+                "Task failed",
+                new Dictionary<string, object>
+                {
+                    ["error"] = ex.Message,
+                    ["exception_type"] = ex.GetType().Name
+                });
+
             return new AgentMessage
             {
                 FromAgentId = Id,
@@ -97,6 +215,78 @@ public class ReActAgent : BaseAgent
                 Type = MessageType.Report,
                 Content = $"❌ Error: {ex.Message}"
             };
+        }
+    }
+
+    private void TryAppendTaskEvent(
+        AgentMessage task,
+        InfernalHierarchy.Core.EventType type,
+        string description,
+        Dictionary<string, object>? extraMetadata = null)
+    {
+        if (_eventSink == null)
+        {
+            return;
+        }
+
+        var metadata = new Dictionary<string, object>
+        {
+            ["task_id"] = task.Id,
+            ["from_agent_id"] = task.FromAgentId,
+            ["message_type"] = task.Type.ToString(),
+            ["agent_rank"] = Rank.ToString()
+        };
+
+        if (extraMetadata != null)
+        {
+            foreach (var kvp in extraMetadata)
+            {
+                metadata[kvp.Key] = kvp.Value;
+            }
+        }
+
+        try
+        {
+            _eventSink.AppendEvent(new InfernalHierarchy.Core.AgentEvent
+            {
+                AgentId = Id,
+                Type = type,
+                Description = description,
+                Metadata = metadata
+            });
+        }
+        catch
+        {
+            // best-effort
+        }
+    }
+
+    private void TryAppendDecisionEvent(AgentMessage task, ReActResult result)
+    {
+        if (_eventSink == null)
+        {
+            return;
+        }
+
+        try
+        {
+            _eventSink.AppendEvent(new InfernalHierarchy.Core.AgentEvent
+            {
+                AgentId = Id,
+                Type = InfernalHierarchy.Core.EventType.DecisionMade,
+                Description = "Decision recorded",
+                Metadata = new Dictionary<string, object>
+                {
+                    ["task_id"] = task.Id,
+                    ["iterations"] = result.Iterations,
+                    ["reasoning"] = result.Reasoning,
+                    ["answer"] = result.FinalAnswer
+                }
+            });
+        }
+        catch
+        {
+            // best-effort
         }
     }
 
@@ -118,24 +308,50 @@ public class ReActAgent : BaseAgent
             try
             {
                 // Build prompt with history
-                var prompt = $"""
-                    {systemContext}
+                var prompt = _reActOptions.UseJsonResponse
+                    ? $$"""
+                        {{systemContext}}
 
-                    # Conversation History
-                    {history}
+                        # Conversation History
+                        {{history}}
 
-                    # Instructions
-                    Follow the ReAct pattern:
-                    1. Thought: Analyze what you need to do next
-                    2. Action: Choose a tool to use (or FINAL_ANSWER if done)
-                    3. Provide your response in this exact format:
+                        # Instructions
+                        Follow the ReAct pattern:
+                        1. Think about what you need to do next
+                        2. Choose a tool to use (or FINAL_ANSWER if done)
 
-                    Thought: <your reasoning>
-                    Action: <tool_name or FINAL_ANSWER>
-                    Action Input: <tool parameters as JSON or final answer text>
+                        Respond with a SINGLE JSON object and nothing else (no Markdown, no code fences).
+                        Required properties:
+                        - thought: string
+                        - action: string (tool name or FINAL_ANSWER)
+                        - actionInput: object (tool parameters) OR string (final answer)
 
-                    Available tools: {string.Join(", ", Persona.AvailableTools)}
-                    """;
+                        Example tool call:
+                        {"thought":"I should search memory","action":"memory_search","actionInput":{"query":"..."} }
+
+                        Example final answer:
+                        {"thought":"I am done","action":"FINAL_ANSWER","actionInput":"<final answer text>"}
+
+                        Available tools: {{string.Join(", ", Persona.AvailableTools)}}
+                        """
+                    : $"""
+                        {systemContext}
+
+                        # Conversation History
+                        {history}
+
+                        # Instructions
+                        Follow the ReAct pattern:
+                        1. Thought: Analyze what you need to do next
+                        2. Action: Choose a tool to use (or FINAL_ANSWER if done)
+                        3. Provide your response in this exact format:
+
+                        Thought: <your reasoning>
+                        Action: <tool_name or FINAL_ANSWER>
+                        Action Input: <tool parameters as JSON or final answer text>
+
+                        Available tools: {string.Join(", ", Persona.AvailableTools)}
+                        """;
 
                 _logger.LogDebug("Iteration {Iteration}: Calling LLM", iterations);
 
@@ -154,10 +370,25 @@ public class ReActAgent : BaseAgent
                 history.AppendLine($"\n--- Iteration {iterations} ---");
                 history.AppendLine(response);
 
-                // Parse response with improved extraction
-                var thought = ExtractSection(response, "Thought");
-                var action = ExtractSection(response, "Action");
-                var actionInput = ExtractSection(response, "Action Input");
+                // Parse response (prefer JSON structured output when enabled)
+                string thought;
+                string action;
+                string actionInput;
+                Dictionary<string, object>? actionInputObject = null;
+
+                if (_reActOptions.UseJsonResponse && TryParseJsonReActResponse(response, out var parsed))
+                {
+                    thought = parsed.Thought;
+                    action = parsed.Action;
+                    actionInput = parsed.ActionInputText;
+                    actionInputObject = parsed.ActionInputObject;
+                }
+                else
+                {
+                    thought = ExtractSection(response, "Thought");
+                    action = ExtractSection(response, "Action");
+                    actionInput = ExtractSection(response, "Action Input");
+                }
 
                 _logger.LogInformation("💭 Thought: {Thought}", thought);
                 _logger.LogInformation("⚡ Action: {Action}", action);
@@ -212,7 +443,15 @@ public class ReActAgent : BaseAgent
 
                 try
                 {
-                    var parameters = ParseActionInput(actionInput, action);
+                    Dictionary<string, object> parameters;
+                    if (actionInputObject != null)
+                    {
+                        parameters = actionInputObject;
+                    }
+                    else
+                    {
+                        parameters = ParseActionInput(actionInput, action);
+                    }
 
                     // Add agent context for memory and agent tools
                     if (action.Contains("memory", StringComparison.OrdinalIgnoreCase) ||
@@ -234,7 +473,14 @@ public class ReActAgent : BaseAgent
                         Rank.ToString(),
                         ct);
                     
-                    toolCalls.Add($"{action}({actionInput})");
+                    if (actionInputObject != null)
+                    {
+                        toolCalls.Add($"{action}({JsonSerializer.Serialize(actionInputObject)})");
+                    }
+                    else
+                    {
+                        toolCalls.Add($"{action}({actionInput})");
+                    }
 
                     var observation = toolResult.Success
                         ? $"Observation: {toolResult.Output}"
@@ -332,6 +578,91 @@ public class ReActAgent : BaseAgent
             ["message"] = input
         };
     }
+
+    private static bool TryParseJsonReActResponse(string response, out JsonReActResponse parsed)
+    {
+        parsed = default;
+
+        if (string.IsNullOrWhiteSpace(response))
+        {
+            return false;
+        }
+
+        var candidate = response.Trim();
+
+        if (candidate.StartsWith("```", StringComparison.Ordinal))
+        {
+            candidate = Regex.Replace(candidate, "^```[a-zA-Z0-9_-]*\\s*", string.Empty);
+            candidate = Regex.Replace(candidate, "\\s*```$", string.Empty);
+            candidate = candidate.Trim();
+        }
+
+        if (!candidate.StartsWith("{", StringComparison.Ordinal))
+        {
+            var first = candidate.IndexOf('{');
+            var last = candidate.LastIndexOf('}');
+            if (first >= 0 && last > first)
+            {
+                candidate = candidate.Substring(first, last - first + 1);
+            }
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(candidate);
+            if (doc.RootElement.ValueKind != JsonValueKind.Object)
+            {
+                return false;
+            }
+
+            var root = doc.RootElement;
+            var action = root.TryGetProperty("action", out var actionProp) ? actionProp.GetString() : null;
+            if (string.IsNullOrWhiteSpace(action))
+            {
+                return false;
+            }
+
+            var thought = root.TryGetProperty("thought", out var thoughtProp) ? thoughtProp.GetString() ?? string.Empty : string.Empty;
+
+            string actionInputText = string.Empty;
+            Dictionary<string, object>? actionInputObject = null;
+
+            if (root.TryGetProperty("actionInput", out var inputProp))
+            {
+                if (inputProp.ValueKind == JsonValueKind.Object)
+                {
+                    actionInputObject = JsonSerializer.Deserialize<Dictionary<string, object>>(inputProp.GetRawText());
+                    actionInputText = inputProp.GetRawText();
+                }
+                else if (inputProp.ValueKind == JsonValueKind.String)
+                {
+                    actionInputText = inputProp.GetString() ?? string.Empty;
+                }
+                else
+                {
+                    actionInputText = inputProp.GetRawText();
+                }
+            }
+
+            parsed = new JsonReActResponse(
+                Thought: thought.Trim(),
+                Action: action.Trim(),
+                ActionInputText: actionInputText.Trim(),
+                ActionInputObject: actionInputObject);
+
+            return true;
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
+
+    private readonly record struct JsonReActResponse(
+        string Thought,
+        string Action,
+        string ActionInputText,
+        Dictionary<string, object>? ActionInputObject);
 
     /// <summary>
     /// Handles special Telegram commands (usage, models)
