@@ -61,7 +61,7 @@ if (-not $Port -or $Port -le 0) {
 }
 
 if ($UseSsl -eq $null) {
-    $useSslText = Read-Host "Use SSL from connect? (true/false). For 587 usually false (STARTTLS)."
+    $useSslText = Read-Host "Use SSL/STARTTLS? (true/false). For smtp.gmail.com:587 this should be true (STARTTLS)."
     $tmp = $false
     if (-not [bool]::TryParse($useSslText, [ref]$tmp)) {
         throw "Invalid boolean: $useSslText"
