@@ -97,6 +97,7 @@ builder.Services.AddSingleton<IValidateOptions<BraveSearchOptions>, BraveSearchO
 builder.Services.AddSingleton<IValidateOptions<SearXNGOptions>, WebSearchProvidersValidator>();
 builder.Services.AddSingleton<IValidateOptions<BraveSearchOptions>, WebSearchProvidersValidator>();
 builder.Services.AddSingleton<IValidateOptions<EmailNotificationOptions>, EmailNotificationOptionsValidator>();
+builder.Services.AddSingleton<IValidateOptions<ToolRateLimitingOptions>, ToolRateLimitingOptionsValidator>();
 
 builder.Services.AddOptions<OllamaOptions>()
     .Bind(builder.Configuration.GetSection("Ollama"))
@@ -118,6 +119,9 @@ builder.Services.AddOptions<BraveSearchOptions>()
     .ValidateOnStart();
 builder.Services.AddOptions<EmailNotificationOptions>()
     .Bind(builder.Configuration.GetSection("Email"))
+    .ValidateOnStart();
+builder.Services.AddOptions<ToolRateLimitingOptions>()
+    .Bind(builder.Configuration.GetSection("ToolRateLimiting"))
     .ValidateOnStart();
 builder.Services.Configure<LlmOptions>(builder.Configuration.GetSection("LlmOptions"));
 builder.Services.Configure<VectorMemoryOptions>(builder.Configuration.GetSection("VectorMemoryOptions"));
@@ -198,6 +202,9 @@ builder.Services.AddSingleton<IAgentFactory, AgentFactory>();
 
 // Tool execution pipeline
 builder.Services.AddSingleton<IToolExecutionPipeline, DefaultToolExecutionPipeline>();
+
+// Tool rate limiting
+builder.Services.AddSingleton<IToolRateLimiter, FixedWindowToolRateLimiter>();
 
 // Tools - inject IServiceProvider for command handlers
 builder.Services.AddSingleton<IToolRegistry>(sp =>

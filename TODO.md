@@ -19,8 +19,7 @@
 
 - [ ] **Operationalize vector search end-to-end**
   - Run Qdrant locally, enable ONNX embeddings, and validate semantic memory queries end-to-end.
-- [ ] **Implement rate limiting for tools**
-  - Enforce limits in the tool execution pipeline (per-rank defaults + per-tool overrides).
+
 
 ## 🔧 Active Gaps / Known Limitations
 

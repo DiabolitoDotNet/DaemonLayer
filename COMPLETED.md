@@ -1,6 +1,6 @@
 # InfernalHierarchy – Completed Work Log
 
-> **Last Updated:** February 4, 2026
+> **Last Updated:** February 5, 2026
 >
 > This file contains items/features that are **implemented / completed** and were moved out of `TODO.md` to keep the TODO list focused on remaining work.
 >
@@ -95,6 +95,7 @@
 - **InputValidator**: SQLi/XSS/command-injection patterns + sanitization
 - **ResiliencePolicies**: Polly retry/circuit-breaker policies
 - **ResourceLimitService**: per-rank limits, concurrency, timeouts
+- **Tool rate limiting**: fixed-window limiter in tool pipeline (per-rank defaults + per-tool overrides)
 - **Agent Suspension/Hibernation**: Suspend/Resume lifecycle states
 - **SecretRotationService**: hot-reload secrets via `IOptionsMonitor<T>`
 - **ToolAuthorizationService**: rank-based tool permissions + allow/deny lists

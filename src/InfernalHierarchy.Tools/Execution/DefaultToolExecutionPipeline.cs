@@ -15,21 +15,53 @@ public sealed class DefaultToolExecutionPipeline : IToolExecutionPipeline
     private readonly AgentLearningService? _learningService;
     private readonly GlobalExceptionHandler? _exceptionHandler;
     private readonly IAgentEventSink? _eventSink;
+    private readonly IToolRateLimiter? _rateLimiter;
 
     public DefaultToolExecutionPipeline(
         ILogger<DefaultToolExecutionPipeline> logger,
         AgentLearningService? learningService = null,
         GlobalExceptionHandler? exceptionHandler = null,
-        IAgentEventSink? eventSink = null)
+        IAgentEventSink? eventSink = null,
+        IToolRateLimiter? rateLimiter = null)
     {
         _logger = logger;
         _learningService = learningService;
         _exceptionHandler = exceptionHandler;
         _eventSink = eventSink;
+        _rateLimiter = rateLimiter;
     }
 
     public async Task<ToolResult> ExecuteAsync(ToolExecutionContext context)
     {
+        if (_rateLimiter != null)
+        {
+            var decision = _rateLimiter.Check(context);
+            if (!decision.Allowed)
+            {
+                var result = new ToolResult
+                {
+                    Success = false,
+                    Output = string.Empty,
+                    Error = string.IsNullOrWhiteSpace(decision.Reason)
+                        ? $"Rate limit exceeded. Retry after {(int)Math.Ceiling(decision.RetryAfter.TotalSeconds)}s."
+                        : $"{decision.Reason}. Retry after {(int)Math.Ceiling(decision.RetryAfter.TotalSeconds)}s.",
+                    Metadata = new Dictionary<string, object>
+                    {
+                        ["rate_limited"] = true,
+                        ["retry_after_ms"] = (long)decision.RetryAfter.TotalMilliseconds
+                    }
+                };
+
+                TryAppendToolEvent(
+                    context,
+                    success: false,
+                    duration: TimeSpan.Zero,
+                    errorMessage: result.Error);
+
+                return result;
+            }
+        }
+
         var stopwatch = Stopwatch.StartNew();
 
         try
