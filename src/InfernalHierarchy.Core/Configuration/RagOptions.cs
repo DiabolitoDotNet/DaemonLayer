@@ -1,4 +1,4 @@
-namespace InfernalHierarchy.Core;
+namespace InfernalHierarchy.Core.Configuration;
 
 /// <summary>
 /// Retrieval-Augmented Generation options.

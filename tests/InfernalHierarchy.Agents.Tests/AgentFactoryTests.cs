@@ -1,10 +1,11 @@
 using FluentAssertions;
 using InfernalHierarchy.Agents;
-using InfernalHierarchy.Core;
+using InfernalHierarchy.Core.Eventing;
 using InfernalHierarchy.Core.Entities;
 using InfernalHierarchy.Core.Interfaces;
 using InfernalHierarchy.Messaging;
 using InfernalHierarchy.Tools;
+using InfernalHierarchy.Tools.Clients;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
@@ -33,7 +34,7 @@ public class AgentFactoryTests
         _mockRegistry = new Mock<AgentRegistry>(Mock.Of<ILogger<AgentRegistry>>());
 
         // Create a real OllamaClient with mock dependencies
-        var ollamaOptions = Microsoft.Extensions.Options.Options.Create(new InfernalHierarchy.Tools.OllamaOptions());
+        var ollamaOptions = Microsoft.Extensions.Options.Options.Create(new OllamaOptions());
         var ollamaLogger = Mock.Of<ILogger<OllamaClient>>();
         _ollamaClient = new OllamaClient(ollamaOptions, ollamaLogger);
 

@@ -1,5 +1,6 @@
 using System.Text;
-using InfernalHierarchy.Tools;
+using InfernalHierarchy.Tools.Clients;
+using InfernalHierarchy.Tools.Telemetry;
 
 namespace InfernalHierarchy.Agents.ReAct;
 

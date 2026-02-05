@@ -1,10 +1,13 @@
-using InfernalHierarchy.Core;
+using InfernalHierarchy.Core.ErrorHandling;
+using InfernalHierarchy.Core.Eventing;
+using InfernalHierarchy.Core.Serialization;
 using InfernalHierarchy.Core.Interfaces;
 using Microsoft.Extensions.Logging;
 using System.Diagnostics;
 using System.Text.Json;
+using InfernalHierarchy.Tools.Learning;
 
-namespace InfernalHierarchy.Tools;
+namespace InfernalHierarchy.Tools.Execution;
 
 public sealed class DefaultToolExecutionPipeline : IToolExecutionPipeline
 {

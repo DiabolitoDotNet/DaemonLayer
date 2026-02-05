@@ -1,6 +1,6 @@
 using System.Text.Json;
 
-namespace InfernalHierarchy.Core;
+namespace InfernalHierarchy.Core.Serialization;
 
 /// <summary>
 /// Shared JSON serialization defaults used across Host/Agents/Tools.

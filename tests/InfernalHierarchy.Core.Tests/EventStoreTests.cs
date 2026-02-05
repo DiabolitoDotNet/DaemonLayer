@@ -1,5 +1,5 @@
 using FluentAssertions;
-using InfernalHierarchy.Core;
+using InfernalHierarchy.Core.Eventing;
 using InfernalHierarchy.Core.Entities;
 using Microsoft.Extensions.Logging;
 using Moq;

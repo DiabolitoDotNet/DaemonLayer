@@ -1,3 +1,5 @@
+using System.Collections.ObjectModel;
+
 namespace InfernalHierarchy.Core.Saga;
 
 /// <summary>
@@ -43,7 +45,7 @@ public interface ISaga
     /// <summary>
     /// Gets the saga steps
     /// </summary>
-    List<ISagaStep> Steps { get; }
+    Collection<ISagaStep> Steps { get; }
 
     /// <summary>
     /// Executes the saga
@@ -66,17 +68,17 @@ public class SagaContext
     /// <summary>
     /// Gets or sets shared data between steps
     /// </summary>
-    public Dictionary<string, object> Data { get; set; } = new();
+    public Dictionary<string, object> Data { get; } = new();
 
     /// <summary>
     /// Gets or sets completed step names
     /// </summary>
-    public List<string> CompletedSteps { get; set; } = new();
+    public Collection<string> CompletedSteps { get; } = new();
 
     /// <summary>
     /// Gets or sets compensated step names
     /// </summary>
-    public List<string> CompensatedSteps { get; set; } = new();
+    public Collection<string> CompensatedSteps { get; } = new();
 
     /// <summary>
     /// Gets or sets saga start time
@@ -91,7 +93,7 @@ public class SagaContext
     /// <summary>
     /// Gets or sets current step index
     /// </summary>
-    public int CurrentStep { get; set; } = 0;
+    public int CurrentStep { get; set; }
 
     /// <summary>
     /// Gets or sets error information if saga failed

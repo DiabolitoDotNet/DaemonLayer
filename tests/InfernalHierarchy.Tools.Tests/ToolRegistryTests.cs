@@ -1,5 +1,6 @@
 using FluentAssertions;
-using InfernalHierarchy.Core;
+using InfernalHierarchy.Core.ErrorHandling;
+using InfernalHierarchy.Core.Eventing;
 using InfernalHierarchy.Core.Interfaces;
 using InfernalHierarchy.Tools;
 using Microsoft.Extensions.DependencyInjection;

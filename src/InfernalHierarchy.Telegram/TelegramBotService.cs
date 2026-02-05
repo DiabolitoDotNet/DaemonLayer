@@ -1,4 +1,4 @@
-using InfernalHierarchy.Core;
+using InfernalHierarchy.Core.ErrorHandling;
 using InfernalHierarchy.Core.Entities;
 using InfernalHierarchy.Core.Interfaces;
 using InfernalHierarchy.Telegram.Commands;

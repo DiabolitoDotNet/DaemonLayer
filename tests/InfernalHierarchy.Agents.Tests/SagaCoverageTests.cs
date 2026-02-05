@@ -140,7 +140,7 @@ public sealed class SagaCoverageTests
         var step = new ValidateParticipantsStep(NullLogger.Instance, Mock.Of<IAgentFactory>());
         var context = new SagaContext
         {
-            Data = new Dictionary<string, object>
+            Data =
             {
                 ["CollaborationRequest"] = new CollaborationRequest
                 {
@@ -164,7 +164,7 @@ public sealed class SagaCoverageTests
         var ids = new List<string> { "a", "b" };
         var context = new SagaContext
         {
-            Data = new Dictionary<string, object>
+            Data =
             {
                 ["CollaborationRequest"] = new CollaborationRequest
                 {
@@ -199,7 +199,7 @@ public sealed class SagaCoverageTests
         var step = new StoreCollaborationStep(NullLogger.Instance, memory.Object);
         var context = new SagaContext
         {
-            Data = new Dictionary<string, object>
+            Data =
             {
                 ["CollaborationRequest"] = new CollaborationRequest
                 {
@@ -260,7 +260,7 @@ public sealed class SagaCoverageTests
         var step = new StoreFinalResultStep(NullLogger.Instance, memory.Object);
         var context = new SagaContext
         {
-            Data = new Dictionary<string, object>
+            Data =
             {
                 ["AggregatedResult"] = new CollaborationResult
                 {

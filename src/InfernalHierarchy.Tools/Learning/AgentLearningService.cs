@@ -3,7 +3,7 @@ using InfernalHierarchy.Core.Interfaces;
 using Microsoft.Extensions.Logging;
 using System.Collections.Concurrent;
 
-namespace InfernalHierarchy.Tools;
+namespace InfernalHierarchy.Tools.Learning;
 
 /// <summary>
 /// Tracks tool execution success rates and agent learning patterns

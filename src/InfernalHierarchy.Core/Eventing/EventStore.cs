@@ -4,7 +4,7 @@ using Microsoft.Extensions.Logging;
 using System.Collections.Concurrent;
 using System.Text.Json;
 
-namespace InfernalHierarchy.Core;
+namespace InfernalHierarchy.Core.Eventing;
 
 /// <summary>
 /// Event sourcing store for complete audit trail of all agent actions
@@ -260,10 +260,10 @@ public class AgentState
     public string AgentId { get; set; } = string.Empty;
     public DateTime Created { get; set; }
     public DateTime? Terminated { get; set; }
-    public int EventCount { get; set; }
-    public DateTime LastEventTimestamp { get; set; }
     public int TasksReceived { get; set; }
     public int TasksCompleted { get; set; }
     public int ToolExecutions { get; set; }
     public int DecisionsMade { get; set; }
+    public int EventCount { get; set; }
+    public DateTime LastEventTimestamp { get; set; }
 }

@@ -1,12 +1,14 @@
 using Azure.AI.OpenAI;
 using Azure.Core;
 using InfernalHierarchy.Core.Interfaces;
+using InfernalHierarchy.Tools;
+using InfernalHierarchy.Tools.Telemetry;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using OpenAI.Chat;
 using System.ClientModel;
 
-namespace InfernalHierarchy.Tools;
+namespace InfernalHierarchy.Tools.Clients;
 
 public interface IChatModelClient
 {

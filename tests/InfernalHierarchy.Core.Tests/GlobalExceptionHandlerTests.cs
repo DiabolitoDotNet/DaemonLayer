@@ -1,5 +1,5 @@
 using FluentAssertions;
-using InfernalHierarchy.Core;
+using InfernalHierarchy.Core.ErrorHandling;
 using Microsoft.Extensions.Logging.Abstractions;
 using System.Net;
 using Xunit;

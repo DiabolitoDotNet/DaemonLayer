@@ -2,6 +2,7 @@ using FluentAssertions;
 using InfernalHierarchy.Core;
 using InfernalHierarchy.Core.CQRS;
 using InfernalHierarchy.Core.Entities;
+using InfernalHierarchy.Core.Eventing;
 using InfernalHierarchy.Core.Saga;
 using Xunit;
 

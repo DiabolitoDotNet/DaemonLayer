@@ -1,7 +1,10 @@
 using InfernalHierarchy.Core.Entities;
-using InfernalHierarchy.Core;
+using InfernalHierarchy.Core.Configuration;
+using InfernalHierarchy.Core.Eventing;
 using InfernalHierarchy.Core.Interfaces;
 using InfernalHierarchy.Tools;
+using InfernalHierarchy.Tools.Clients;
+using InfernalHierarchy.Tools.Telemetry;
 using Microsoft.Extensions.Logging;
 using System.Text;
 using System.Text.Json;
@@ -147,7 +150,7 @@ public class ReActAgent : BaseAgent
 
     public override async Task<AgentMessage> ProcessTaskAsync(AgentMessage task, CancellationToken ct = default)
     {
-        TryAppendTaskEvent(task, InfernalHierarchy.Core.EventType.TaskReceived, "Task received");
+        TryAppendTaskEvent(task, EventType.TaskReceived, "Task received");
 
         // Handle collaboration requests
         if (task.Content.StartsWith("[COLLABORATION_REQUEST:", StringComparison.OrdinalIgnoreCase))
@@ -171,7 +174,7 @@ public class ReActAgent : BaseAgent
 
         try
         {
-            TryAppendTaskEvent(task, InfernalHierarchy.Core.EventType.TaskStarted, "Task started");
+            TryAppendTaskEvent(task, EventType.TaskStarted, "Task started");
 
             var context = await BuildContextAsync(task, ct);
             var result = await RunReActLoopAsync(context, task.Content, ct);
@@ -189,7 +192,7 @@ public class ReActAgent : BaseAgent
 
             TryAppendTaskEvent(
                 task,
-                InfernalHierarchy.Core.EventType.TaskCompleted,
+                EventType.TaskCompleted,
                 "Task completed",
                 new Dictionary<string, object>
                 {
@@ -220,7 +223,7 @@ public class ReActAgent : BaseAgent
 
             TryAppendTaskEvent(
                 task,
-                InfernalHierarchy.Core.EventType.TaskFailed,
+                EventType.TaskFailed,
                 "Task failed",
                 new Dictionary<string, object>
                 {
@@ -240,7 +243,7 @@ public class ReActAgent : BaseAgent
 
     private void TryAppendTaskEvent(
         AgentMessage task,
-        InfernalHierarchy.Core.EventType type,
+        EventType type,
         string description,
         Dictionary<string, object>? extraMetadata = null)
     {
@@ -267,7 +270,7 @@ public class ReActAgent : BaseAgent
 
         try
         {
-            _eventSink.AppendEvent(new InfernalHierarchy.Core.AgentEvent
+            _eventSink.AppendEvent(new AgentEvent
             {
                 AgentId = Id,
                 Type = type,
@@ -290,10 +293,10 @@ public class ReActAgent : BaseAgent
 
         try
         {
-            _eventSink.AppendEvent(new InfernalHierarchy.Core.AgentEvent
+            _eventSink.AppendEvent(new AgentEvent
             {
                 AgentId = Id,
-                Type = InfernalHierarchy.Core.EventType.DecisionMade,
+                Type = EventType.DecisionMade,
                 Description = "Decision recorded",
                 Metadata = new Dictionary<string, object>
                 {

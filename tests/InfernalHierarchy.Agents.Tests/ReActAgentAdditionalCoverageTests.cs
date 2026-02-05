@@ -1,6 +1,6 @@
 using FluentAssertions;
 using InfernalHierarchy.Agents.ReAct;
-using InfernalHierarchy.Core;
+using InfernalHierarchy.Core.Configuration;
 using InfernalHierarchy.Core.Entities;
 using InfernalHierarchy.Core.Interfaces;
 using InfernalHierarchy.Tools;

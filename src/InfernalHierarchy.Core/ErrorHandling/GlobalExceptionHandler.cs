@@ -1,7 +1,7 @@
 using Microsoft.Extensions.Logging;
 using System.Diagnostics;
 
-namespace InfernalHierarchy.Core;
+namespace InfernalHierarchy.Core.ErrorHandling;
 
 /// <summary>
 /// Exception categories for error handling strategies

@@ -1,5 +1,6 @@
 using InfernalHierarchy.Core.Saga;
 using Microsoft.Extensions.Logging;
+using System.Collections.ObjectModel;
 
 namespace InfernalHierarchy.Agents.Saga;
 
@@ -15,7 +16,7 @@ public abstract class SagaBase : ISaga
     public abstract string Name { get; }
 
     /// <inheritdoc/>
-    public List<ISagaStep> Steps { get; } = new();
+    public Collection<ISagaStep> Steps { get; } = new();
 
     /// <summary>
     /// Logger instance

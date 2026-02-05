@@ -2,7 +2,7 @@ using InfernalHierarchy.Core.Entities;
 using Microsoft.Extensions.Logging;
 using System.Collections.Concurrent;
 
-namespace InfernalHierarchy.Tools;
+namespace InfernalHierarchy.Tools.Telemetry;
 
 /// <summary>
 /// Tracks token usage and costs across all LLM calls for analysis and optimization

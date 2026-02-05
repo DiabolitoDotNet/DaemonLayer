@@ -1,12 +1,13 @@
 using Azure.AI.OpenAI;
 using Azure.Core;
 using InfernalHierarchy.Core.Interfaces;
+using InfernalHierarchy.Tools;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using OpenAI.Chat;
 using System.ClientModel;
 
-namespace InfernalHierarchy.Tools;
+namespace InfernalHierarchy.Tools.Clients;
 
 /// <summary>
 /// Client for Ollama LLM via Azure.AI.OpenAI (OpenAI-compatible endpoint)

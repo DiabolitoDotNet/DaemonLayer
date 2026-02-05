@@ -1,6 +1,6 @@
 using FluentAssertions;
-using InfernalHierarchy.Core;
 using InfernalHierarchy.Core.Entities;
+using InfernalHierarchy.Core.Security;
 using Xunit;
 
 namespace InfernalHierarchy.Core.Tests;

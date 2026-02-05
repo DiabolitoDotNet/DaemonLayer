@@ -1,6 +1,6 @@
 using InfernalHierarchy.Core.Entities;
 
-namespace InfernalHierarchy.Core;
+namespace InfernalHierarchy.Core.Security;
 
 public static class MemoryVisibilityRules
 {

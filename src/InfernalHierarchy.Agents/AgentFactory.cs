@@ -1,4 +1,5 @@
-using InfernalHierarchy.Core;
+using InfernalHierarchy.Core.Configuration;
+using InfernalHierarchy.Core.Eventing;
 using InfernalHierarchy.Core.Entities;
 using InfernalHierarchy.Core.Interfaces;
 using InfernalHierarchy.Messaging;
@@ -6,6 +7,8 @@ using InfernalHierarchy.Agents.ReAct;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using InfernalHierarchy.Tools;
+using InfernalHierarchy.Tools.Clients;
+using InfernalHierarchy.Tools.Telemetry;
 
 namespace InfernalHierarchy.Agents;
 
@@ -237,7 +240,7 @@ public class AgentFactory : IAgentFactory
 
         try
         {
-            _eventSink.AppendEvent(new InfernalHierarchy.Core.AgentEvent
+            _eventSink.AppendEvent(new AgentEvent
             {
                 AgentId = agentId,
                 Type = type,

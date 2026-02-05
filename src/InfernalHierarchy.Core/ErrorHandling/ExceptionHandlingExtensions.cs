@@ -1,7 +1,7 @@
 using Microsoft.Extensions.Logging;
 using Polly;
 
-namespace InfernalHierarchy.Core;
+namespace InfernalHierarchy.Core.ErrorHandling;
 
 /// <summary>
 /// Extension methods for exception handling with retry logic
