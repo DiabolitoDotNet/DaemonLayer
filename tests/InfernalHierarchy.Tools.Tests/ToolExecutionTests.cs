@@ -1,6 +1,5 @@
 using InfernalHierarchy.Core.Entities;
 using InfernalHierarchy.Core.Interfaces;
-using InfernalHierarchy.Tools;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Moq;

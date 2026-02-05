@@ -1,7 +1,7 @@
 using System.Runtime.CompilerServices;
 using System.Threading.Channels;
 using FluentAssertions;
-using InfernalHierarchy.Agents;
+using InfernalHierarchy.Agents.Base;
 using InfernalHierarchy.Core.Entities;
 using InfernalHierarchy.Core.Interfaces;
 using Microsoft.Extensions.Logging;

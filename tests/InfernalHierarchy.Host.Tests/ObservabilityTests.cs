@@ -1,5 +1,10 @@
 using FluentAssertions;
-using InfernalHierarchy.Host;
+using InfernalHierarchy.Host.Configuration;
+using InfernalHierarchy.Host.Hosting;
+using InfernalHierarchy.Host.Observability;
+using InfernalHierarchy.Host.Resilience;
+using InfernalHierarchy.Host.Security;
+using InfernalHierarchy.Host.Telegram;
 using Microsoft.Extensions.Logging;
 using Moq;
 using System.Diagnostics;

@@ -1,5 +1,4 @@
 using FluentAssertions;
-using InfernalHierarchy.Tools;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Moq;
@@ -34,7 +33,7 @@ public sealed class MultiModelLlmClientTests : IDisposable
         };
 
         _sut = new MultiModelLlmClient(
-            Options.Create(_options),
+            Microsoft.Extensions.Options.Options.Create(_options),
             _tokenTracker,
             _mockLogger.Object);
     }
@@ -168,7 +167,7 @@ public sealed class MultiModelLlmClientTests : IDisposable
         // Arrange
         var attempts = new Dictionary<string, int>(StringComparer.Ordinal);
         var client = new TestableMultiModelLlmClient(
-            Options.Create(_options),
+            Microsoft.Extensions.Options.Options.Create(_options),
             _tokenTracker,
             _mockLogger.Object,
             shouldFailForModel: modelName => modelName is "llama3.1:8b", // fail primary (Medium)
@@ -201,7 +200,7 @@ public sealed class MultiModelLlmClientTests : IDisposable
         // Arrange
         var attempts = new Dictionary<string, int>(StringComparer.Ordinal);
         var client = new TestableMultiModelLlmClient(
-            Options.Create(_options),
+            Microsoft.Extensions.Options.Options.Create(_options),
             _tokenTracker,
             _mockLogger.Object,
             shouldFailForModel: _ => true,
@@ -375,7 +374,7 @@ public sealed class MultiModelLlmClientTests : IDisposable
         };
 
         var tokenTracker = new TokenUsageTracker(Mock.Of<ILogger<TokenUsageTracker>>());
-        var sut = new MultiModelLlmClient(Options.Create(options), tokenTracker, _mockLogger.Object);
+    var sut = new MultiModelLlmClient(Microsoft.Extensions.Options.Options.Create(options), tokenTracker, _mockLogger.Object);
 
         var clientsField = sut.GetType().GetField("_modelClients", BindingFlags.NonPublic | BindingFlags.Instance);
         clientsField.Should().NotBeNull();
@@ -415,7 +414,7 @@ public sealed class MultiModelLlmClientTests : IDisposable
         };
 
         var tokenTracker = new TokenUsageTracker(Mock.Of<ILogger<TokenUsageTracker>>());
-        var sut = new MultiModelLlmClient(Options.Create(options), tokenTracker, _mockLogger.Object);
+    var sut = new MultiModelLlmClient(Microsoft.Extensions.Options.Options.Create(options), tokenTracker, _mockLogger.Object);
 
         var clientsField = sut.GetType().GetField("_modelClients", BindingFlags.NonPublic | BindingFlags.Instance);
         var clients = (IDictionary)clientsField!.GetValue(sut)!;
@@ -449,7 +448,7 @@ public sealed class MultiModelLlmClientTests : IDisposable
             }
         };
 
-        var sut = new MultiModelLlmClient(Options.Create(options), _tokenTracker, _mockLogger.Object);
+    var sut = new MultiModelLlmClient(Microsoft.Extensions.Options.Options.Create(options), _tokenTracker, _mockLogger.Object);
 
         var selectedModel = sut.GetType()
             .GetMethod("SelectModelForComplexity", BindingFlags.NonPublic | BindingFlags.Instance)!
@@ -464,7 +463,7 @@ public sealed class MultiModelLlmClientTests : IDisposable
     {
         // Arrange
         var disposableSut = new MultiModelLlmClient(
-            Options.Create(_options),
+            Microsoft.Extensions.Options.Options.Create(_options),
             _tokenTracker,
             _mockLogger.Object);
 

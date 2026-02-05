@@ -3,7 +3,6 @@ using InfernalHierarchy.Agents.ReAct;
 using InfernalHierarchy.Core.Configuration;
 using InfernalHierarchy.Core.Entities;
 using InfernalHierarchy.Core.Interfaces;
-using InfernalHierarchy.Tools;
 using Microsoft.Extensions.Logging;
 using Moq;
 using Xunit;

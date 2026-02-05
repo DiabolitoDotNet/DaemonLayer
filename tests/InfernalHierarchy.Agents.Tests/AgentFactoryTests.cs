@@ -1,10 +1,11 @@
 using FluentAssertions;
-using InfernalHierarchy.Agents;
+using InfernalHierarchy.Agents.Factory;
+using InfernalHierarchy.Agents.Registry;
 using InfernalHierarchy.Core.Eventing;
 using InfernalHierarchy.Core.Entities;
 using InfernalHierarchy.Core.Interfaces;
 using InfernalHierarchy.Messaging.Bus;
-using InfernalHierarchy.Tools;
+using InfernalHierarchy.Tools.Options;
 using InfernalHierarchy.Tools.Clients;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;

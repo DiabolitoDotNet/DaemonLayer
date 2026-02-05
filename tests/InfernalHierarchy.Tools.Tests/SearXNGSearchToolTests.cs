@@ -1,5 +1,4 @@
 using FluentAssertions;
-using InfernalHierarchy.Tools;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Moq;
@@ -15,7 +14,7 @@ public sealed class SearXNGSearchToolTests
     [Fact]
     public async Task ExecuteAsync_ShouldReturnError_WhenDisabled()
     {
-        var options = Options.Create(new SearXNGOptions { Enabled = false });
+        var options = Microsoft.Extensions.Options.Options.Create(new SearXNGOptions { Enabled = false });
         using var httpClient = new HttpClient();
         var logger = Mock.Of<ILogger<SearXNGSearchTool>>();
         var tool = new SearXNGSearchTool(httpClient, options, logger);
@@ -29,7 +28,7 @@ public sealed class SearXNGSearchToolTests
     [Fact]
     public async Task ExecuteAsync_ShouldReturnError_WhenQueryMissing()
     {
-        var options = Options.Create(new SearXNGOptions { Enabled = true });
+        var options = Microsoft.Extensions.Options.Options.Create(new SearXNGOptions { Enabled = true });
         using var httpClient = new HttpClient();
         var logger = Mock.Of<ILogger<SearXNGSearchTool>>();
         var tool = new SearXNGSearchTool(httpClient, options, logger);
@@ -59,7 +58,7 @@ public sealed class SearXNGSearchToolTests
             });
 
         using var httpClient = new HttpClient(mockHttpMessageHandler.Object, disposeHandler: false);
-        var options = Options.Create(new SearXNGOptions { Enabled = true, BaseUrl = new Uri("http://localhost:1234") });
+    var options = Microsoft.Extensions.Options.Options.Create(new SearXNGOptions { Enabled = true, BaseUrl = new Uri("http://localhost:1234") });
         var logger = Mock.Of<ILogger<SearXNGSearchTool>>();
         var tool = new SearXNGSearchTool(httpClient, options, logger);
 
@@ -95,7 +94,7 @@ public sealed class SearXNGSearchToolTests
             });
 
         using var httpClient = new HttpClient(mockHttpMessageHandler.Object, disposeHandler: false);
-        var options = Options.Create(new SearXNGOptions { Enabled = true, BaseUrl = new Uri("http://localhost:1234") });
+    var options = Microsoft.Extensions.Options.Options.Create(new SearXNGOptions { Enabled = true, BaseUrl = new Uri("http://localhost:1234") });
         var logger = Mock.Of<ILogger<SearXNGSearchTool>>();
         var tool = new SearXNGSearchTool(httpClient, options, logger);
 
@@ -123,7 +122,7 @@ public sealed class SearXNGSearchToolTests
             .ThrowsAsync(new HttpRequestException("boom"));
 
         using var httpClient = new HttpClient(mockHttpMessageHandler.Object, disposeHandler: false);
-        var options = Options.Create(new SearXNGOptions { Enabled = true, BaseUrl = new Uri("http://localhost:1234") });
+    var options = Microsoft.Extensions.Options.Options.Create(new SearXNGOptions { Enabled = true, BaseUrl = new Uri("http://localhost:1234") });
         var logger = Mock.Of<ILogger<SearXNGSearchTool>>();
         var tool = new SearXNGSearchTool(httpClient, options, logger);
 

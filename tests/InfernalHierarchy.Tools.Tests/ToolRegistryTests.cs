@@ -2,7 +2,6 @@ using FluentAssertions;
 using InfernalHierarchy.Core.ErrorHandling;
 using InfernalHierarchy.Core.Eventing;
 using InfernalHierarchy.Core.Interfaces;
-using InfernalHierarchy.Tools;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Moq;

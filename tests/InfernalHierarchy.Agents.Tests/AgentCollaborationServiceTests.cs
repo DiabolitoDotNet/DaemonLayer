@@ -1,5 +1,6 @@
 using FluentAssertions;
-using InfernalHierarchy.Agents;
+using InfernalHierarchy.Agents.Collaboration;
+using InfernalHierarchy.Agents.Registry;
 using InfernalHierarchy.Core.Entities;
 using InfernalHierarchy.Core.Interfaces;
 using Microsoft.Extensions.Logging;

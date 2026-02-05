@@ -1,6 +1,8 @@
 using System.Text.RegularExpressions;
 using FluentAssertions;
-using InfernalHierarchy.Agents;
+using InfernalHierarchy.Agents.Base;
+using InfernalHierarchy.Agents.Collaboration;
+using InfernalHierarchy.Agents.Registry;
 using InfernalHierarchy.Core.Entities;
 using InfernalHierarchy.Core.Interfaces;
 using InfernalHierarchy.Messaging.Bus;

@@ -1,7 +1,6 @@
 using Azure.AI.OpenAI;
 using Azure.Core;
 using InfernalHierarchy.Core.Interfaces;
-using InfernalHierarchy.Tools;
 using InfernalHierarchy.Tools.Telemetry;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;

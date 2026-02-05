@@ -1,4 +1,4 @@
-namespace InfernalHierarchy.Tools;
+namespace InfernalHierarchy.Tools.Options;
 
 /// <summary>
 /// Configuration options for Ollama LLM client

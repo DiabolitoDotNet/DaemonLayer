@@ -1,4 +1,5 @@
 using FluentAssertions;
+using InfernalHierarchy.Host.Observability;
 using Serilog;
 using Serilog.Core;
 using Serilog.Events;

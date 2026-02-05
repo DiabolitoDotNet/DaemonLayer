@@ -1,5 +1,4 @@
 using FluentAssertions;
-using InfernalHierarchy.Tools;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Moq;
@@ -16,7 +15,7 @@ public class BraveSearchToolTests
     public async Task ExecuteAsync_ShouldReturnError_WhenDisabled()
     {
         // Arrange
-        var options = Options.Create(new BraveSearchOptions { Enabled = false });
+        var options = Microsoft.Extensions.Options.Options.Create(new BraveSearchOptions { Enabled = false });
         using var httpClient = new HttpClient();
         var logger = Mock.Of<ILogger<BraveSearchTool>>();
         var tool = new BraveSearchTool(httpClient, options, logger);
@@ -38,7 +37,7 @@ public class BraveSearchToolTests
     public async Task ExecuteAsync_ShouldReturnError_WhenApiKeyMissing()
     {
         // Arrange
-        var options = Options.Create(new BraveSearchOptions { Enabled = true, ApiKey = "" });
+        var options = Microsoft.Extensions.Options.Options.Create(new BraveSearchOptions { Enabled = true, ApiKey = "" });
         using var httpClient = new HttpClient();
         var logger = Mock.Of<ILogger<BraveSearchTool>>();
         var tool = new BraveSearchTool(httpClient, options, logger);
@@ -60,7 +59,7 @@ public class BraveSearchToolTests
     public async Task ExecuteAsync_ShouldReturnError_WhenQueryMissing()
     {
         // Arrange
-        var options = Options.Create(new BraveSearchOptions { Enabled = true, ApiKey = "test-key" });
+        var options = Microsoft.Extensions.Options.Options.Create(new BraveSearchOptions { Enabled = true, ApiKey = "test-key" });
         using var httpClient = new HttpClient();
         var logger = Mock.Of<ILogger<BraveSearchTool>>();
         var tool = new BraveSearchTool(httpClient, options, logger);
@@ -78,7 +77,7 @@ public class BraveSearchToolTests
     [Fact]
     public async Task ExecuteAsync_ShouldReturnError_WhenQueryNotString()
     {
-        var options = Options.Create(new BraveSearchOptions { Enabled = true, ApiKey = "test-key" });
+        var options = Microsoft.Extensions.Options.Options.Create(new BraveSearchOptions { Enabled = true, ApiKey = "test-key" });
         using var httpClient = new HttpClient();
         var logger = Mock.Of<ILogger<BraveSearchTool>>();
         var tool = new BraveSearchTool(httpClient, options, logger);
@@ -124,7 +123,7 @@ public class BraveSearchToolTests
             });
 
         using var httpClient = new HttpClient(mockHttpMessageHandler.Object, disposeHandler: false);
-        var options = Options.Create(new BraveSearchOptions { Enabled = true, ApiKey = "test-key" });
+    var options = Microsoft.Extensions.Options.Options.Create(new BraveSearchOptions { Enabled = true, ApiKey = "test-key" });
         var logger = Mock.Of<ILogger<BraveSearchTool>>();
         var tool = new BraveSearchTool(httpClient, options, logger);
 
@@ -168,7 +167,7 @@ public class BraveSearchToolTests
             });
 
         using var httpClient = new HttpClient(mockHttpMessageHandler.Object, disposeHandler: false);
-        var options = Options.Create(new BraveSearchOptions { Enabled = true, ApiKey = "test-key" });
+    var options = Microsoft.Extensions.Options.Options.Create(new BraveSearchOptions { Enabled = true, ApiKey = "test-key" });
         var tool = new BraveSearchTool(httpClient, options, Mock.Of<ILogger<BraveSearchTool>>());
 
         var result = await tool.ExecuteAsync(new Dictionary<string, object> { ["query"] = "test" });
@@ -195,7 +194,7 @@ public class BraveSearchToolTests
             });
 
         using var httpClient = new HttpClient(mockHttpMessageHandler.Object, disposeHandler: false);
-        var options = Options.Create(new BraveSearchOptions { Enabled = true, ApiKey = "invalid-key" });
+    var options = Microsoft.Extensions.Options.Options.Create(new BraveSearchOptions { Enabled = true, ApiKey = "invalid-key" });
         var logger = Mock.Of<ILogger<BraveSearchTool>>();
         var tool = new BraveSearchTool(httpClient, options, logger);
 
@@ -225,7 +224,7 @@ public class BraveSearchToolTests
             .ThrowsAsync(new HttpRequestException("boom"));
 
         using var httpClient = new HttpClient(mockHttpMessageHandler.Object, disposeHandler: false);
-        var options = Options.Create(new BraveSearchOptions { Enabled = true, ApiKey = "test-key" });
+    var options = Microsoft.Extensions.Options.Options.Create(new BraveSearchOptions { Enabled = true, ApiKey = "test-key" });
         var tool = new BraveSearchTool(httpClient, options, Mock.Of<ILogger<BraveSearchTool>>());
 
         var result = await tool.ExecuteAsync(new Dictionary<string, object> { ["query"] = "test" });
@@ -251,7 +250,7 @@ public class BraveSearchToolTests
             });
 
         using var httpClient = new HttpClient(mockHttpMessageHandler.Object, disposeHandler: false);
-        var options = Options.Create(new BraveSearchOptions { Enabled = true, ApiKey = "test-key" });
+    var options = Microsoft.Extensions.Options.Options.Create(new BraveSearchOptions { Enabled = true, ApiKey = "test-key" });
         var tool = new BraveSearchTool(httpClient, options, Mock.Of<ILogger<BraveSearchTool>>());
 
         var result = await tool.ExecuteAsync(new Dictionary<string, object> { ["query"] = "test" });
@@ -264,7 +263,7 @@ public class BraveSearchToolTests
     public void Name_ShouldBeBraveSearch()
     {
         // Arrange
-        var options = Options.Create(new BraveSearchOptions());
+        var options = Microsoft.Extensions.Options.Options.Create(new BraveSearchOptions());
         using var httpClient = new HttpClient();
         var logger = Mock.Of<ILogger<BraveSearchTool>>();
         var tool = new BraveSearchTool(httpClient, options, logger);

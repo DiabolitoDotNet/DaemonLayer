@@ -1,6 +1,6 @@
 using System.Text.Json;
 using FluentAssertions;
-using InfernalHierarchy.Agents;
+using InfernalHierarchy.Agents.Templates;
 using InfernalHierarchy.Core.Entities;
 using InfernalHierarchy.Core.Interfaces;
 using Microsoft.Extensions.Logging.Abstractions;

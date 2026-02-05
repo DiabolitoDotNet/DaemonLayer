@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using FluentAssertions;
+using InfernalHierarchy.Host.Observability;
 using Microsoft.Extensions.Logging;
 using Moq;
 using Xunit;

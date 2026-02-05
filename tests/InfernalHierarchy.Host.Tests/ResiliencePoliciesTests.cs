@@ -1,4 +1,5 @@
 using FluentAssertions;
+using InfernalHierarchy.Host.Resilience;
 using Microsoft.Extensions.Logging;
 using Xunit;
 using Moq;

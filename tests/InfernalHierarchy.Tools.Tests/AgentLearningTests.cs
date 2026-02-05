@@ -1,5 +1,4 @@
 using InfernalHierarchy.Core.Entities;
-using InfernalHierarchy.Tools;
 using Microsoft.Extensions.Logging;
 using Moq;
 using Xunit;

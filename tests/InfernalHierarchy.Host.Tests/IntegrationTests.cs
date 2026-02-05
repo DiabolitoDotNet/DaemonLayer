@@ -1,19 +1,20 @@
 using FluentAssertions;
-using InfernalHierarchy.Agents;
+using InfernalHierarchy.Agents.Factory;
+using InfernalHierarchy.Agents.Orchestration;
+using InfernalHierarchy.Agents.Registry;
 using InfernalHierarchy.Core.Entities;
 using InfernalHierarchy.Core.Interfaces;
 using InfernalHierarchy.Memory.Configuration;
 using InfernalHierarchy.Memory.Storage;
 using InfernalHierarchy.Messaging.Bus;
 using InfernalHierarchy.Personas;
-using InfernalHierarchy.Tools;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Moq;
 using Xunit;
-using HierarchyOptions = InfernalHierarchy.Agents.HierarchyOptions;
+using HierarchyOptions = InfernalHierarchy.Agents.Orchestration.HierarchyOptions;
 using MemoryOptions = InfernalHierarchy.Memory.Configuration.MemoryOptions;
 
 namespace InfernalHierarchy.Host.Tests;
@@ -74,7 +75,7 @@ public sealed class IntegrationTests : IAsyncLifetime, IDisposable
 
         var mockLogger = new Mock<ILogger<OllamaClient>>();
         var ollamaClient = new OllamaClient(
-            Options.Create(new InfernalHierarchy.Tools.OllamaOptions { BaseUrl = new Uri("http://localhost:11434"), DefaultModel = "llama3.2:latest" }),
+            Options.Create(new OllamaOptions { BaseUrl = new Uri("http://localhost:11434"), DefaultModel = "llama3.2:latest" }),
             mockLogger.Object);
 
         var agentRegistry = new AgentRegistry(loggerFactory.CreateLogger<AgentRegistry>());
@@ -90,7 +91,7 @@ public sealed class IntegrationTests : IAsyncLifetime, IDisposable
             loggerFactory);
 
         // Setup orchestrator
-        var hierarchyOptions = Options.Create(new InfernalHierarchy.Agents.HierarchyOptions
+        var hierarchyOptions = Options.Create(new HierarchyOptions
         {
             MainAgentName = "TestAgent",
             MaxAgentDepth = 3

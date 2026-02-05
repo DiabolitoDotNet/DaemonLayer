@@ -1,5 +1,4 @@
 using FluentAssertions;
-using InfernalHierarchy.Tools;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 

@@ -1,5 +1,4 @@
 using FluentAssertions;
-using InfernalHierarchy.Tools;
 using Xunit;
 
 namespace InfernalHierarchy.Tools.Tests;

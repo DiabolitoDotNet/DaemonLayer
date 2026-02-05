@@ -2,7 +2,6 @@ using InfernalHierarchy.Agents.ReAct;
 using InfernalHierarchy.Core.Entities;
 using InfernalHierarchy.Core.Interfaces;
 using InfernalHierarchy.Personas;
-using InfernalHierarchy.Tools;
 using Microsoft.Extensions.Logging;
 using Moq;
 using Xunit;

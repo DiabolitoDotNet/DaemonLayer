@@ -1,7 +1,7 @@
 using Azure.AI.OpenAI;
 using Azure.Core;
 using InfernalHierarchy.Core.Interfaces;
-using InfernalHierarchy.Tools;
+using InfernalHierarchy.Tools.Options;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using OpenAI.Chat;

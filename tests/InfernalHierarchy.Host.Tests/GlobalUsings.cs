@@ -1,5 +1,12 @@
-global using InfernalHierarchy.Tools;
 global using InfernalHierarchy.Tools.Clients;
 global using InfernalHierarchy.Tools.Execution;
 global using InfernalHierarchy.Tools.Learning;
 global using InfernalHierarchy.Tools.Telemetry;
+global using InfernalHierarchy.Tools.Options;
+global using InfernalHierarchy.Tools.Tools.Agent;
+global using InfernalHierarchy.Tools.Tools.Collaboration;
+global using InfernalHierarchy.Tools.Tools.Experiments;
+global using InfernalHierarchy.Tools.Tools.Memory;
+global using InfernalHierarchy.Tools.Tools.Search;
+global using InfernalHierarchy.Tools.Tools.Telegram;
+global using InfernalHierarchy.Tools.Tools.Templates;
