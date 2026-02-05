@@ -1,4 +1,4 @@
-namespace InfernalHierarchy.Agents;
+namespace InfernalHierarchy.Agents.ReAct;
 
 /// <summary>
 /// Configuration for the ReAct loop output format and parsing.

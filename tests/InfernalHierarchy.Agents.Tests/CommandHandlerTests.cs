@@ -1,4 +1,4 @@
-using InfernalHierarchy.Agents;
+using InfernalHierarchy.Agents.ReAct;
 using InfernalHierarchy.Core.Entities;
 using InfernalHierarchy.Core.Interfaces;
 using InfernalHierarchy.Personas;

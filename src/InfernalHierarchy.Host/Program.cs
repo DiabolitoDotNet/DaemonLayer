@@ -1,4 +1,5 @@
 using InfernalHierarchy.Agents;
+using InfernalHierarchy.Agents.ReAct;
 using InfernalHierarchy.Core;
 using InfernalHierarchy.Core.Interfaces;
 using InfernalHierarchy.Memory;
@@ -219,6 +220,7 @@ builder.Services.AddHostedService<ConfigurationReloadService>();
 builder.Services.AddHostedService<SecretRotationService>();
 
 // Hosted services
+builder.Services.AddInfernalTelegramCommandHandlers();
 builder.Services.AddHostedService<TelegramBotService>();
 builder.Services.AddHostedService<AgentOrchestrator>();
 

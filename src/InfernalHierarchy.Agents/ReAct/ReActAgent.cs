@@ -7,7 +7,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 
-namespace InfernalHierarchy.Agents;
+namespace InfernalHierarchy.Agents.ReAct;
 
 /// <summary>
 /// ReAct (Reasoning + Acting) agent implementation
@@ -24,6 +24,9 @@ public class ReActAgent : BaseAgent
     private readonly TokenUsageTracker? _tokenUsageTracker;
     private readonly MultiModelLlmClient? _multiModelLlmClient;
     private readonly IAgentCollaborationService? _collaborationService;
+    private readonly IActionParser _actionParser;
+    private readonly IActionExecutor _actionExecutor;
+    private readonly IReportGenerator _reportGenerator;
     private const int MaxIterations = 5;
 
     public ReActAgent(
@@ -63,7 +66,10 @@ public class ReActAgent : BaseAgent
         ReActOptions? reActOptions = null,
         TokenUsageTracker? tokenUsageTracker = null,
         MultiModelLlmClient? multiModelLlmClient = null,
-        IAgentCollaborationService? collaborationService = null)
+        IAgentCollaborationService? collaborationService = null,
+        IActionParser? actionParser = null,
+        IActionExecutor? actionExecutor = null,
+        IReportGenerator? reportGenerator = null)
         : base(agent, persona, messageBus, sharedMemory, toolRegistry, logger)
     {
         _agentFactory = agentFactory;
@@ -75,6 +81,11 @@ public class ReActAgent : BaseAgent
         _tokenUsageTracker = tokenUsageTracker;
         _multiModelLlmClient = multiModelLlmClient;
         _collaborationService = collaborationService;
+
+        _actionParser = actionParser ?? new DefaultActionParser();
+        var inputParser = new DefaultActionInputParser(_logger);
+        _actionExecutor = actionExecutor ?? new DefaultActionExecutor(inputParser);
+        _reportGenerator = reportGenerator ?? new DefaultReportGenerator(_tokenUsageTracker, _multiModelLlmClient);
     }
 
     protected override async Task<string> BuildContextAsync(AgentMessage task, CancellationToken ct)
@@ -336,10 +347,10 @@ public class ReActAgent : BaseAgent
                         - actionInput: object (tool parameters) OR string (final answer)
 
                         Example tool call:
-                        {"thought":"I should search memory","action":"memory_search","actionInput":{"query":"..."} }
+                        {\"thought\":\"I should search memory\",\"action\":\"memory_search\",\"actionInput\":{\"query\":\"...\"} }
 
                         Example final answer:
-                        {"thought":"I am done","action":"FINAL_ANSWER","actionInput":"<final answer text>"}
+                        {\"thought\":\"I am done\",\"action\":\"FINAL_ANSWER\",\"actionInput\":\"<final answer text>\"}
 
                         Available tools: {{string.Join(", ", Persona.AvailableTools)}}
                         """
@@ -379,30 +390,7 @@ public class ReActAgent : BaseAgent
                 history.AppendLine($"\n--- Iteration {iterations} ---");
                 history.AppendLine(response);
 
-                // Parse response (prefer JSON structured output when enabled)
-                string thought;
-                string action;
-                string actionInput;
-                Dictionary<string, object>? actionInputObject = null;
-
-                if (_reActOptions.UseJsonResponse && TryParseJsonReActResponse(response, out var parsed))
-                {
-                    thought = parsed.Thought;
-                    action = parsed.Action;
-                    actionInput = parsed.ActionInputText;
-                    actionInputObject = parsed.ActionInputObject;
-                }
-                else
-                {
-                    thought = ExtractSection(response, "Thought");
-                    action = ExtractSection(response, "Action");
-                    actionInput = ExtractSection(response, "Action Input");
-                }
-
-                _logger.LogInformation("💭 Thought: {Thought}", thought);
-                _logger.LogInformation("⚡ Action: {Action}", action);
-
-                if (string.IsNullOrEmpty(action))
+                if (!_actionParser.TryParse(response, _reActOptions.UseJsonResponse, out var parsed))
                 {
                     consecutiveParseFailures++;
                     _logger.LogWarning("Failed to parse action from response (failure {Count}/{Max})",
@@ -423,6 +411,14 @@ public class ReActAgent : BaseAgent
                     continue;
                 }
 
+                var thought = parsed.Thought;
+                var action = parsed.Action;
+                var actionInput = parsed.ActionInputText;
+                var actionInputObject = parsed.ActionInputObject;
+
+                _logger.LogInformation("💭 Thought: {Thought}", thought);
+                _logger.LogInformation("⚡ Action: {Action}", action);
+
                 // Reset parse failure counter on successful parse
                 consecutiveParseFailures = 0;
 
@@ -438,68 +434,36 @@ public class ReActAgent : BaseAgent
                     };
                 }
 
-                // Execute tool
-                Status = AgentStatus.ActingWithTool;
-                var tool = _toolRegistry.GetTool(action.Trim());
-
-                if (tool == null)
-                {
-                    var availableTools = string.Join(", ", Persona.AvailableTools);
-                    history.AppendLine($"Observation: Tool '{action}' not found. Available tools: {availableTools}");
-                    _logger.LogWarning("Tool '{Tool}' not found. Available: {Available}", action, availableTools);
-                    continue;
-                }
-
                 try
                 {
-                    Dictionary<string, object> parameters;
-                    if (actionInputObject != null)
-                    {
-                        parameters = actionInputObject;
-                    }
-                    else
-                    {
-                        parameters = ParseActionInput(actionInput, action);
-                    }
+                    Status = AgentStatus.ActingWithTool;
 
-                    // Add agent context for memory and agent tools
-                    if (action.Contains("memory", StringComparison.OrdinalIgnoreCase) ||
-                        action.Contains("agent", StringComparison.OrdinalIgnoreCase))
-                    {
-                        parameters["agent_id"] = Id;
-                        parameters["agent_rank"] = Rank.ToString();
-                        parameters["parent_agent_id"] = Id;
-                    }
+                    var exec = await _actionExecutor.ExecuteAsync(new ActionExecutionContext(
+                        ToolRegistry: _toolRegistry,
+                        ToolName: action,
+                        ActionInputText: actionInput,
+                        ActionInputObject: actionInputObject,
+                        AgentId: Id,
+                        AgentRank: Rank.ToString(),
+                        AvailableTools: Persona.AvailableTools,
+                        CancellationToken: ct)).ConfigureAwait(false);
 
-                    _logger.LogDebug("Executing tool {Tool} with parameters: {Parameters}",
-                        action, JsonSerializer.Serialize(parameters));
-
-                    // Use ExecuteToolWithTrackingAsync for automatic learning integration
-                    var toolResult = await _toolRegistry.ExecuteToolWithTrackingAsync(
-                        action.Trim(),
-                        parameters,
-                        Id,
-                        Rank.ToString(),
-                        ct);
-                    
-                    if (actionInputObject != null)
+                    if (!exec.ToolFound)
                     {
-                        toolCalls.Add($"{action}({JsonSerializer.Serialize(actionInputObject)})");
-                    }
-                    else
-                    {
-                        toolCalls.Add($"{action}({actionInput})");
+                        history.AppendLine(exec.Observation);
+                        _logger.LogWarning("Tool '{Tool}' not found. Available: {Available}", action, string.Join(", ", Persona.AvailableTools));
+                        continue;
                     }
 
-                    var observation = toolResult.Success
-                        ? $"Observation: {toolResult.Output}"
-                        : $"Observation: Tool execution failed - {toolResult.Error}";
+                    if (!string.IsNullOrWhiteSpace(exec.ToolCall))
+                    {
+                        toolCalls.Add(exec.ToolCall);
+                    }
 
-                    history.AppendLine(observation);
-                    _logger.LogInformation("👁️ {Observation}", observation);
+                    history.AppendLine(exec.Observation);
+                    _logger.LogInformation("👁️ {Observation}", exec.Observation);
 
-                    // If tool failed critically, provide guidance
-                    if (!toolResult.Success && toolResult.Error?.Contains("required", StringComparison.OrdinalIgnoreCase) == true)
+                    if (!exec.Success && exec.Error?.Contains("required", StringComparison.OrdinalIgnoreCase) == true)
                     {
                         history.AppendLine("Hint: Check the tool's required parameters and try again.");
                     }
@@ -534,145 +498,6 @@ public class ReActAgent : BaseAgent
         };
     }
 
-    private string ExtractSection(string text, string sectionName)
-    {
-        // Try multiple patterns for robustness
-        var patterns = new[]
-        {
-            $@"{sectionName}:\s*(.+?)(?=\n(?:Thought|Action|Observation|---|\Z))",
-            $@"{sectionName}\s*:\s*(.+?)(?=\n|$)",
-            $@"(?i){sectionName}:\s*(.+?)(?=\n(?:thought|action|observation|---|\Z))"
-        };
-
-        foreach (var pattern in patterns)
-        {
-            var match = Regex.Match(text, pattern, RegexOptions.Singleline | RegexOptions.IgnoreCase);
-            if (match.Success && !string.IsNullOrWhiteSpace(match.Groups[1].Value))
-            {
-                return match.Groups[1].Value.Trim();
-            }
-        }
-
-        return string.Empty;
-    }
-
-    private Dictionary<string, object> ParseActionInput(string input, string actionName)
-    {
-        if (string.IsNullOrWhiteSpace(input))
-        {
-            return new Dictionary<string, object>();
-        }
-
-        try
-        {
-            // Try parsing as JSON first
-            var trimmedInput = input.Trim();
-            if (trimmedInput.StartsWith("{") && trimmedInput.EndsWith("}"))
-            {
-                return JsonSerializer.Deserialize<Dictionary<string, object>>(trimmedInput)
-                       ?? new Dictionary<string, object>();
-            }
-        }
-        catch (JsonException ex)
-        {
-            _logger.LogDebug("JSON parsing failed: {Error}. Treating as plain text.", ex.Message);
-        }
-
-        // Fallback: treat as plain text query with multiple key variations
-        return new Dictionary<string, object>
-        {
-            ["query"] = input,
-            ["content"] = input,
-            ["text"] = input,
-            ["message"] = input
-        };
-    }
-
-    private static bool TryParseJsonReActResponse(string response, out JsonReActResponse parsed)
-    {
-        parsed = default;
-
-        if (string.IsNullOrWhiteSpace(response))
-        {
-            return false;
-        }
-
-        var candidate = response.Trim();
-
-        if (candidate.StartsWith("```", StringComparison.Ordinal))
-        {
-            candidate = Regex.Replace(candidate, "^```[a-zA-Z0-9_-]*\\s*", string.Empty);
-            candidate = Regex.Replace(candidate, "\\s*```$", string.Empty);
-            candidate = candidate.Trim();
-        }
-
-        if (!candidate.StartsWith("{", StringComparison.Ordinal))
-        {
-            var first = candidate.IndexOf('{');
-            var last = candidate.LastIndexOf('}');
-            if (first >= 0 && last > first)
-            {
-                candidate = candidate.Substring(first, last - first + 1);
-            }
-        }
-
-        try
-        {
-            using var doc = JsonDocument.Parse(candidate);
-            if (doc.RootElement.ValueKind != JsonValueKind.Object)
-            {
-                return false;
-            }
-
-            var root = doc.RootElement;
-            var action = root.TryGetProperty("action", out var actionProp) ? actionProp.GetString() : null;
-            if (string.IsNullOrWhiteSpace(action))
-            {
-                return false;
-            }
-
-            var thought = root.TryGetProperty("thought", out var thoughtProp) ? thoughtProp.GetString() ?? string.Empty : string.Empty;
-
-            string actionInputText = string.Empty;
-            Dictionary<string, object>? actionInputObject = null;
-
-            if (root.TryGetProperty("actionInput", out var inputProp))
-            {
-                if (inputProp.ValueKind == JsonValueKind.Object)
-                {
-                    actionInputObject = JsonSerializer.Deserialize<Dictionary<string, object>>(inputProp.GetRawText());
-                    actionInputText = inputProp.GetRawText();
-                }
-                else if (inputProp.ValueKind == JsonValueKind.String)
-                {
-                    actionInputText = inputProp.GetString() ?? string.Empty;
-                }
-                else
-                {
-                    actionInputText = inputProp.GetRawText();
-                }
-            }
-
-            parsed = new JsonReActResponse(
-                Thought: thought.Trim(),
-                Action: action.Trim(),
-                ActionInputText: actionInputText.Trim(),
-                ActionInputObject: actionInputObject);
-
-            return true;
-        }
-        catch (JsonException)
-        {
-            return false;
-        }
-    }
-
-    private readonly record struct JsonReActResponse(
-        string Thought,
-        string Action,
-        string ActionInputText,
-        Dictionary<string, object>? ActionInputObject);
-
     /// <summary>
     /// Handles special Telegram commands (usage, models)
     /// </summary>
@@ -684,8 +509,8 @@ public class ReActAgent : BaseAgent
         {
             var response = command switch
             {
-                "usage" => await GenerateUsageReportAsync(ct),
-                "models" => await GenerateModelsReportAsync(ct),
+                "usage" => await _reportGenerator.GenerateUsageReportAsync(ct),
+                "models" => await _reportGenerator.GenerateModelsReportAsync(ct),
                 _ => $"❌ Unknown command: {command}"
             };
 
@@ -727,70 +552,6 @@ public class ReActAgent : BaseAgent
                 Content = $"❌ Error handling command: {ex.Message}"
             };
         }
-    }
-
-    /// <summary>
-    /// Generate token usage statistics report
-    /// </summary>
-    private async Task<string> GenerateUsageReportAsync(CancellationToken ct)
-    {
-        if (_tokenUsageTracker == null)
-        {
-            _logger.LogWarning("TokenUsageTracker not available");
-            return "⚠️ Token usage tracking not available";
-        }
-
-        var stats = _tokenUsageTracker.GetOverallStats();
-        
-        var report = new StringBuilder();
-        report.AppendLine("📊 **Token Usage Statistics**\n");
-        report.AppendLine($"**Total Calls:** {stats.TotalCalls:N0}");
-        report.AppendLine($"**Input Tokens:** {stats.TotalInputTokens:N0}");
-        report.AppendLine($"**Output Tokens:** {stats.TotalOutputTokens:N0}");
-        report.AppendLine($"**Total Tokens:** {stats.TotalTokens:N0}");
-        report.AppendLine($"**Avg Duration:** {stats.AverageDuration.TotalMilliseconds:F0}ms\n");
-
-        if (stats.ModelBreakdown?.Any() == true)
-        {
-            report.AppendLine("**Per-Model Breakdown:**");
-            foreach (var kvp in stats.ModelBreakdown.OrderByDescending(x => x.Value.CallCount))
-            {
-                var totalTokens = kvp.Value.TotalInputTokens + kvp.Value.TotalOutputTokens;
-                report.AppendLine($"  • {kvp.Key}: {kvp.Value.CallCount:N0} calls, {totalTokens:N0} tokens");
-            }
-        }
-
-        await Task.CompletedTask; // Keep async signature for consistency
-        return report.ToString();
-    }
-
-    /// <summary>
-    /// Generate available LLM models report
-    /// </summary>
-    private async Task<string> GenerateModelsReportAsync(CancellationToken ct)
-    {
-        if (_multiModelLlmClient == null)
-        {
-            _logger.LogWarning("MultiModelLlmClient not available");
-            return "⚠️ LLM model information not available";
-        }
-
-        var models = _multiModelLlmClient.GetAvailableModels();
-        
-        var report = new StringBuilder();
-        report.AppendLine("🧠 **Available LLM Models**\n");
-        
-        foreach (var model in models)
-        {
-            report.AppendLine($"**{model.Name}**");
-            report.AppendLine($"  Complexity: {model.Complexity}");
-            report.AppendLine($"  Max Tokens: {model.MaxTokens:N0}");
-            report.AppendLine($"  Temperature: {model.Temperature}");
-            report.AppendLine();
-        }
-
-        await Task.CompletedTask; // Keep async signature for consistency
-        return report.ToString();
     }
 
     /// <summary>

@@ -2,6 +2,7 @@ using InfernalHierarchy.Core;
 using InfernalHierarchy.Core.Entities;
 using InfernalHierarchy.Core.Interfaces;
 using InfernalHierarchy.Messaging;
+using InfernalHierarchy.Agents.ReAct;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using InfernalHierarchy.Tools;

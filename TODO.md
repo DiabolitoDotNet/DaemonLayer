@@ -40,10 +40,10 @@
        - Inject explicit collaborators (DIP) or provide small “feature interfaces” with optional implementations.
 
     **Phase 2 — Split God Classes**
-    - [ ] **Decompose `ReActAgent` into focused components**
+    - [x] **Decompose `ReActAgent` into focused components**
        - `IActionParser` (parse tool/action blocks), `IActionExecutor` (dispatch tools), `IReportGenerator` (usage/models reports).
        - Keep `ReActAgent` as the coordinator orchestrating these components.
-    - [ ] **Decompose `TelegramBotService` into handlers**
+    - [x] **Decompose `TelegramBotService` into handlers**
        - Split: update routing, command parsing, authorization, response formatting, error handling.
        - Use “command handlers” (e.g., `ITelegramCommandHandler`) registered via DI.
     - [ ] **Decompose `AgentCollaborationService` strategies**
