@@ -2,8 +2,9 @@ using FluentAssertions;
 using InfernalHierarchy.Agents;
 using InfernalHierarchy.Core.Entities;
 using InfernalHierarchy.Core.Interfaces;
-using InfernalHierarchy.Memory;
-using InfernalHierarchy.Messaging;
+using InfernalHierarchy.Memory.Configuration;
+using InfernalHierarchy.Memory.Storage;
+using InfernalHierarchy.Messaging.Bus;
 using InfernalHierarchy.Personas;
 using InfernalHierarchy.Tools;
 using Microsoft.Extensions.DependencyInjection;
@@ -13,7 +14,7 @@ using Microsoft.Extensions.Options;
 using Moq;
 using Xunit;
 using HierarchyOptions = InfernalHierarchy.Agents.HierarchyOptions;
-using MemoryOptions = InfernalHierarchy.Memory.MemoryOptions;
+using MemoryOptions = InfernalHierarchy.Memory.Configuration.MemoryOptions;
 
 namespace InfernalHierarchy.Host.Tests;
 
@@ -41,7 +42,7 @@ public sealed class IntegrationTests : IAsyncLifetime, IDisposable
         _messageBus = new ChannelMessageBus(
             loggerFactory.CreateLogger<ChannelMessageBus>());
 
-        var memoryOptions = Options.Create(new InfernalHierarchy.Memory.MemoryOptions { DatabasePath = _testDbPath });
+        var memoryOptions = Options.Create(new MemoryOptions { DatabasePath = _testDbPath });
         _sharedMemory = new LiteDbSharedMemory(
             memoryOptions,
             loggerFactory.CreateLogger<LiteDbSharedMemory>());

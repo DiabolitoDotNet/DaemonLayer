@@ -1,6 +1,6 @@
 using InfernalHierarchy.Core.Interfaces;
-using InfernalHierarchy.Memory;
-using InfernalHierarchy.Telegram;
+using InfernalHierarchy.Memory.Configuration;
+using InfernalHierarchy.Telegram.Options;
 using InfernalHierarchy.Tools;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Options;

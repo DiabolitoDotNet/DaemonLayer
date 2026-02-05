@@ -4,7 +4,7 @@ using InfernalHierarchy.Core.Interfaces;
 using LiteDB;
 using Microsoft.Extensions.Logging;
 
-namespace InfernalHierarchy.Memory;
+namespace InfernalHierarchy.Memory.Tenancy;
 
 /// <summary>
 /// Implements multi-tenant data isolation with separate LiteDB databases per tenant
@@ -27,7 +27,7 @@ public class TenantIsolationService : ITenantIsolationService
         _logger = logger;
         _dataRootPath = dataRootPath;
         _tenantsDbPath = Path.Combine(_dataRootPath, "tenants.db");
-        
+
         Directory.CreateDirectory(_dataRootPath);
         InitializeDefaultTenant();
     }
@@ -68,7 +68,7 @@ public class TenantIsolationService : ITenantIsolationService
         collection.EnsureIndex(x => x.TenantId, unique: true);
 
         var tenant = await Task.Run(() => collection.FindOne(x => x.TenantId == tenantId), ct).ConfigureAwait(false);
-        
+
         if (tenant != null)
         {
             _tenantCache[tenantId] = tenant;
@@ -80,7 +80,7 @@ public class TenantIsolationService : ITenantIsolationService
     /// <inheritdoc/>
     public async Task CreateTenantAsync(TenantContext tenant, CancellationToken ct = default)
     {
-        _logger.LogInformation("Creating tenant {TenantId} ({TenantName}) with tier {Tier}", 
+        _logger.LogInformation("Creating tenant {TenantId} ({TenantName}) with tier {Tier}",
             tenant.TenantId, tenant.Name, tenant.Tier);
 
         // Set resource limits based on tier
@@ -97,7 +97,7 @@ public class TenantIsolationService : ITenantIsolationService
         collection.EnsureIndex(x => x.TenantId, unique: true);
 
         await Task.Run(() => collection.Insert(tenant), ct).ConfigureAwait(false);
-        
+
         // Update cache
         _tenantCache[tenant.TenantId] = tenant;
 
@@ -130,7 +130,7 @@ public class TenantIsolationService : ITenantIsolationService
 
             collection.Insert(tenant);
         }, ct).ConfigureAwait(false);
-        
+
         // Update cache
         _tenantCache[tenant.TenantId] = tenant;
     }
@@ -162,7 +162,7 @@ public class TenantIsolationService : ITenantIsolationService
         using var db = new LiteDatabase(_tenantsDbPath);
         var collection = db.GetCollection<TenantContext>("tenants");
         await Task.Run(() => collection.DeleteMany(x => x.TenantId == tenantId), ct).ConfigureAwait(false);
-        
+
         // Remove from cache
         _tenantCache.TryRemove(tenantId, out _);
 
@@ -181,7 +181,7 @@ public class TenantIsolationService : ITenantIsolationService
 
         if (!tenant.IsActive)
         {
-            _logger.LogWarning("Tenant {TenantId} is not active for operation {Operation}", 
+            _logger.LogWarning("Tenant {TenantId} is not active for operation {Operation}",
                 tenant.TenantId, operation);
             return false;
         }
@@ -202,7 +202,7 @@ public class TenantIsolationService : ITenantIsolationService
         using var db = new LiteDatabase(_tenantsDbPath);
         var collection = db.GetCollection<TenantContext>("tenants");
 
-        var tenants = await Task.Run(() => 
+        var tenants = await Task.Run(() =>
             collection.Find(x => x.IsActive).ToList(), ct).ConfigureAwait(false);
 
         return tenants;
@@ -218,7 +218,7 @@ public class TenantIsolationService : ITenantIsolationService
         }
 
         _logger.LogDebug("Executing action in tenant context: {TenantId}", tenant.TenantId);
-        
+
         try
         {
             await action(ct).ConfigureAwait(false);

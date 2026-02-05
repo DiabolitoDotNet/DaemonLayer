@@ -5,7 +5,7 @@ using System.Collections.Concurrent;
 using System.Runtime.CompilerServices;
 using System.Threading.Channels;
 
-namespace InfernalHierarchy.Messaging;
+namespace InfernalHierarchy.Messaging.Bus;
 
 /// <summary>
 /// Channel-based message bus for inter-agent communication
@@ -133,4 +133,3 @@ public class ChannelMessageBus : IMessageBus, IDisposable
         _logger.LogInformation("MessageBus disposed");
     }
 }
-

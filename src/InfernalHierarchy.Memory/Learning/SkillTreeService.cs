@@ -4,7 +4,7 @@ using Microsoft.Extensions.Logging;
 using System.Collections.Concurrent;
 using System.Text.Json;
 
-namespace InfernalHierarchy.Memory;
+namespace InfernalHierarchy.Memory.Learning;
 
 /// <summary>
 /// Manages agent skill trees with LiteDB persistence
@@ -43,7 +43,7 @@ public class SkillTreeService : ISkillTreeService
         if (fact != null)
         {
             // Deserialize from stored fact
-            skillTree = JsonSerializer.Deserialize<AgentSkillTree>(fact.Content) 
+            skillTree = JsonSerializer.Deserialize<AgentSkillTree>(fact.Content)
                        ?? new AgentSkillTree { AgentId = agentId };
         }
         else
@@ -77,7 +77,7 @@ public class SkillTreeService : ISkillTreeService
 
         // Calculate experience gain
         var experienceGain = ExperienceCalculator.CalculateExperienceGain(success, executionTime, complexity);
-        
+
         // Apply failure penalty if applicable
         if (!success)
         {
@@ -137,15 +137,15 @@ public class SkillTreeService : ISkillTreeService
     {
         // Load all skill trees from memory
         var allFacts = await _sharedMemory.GetFactsByCategoryAsync(SkillTreeCategory, ct);
-        
+
         var qualifiedAgents = new List<string>();
-        
+
         foreach (var fact in allFacts)
         {
             try
             {
                 var skillTree = JsonSerializer.Deserialize<AgentSkillTree>(fact.Content);
-                if (skillTree != null && 
+                if (skillTree != null &&
                     skillTree.Skills.TryGetValue(toolName, out var skill) &&
                     skill.MasteryLevel >= minMastery)
                 {
@@ -222,7 +222,7 @@ public class SkillTreeService : ISkillTreeService
     public async Task<SkillTreeStats> GetStatsAsync(CancellationToken ct = default)
     {
         var allFacts = await _sharedMemory.GetFactsByCategoryAsync(SkillTreeCategory, ct);
-        
+
         var stats = new SkillTreeStats
         {
             MasteryDistribution = new Dictionary<MasteryLevel, int>()
@@ -261,7 +261,7 @@ public class SkillTreeService : ISkillTreeService
                 // Track agent summary
                 var masterCount = skillTree.Skills.Count(s => s.Value.MasteryLevel == MasteryLevel.Master);
                 var expertCount = skillTree.Skills.Count(s => s.Value.MasteryLevel == MasteryLevel.Expert);
-                
+
                 agentExperience.Add(new AgentSkillSummary
                 {
                     AgentId = skillTree.AgentId,
@@ -304,7 +304,7 @@ public class SkillTreeService : ISkillTreeService
     {
         var factId = $"skill_tree_{skillTree.AgentId}";
         var existingFact = await _sharedMemory.GetFactAsync(factId, ct);
-        
+
         var fact = existingFact ?? new Fact
         {
             Id = factId,

@@ -5,7 +5,7 @@ using InfernalHierarchy.Core.Entities;
 using InfernalHierarchy.Core.Interfaces;
 using Microsoft.Extensions.Logging;
 
-namespace InfernalHierarchy.Messaging;
+namespace InfernalHierarchy.Messaging.Federation;
 
 /// <summary>
 /// Implements federation between multiple InfernalHierarchy instances using HTTP
@@ -126,7 +126,7 @@ public class FederationService : IFederationService
     public async Task<string?> DelegateTaskAsync(TaskEntry task, CancellationToken ct = default)
     {
         var instances = await GetActiveInstancesAsync(ct).ConfigureAwait(false);
-        
+
         // Select instance with lowest load
         var targetInstance = instances
             .Where(i => i.InstanceId != _localInstanceId)
@@ -196,7 +196,7 @@ public class FederationService : IFederationService
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Failed to get collaboration response from {InstanceId}", 
+                    _logger.LogError(ex, "Failed to get collaboration response from {InstanceId}",
                         instance.InstanceId);
                 }
             });
@@ -294,7 +294,7 @@ public class FederationService : IFederationService
     public async Task<string?> SelectInstanceForAgentAsync(CancellationToken ct = default)
     {
         var instances = await GetActiveInstancesAsync(ct).ConfigureAwait(false);
-        
+
         var selectedInstance = instances
             .Where(i => i.CurrentAgentCount < i.MaxAgents)
             .OrderBy(i => i.CurrentLoad)
@@ -303,9 +303,12 @@ public class FederationService : IFederationService
 
         if (selectedInstance != null)
         {
-            _logger.LogInformation("Selected instance {InstanceId} for agent creation (load: {Load:P0}, agents: {Count}/{Max})",
-                selectedInstance.InstanceId, selectedInstance.CurrentLoad, 
-                selectedInstance.CurrentAgentCount, selectedInstance.MaxAgents);
+            _logger.LogInformation(
+                "Selected instance {InstanceId} for agent creation (load: {Load:P0}, agents: {Count}/{Max})",
+                selectedInstance.InstanceId,
+                selectedInstance.CurrentLoad,
+                selectedInstance.CurrentAgentCount,
+                selectedInstance.MaxAgents);
         }
 
         return selectedInstance?.InstanceId;

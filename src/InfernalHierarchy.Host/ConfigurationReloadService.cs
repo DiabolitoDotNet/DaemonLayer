@@ -1,5 +1,5 @@
 using InfernalHierarchy.Agents;
-using InfernalHierarchy.Memory;
+using InfernalHierarchy.Memory.Configuration;
 using InfernalHierarchy.Tools;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;

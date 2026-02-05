@@ -1,6 +1,6 @@
 using FluentAssertions;
 using InfernalHierarchy.Core.Entities;
-using InfernalHierarchy.Messaging;
+using InfernalHierarchy.Messaging.Bus;
 using Microsoft.Extensions.Logging;
 using Moq;
 using Xunit;

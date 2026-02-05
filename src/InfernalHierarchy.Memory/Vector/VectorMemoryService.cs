@@ -1,12 +1,14 @@
 using InfernalHierarchy.Core.Entities;
 using InfernalHierarchy.Core.Interfaces;
 using InfernalHierarchy.Core.Security;
+using InfernalHierarchy.Memory.Configuration;
+using InfernalHierarchy.Memory.Embeddings;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using System.Net.Http.Json;
 using System.Text.Json;
 
-namespace InfernalHierarchy.Memory;
+namespace InfernalHierarchy.Memory.Vector;
 
 /// <summary>
 /// Vector-based semantic memory using Qdrant for similarity search
@@ -261,12 +263,4 @@ public sealed class VectorMemoryService : IVectorMemory
         public double Score { get; set; }
         public JsonElement? Payload { get; set; }
     }
-}
-
-public class VectorMemoryOptions
-{
-    public Uri QdrantUrl { get; set; } = new Uri("http://localhost:6333");
-    public string CollectionName { get; set; } = "infernal_facts";
-    public int VectorDimensions { get; set; } = 384; // Default for sentence-transformers/all-MiniLM-L6-v2
-    public bool Enabled { get; set; }
 }

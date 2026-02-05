@@ -1,7 +1,7 @@
 using FluentAssertions;
 using InfernalHierarchy.Agents;
 using InfernalHierarchy.Host;
-using InfernalHierarchy.Memory;
+using InfernalHierarchy.Memory.Configuration;
 using InfernalHierarchy.Tools;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;

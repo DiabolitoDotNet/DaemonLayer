@@ -1,10 +1,11 @@
 using InfernalHierarchy.Core.Entities;
 using InfernalHierarchy.Core.Interfaces;
+using InfernalHierarchy.Memory.Configuration;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
-namespace InfernalHierarchy.Memory;
+namespace InfernalHierarchy.Memory.Maintenance;
 
 /// <summary>
 /// Background service for automatic memory pruning and archival
@@ -112,7 +113,7 @@ public class MemoryPruningService : BackgroundService
         var pruned = 0;
         try
         {
-            var completedTasks = await _sharedMemory.GetTasksByStatusAsync(Core.Entities.TaskStatus.Completed, ct);
+            var completedTasks = await _sharedMemory.GetTasksByStatusAsync(InfernalHierarchy.Core.Entities.TaskStatus.Completed, ct);
 
             foreach (var task in completedTasks)
             {
@@ -171,14 +172,4 @@ public class MemoryPruningService : BackgroundService
         _timer?.Dispose();
         base.Dispose();
     }
-}
-
-public class MemoryPruningOptions
-{
-    public bool Enabled { get; set; }
-    public int PruningIntervalHours { get; set; } = 24;
-    public int RetentionDays { get; set; } = 30;
-    public double MinConfidenceThreshold { get; set; } = 0.3;
-    public bool EnableArchival { get; set; }
-    public string ArchivePath { get; set; } = "./archive/memory";
 }

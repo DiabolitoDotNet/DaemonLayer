@@ -1,5 +1,5 @@
 using InfernalHierarchy.Tools;
-using InfernalHierarchy.Telegram;
+using InfernalHierarchy.Telegram.Options;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;

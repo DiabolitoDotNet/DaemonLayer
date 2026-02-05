@@ -3,7 +3,7 @@ using InfernalHierarchy.Agents;
 using InfernalHierarchy.Core.Eventing;
 using InfernalHierarchy.Core.Entities;
 using InfernalHierarchy.Core.Interfaces;
-using InfernalHierarchy.Messaging;
+using InfernalHierarchy.Messaging.Bus;
 using InfernalHierarchy.Tools;
 using InfernalHierarchy.Tools.Clients;
 using Microsoft.Extensions.Logging;

@@ -1,6 +1,6 @@
 using FluentAssertions;
 using InfernalHierarchy.Host;
-using InfernalHierarchy.Telegram;
+using InfernalHierarchy.Telegram.Options;
 using InfernalHierarchy.Tools;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;

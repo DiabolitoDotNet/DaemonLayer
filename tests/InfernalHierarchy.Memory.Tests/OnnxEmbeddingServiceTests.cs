@@ -1,5 +1,6 @@
 using FluentAssertions;
-using InfernalHierarchy.Memory;
+using InfernalHierarchy.Memory.Configuration;
+using InfernalHierarchy.Memory.Embeddings;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Microsoft.ML.OnnxRuntime;

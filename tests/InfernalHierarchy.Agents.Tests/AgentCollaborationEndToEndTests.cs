@@ -3,7 +3,7 @@ using FluentAssertions;
 using InfernalHierarchy.Agents;
 using InfernalHierarchy.Core.Entities;
 using InfernalHierarchy.Core.Interfaces;
-using InfernalHierarchy.Messaging;
+using InfernalHierarchy.Messaging.Bus;
 using Microsoft.Extensions.Logging;
 using Moq;
 using Xunit;

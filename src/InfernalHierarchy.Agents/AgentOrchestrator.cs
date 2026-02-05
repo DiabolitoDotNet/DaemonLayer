@@ -1,7 +1,7 @@
 using InfernalHierarchy.Core.ErrorHandling;
 using InfernalHierarchy.Core.Entities;
 using InfernalHierarchy.Core.Interfaces;
-using InfernalHierarchy.Messaging;
+using InfernalHierarchy.Messaging.Bus;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;

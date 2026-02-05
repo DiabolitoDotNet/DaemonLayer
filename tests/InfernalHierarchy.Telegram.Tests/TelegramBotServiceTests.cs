@@ -2,10 +2,12 @@ using System;
 using FluentAssertions;
 using InfernalHierarchy.Core.Interfaces;
 using InfernalHierarchy.Host;
-using InfernalHierarchy.Telegram;
+using InfernalHierarchy.Telegram.Options;
+using InfernalHierarchy.Telegram.Services;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using MsOptions = Microsoft.Extensions.Options.Options;
 using Moq;
 using Xunit;
 
@@ -28,7 +30,7 @@ public class TelegramBotServiceTests
     public async Task ExecuteAsync_ShouldLogWarning_WhenTokenNotConfigured()
     {
         // Arrange
-        var options = Options.Create(new TelegramOptions { BotToken = string.Empty });
+        var options = MsOptions.Create(new TelegramOptions { BotToken = string.Empty });
         using var service = new TelegramBotService(options, _mockMessageBus.Object, _mockLogger.Object, _mockServiceProvider.Object);
 
         using var cts = new CancellationTokenSource();

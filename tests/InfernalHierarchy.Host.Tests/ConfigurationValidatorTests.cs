@@ -1,8 +1,8 @@
 using FluentAssertions;
 using InfernalHierarchy.Agents;
 using InfernalHierarchy.Host;
-using InfernalHierarchy.Memory;
-using InfernalHierarchy.Telegram;
+using InfernalHierarchy.Memory.Configuration;
+using InfernalHierarchy.Telegram.Options;
 using InfernalHierarchy.Tools;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;

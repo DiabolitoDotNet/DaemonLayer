@@ -1,15 +1,11 @@
 using InfernalHierarchy.Core.Entities;
 using InfernalHierarchy.Core.Interfaces;
+using InfernalHierarchy.Memory.Configuration;
 using LiteDB;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
-namespace InfernalHierarchy.Memory;
-
-public class MemoryOptions
-{
-    public string DatabasePath { get; set; } = "data/infernal.db";
-}
+namespace InfernalHierarchy.Memory.Storage;
 
 /// <summary>
 /// LiteDB implementation of shared memory
@@ -265,17 +261,17 @@ public sealed class LiteDbSharedMemory : ISharedMemory, IDisposable
     {
         var allFacts = Facts.FindAll().ToList();
         var visibleFacts = allFacts.Where(fact => IsFactVisibleToAgent(fact, requestingAgentId, requestingAgentRank)).ToList();
-        
-        _logger.LogDebug("Found {Count} visible facts for agent {AgentId} (rank: {Rank})", 
+
+        _logger.LogDebug("Found {Count} visible facts for agent {AgentId} (rank: {Rank})",
             visibleFacts.Count, requestingAgentId, requestingAgentRank);
-        
+
         return Task.FromResult<IEnumerable<Fact>>(visibleFacts);
     }
 
     public Task<IEnumerable<Fact>> SearchVisibleFactsAsync(
-        string query, 
-        string requestingAgentId, 
-        AgentRank requestingAgentRank, 
+        string query,
+        string requestingAgentId,
+        AgentRank requestingAgentRank,
         CancellationToken ct = default)
     {
         var matchingFacts = Facts
@@ -286,10 +282,10 @@ public sealed class LiteDbSharedMemory : ISharedMemory, IDisposable
         var visibleFacts = matchingFacts
             .Where(fact => IsFactVisibleToAgent(fact, requestingAgentId, requestingAgentRank))
             .ToList();
-        
-        _logger.LogDebug("Found {Count} visible facts matching '{Query}' for agent {AgentId}", 
+
+        _logger.LogDebug("Found {Count} visible facts matching '{Query}' for agent {AgentId}",
             visibleFacts.Count, query, requestingAgentId);
-        
+
         return Task.FromResult<IEnumerable<Fact>>(visibleFacts);
     }
 

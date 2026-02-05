@@ -1,6 +1,6 @@
 using FluentAssertions;
 using InfernalHierarchy.Core.Entities;
-using InfernalHierarchy.Memory;
+using InfernalHierarchy.Memory.Tenancy;
 using Microsoft.Extensions.Logging;
 using Moq;
 using System.Threading;

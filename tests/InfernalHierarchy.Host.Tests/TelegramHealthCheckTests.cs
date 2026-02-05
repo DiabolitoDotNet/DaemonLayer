@@ -1,6 +1,6 @@
 using FluentAssertions;
 using InfernalHierarchy.Host;
-using InfernalHierarchy.Telegram;
+using InfernalHierarchy.Telegram.Options;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Options;
 using Moq;

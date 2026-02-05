@@ -3,7 +3,7 @@ using System.Net.Http;
 using System.Net.Http.Json;
 using FluentAssertions;
 using InfernalHierarchy.Core.Entities;
-using InfernalHierarchy.Messaging;
+using InfernalHierarchy.Messaging.Federation;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 

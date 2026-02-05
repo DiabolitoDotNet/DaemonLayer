@@ -2,6 +2,7 @@ using InfernalHierarchy.Core.ErrorHandling;
 using InfernalHierarchy.Core.Entities;
 using InfernalHierarchy.Core.Interfaces;
 using InfernalHierarchy.Telegram.Commands;
+using InfernalHierarchy.Telegram.Options;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -13,7 +14,7 @@ using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;
 using CoreMessageType = InfernalHierarchy.Core.Entities.MessageType;
 
-namespace InfernalHierarchy.Telegram;
+namespace InfernalHierarchy.Telegram.Services;
 
 /// <summary>
 /// Telegram Bot service for receiving commands and sending responses
@@ -236,10 +237,4 @@ public class TelegramBotService : BackgroundService
             _logger.LogError(ex, "Failed to send Telegram message to {ChatId}", chatId);
         }
     }
-}
-
-public class TelegramOptions
-{
-    public string BotToken { get; set; } = string.Empty;
-    public long[] AllowedUserIds { get; set; } = Array.Empty<long>();
 }

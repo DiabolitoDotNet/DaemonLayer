@@ -1,7 +1,7 @@
 using InfernalHierarchy.Telegram.Commands;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace InfernalHierarchy.Telegram;
+namespace InfernalHierarchy.Telegram.DependencyInjection;
 
 public static class DependencyInjection
 {

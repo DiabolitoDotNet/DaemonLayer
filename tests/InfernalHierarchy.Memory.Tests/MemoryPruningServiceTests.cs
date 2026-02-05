@@ -1,7 +1,8 @@
 using FluentAssertions;
 using InfernalHierarchy.Core.Entities;
 using InfernalHierarchy.Core.Interfaces;
-using InfernalHierarchy.Memory;
+using InfernalHierarchy.Memory.Configuration;
+using InfernalHierarchy.Memory.Maintenance;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Moq;

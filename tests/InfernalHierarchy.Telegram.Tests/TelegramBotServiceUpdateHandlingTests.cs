@@ -2,10 +2,12 @@ using FluentAssertions;
 using InfernalHierarchy.Core.ErrorHandling;
 using InfernalHierarchy.Core.Entities;
 using InfernalHierarchy.Core.Interfaces;
-using InfernalHierarchy.Telegram;
+using InfernalHierarchy.Telegram.Options;
+using InfernalHierarchy.Telegram.Services;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using MsOptions = Microsoft.Extensions.Options.Options;
 using Moq;
 using System.Reflection;
 using Telegram.Bot;
@@ -25,7 +27,7 @@ public sealed class TelegramBotServiceUpdateHandlingTests
         IServiceProvider serviceProvider)
     {
         return new TelegramBotService(
-            Options.Create(options),
+            MsOptions.Create(options),
             messageBus,
             NullLogger<TelegramBotService>.Instance,
             serviceProvider);
