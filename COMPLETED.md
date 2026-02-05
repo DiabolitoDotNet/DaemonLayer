@@ -50,6 +50,7 @@
   - 4 complexity levels (Simple/Medium/Complex/Expert)
   - Automatic fallback chain
   - Per-model configuration (name/temperature/max tokens)
+  - Result-based APIs for expected failures (`TryGetCompletionAsync`, `TryGetStreamingCompletionAsync`)
 - **Streaming Responses**
   - `GetStreamingCompletionAsync` returning `IAsyncEnumerable<string>`
 - **TokenUsageTracker**
@@ -73,6 +74,12 @@
 - **Complete Agent Collaboration System**
   - Collaboration requests now flow end-to-end over the message bus (agents process `MessageType.CollaborationRequest`)
   - Added end-to-end multi-agent collaboration tests (real `ChannelMessageBus` + `AgentCollaborationService`)
+- **Aggregation strategies extracted**
+  - `AgentCollaborationService` aggregation logic decomposed behind `IAggregationStrategy` for independent testability
+
+### External Integrations ✅
+- **Typed HTTP clients for web search**
+  - Introduced typed provider clients (SearXNG + Brave Search) with consistent parsing and error mapping
 
 ### Observability & Monitoring ✅
 - **DistributedTracing**: OpenTelemetry Activity-based tracing
@@ -101,8 +108,13 @@
   - Uses `IAgentEventSink` to keep auditing best-effort and testable
 
 ### Configuration Management ✅
-- **ConfigurationValidator**: startup validation (paths/URLs/ranges/connectivity)
+- **Options validation via `IValidateOptions<T>` + `ValidateOnStart`**
+  - Validation moved into dedicated validators; `Program.cs` kept composition-only
 - **ConfigurationReloadService**: live reload for non-sensitive settings
+
+### Result Model ✅
+- **Core `Result<T>`**
+  - Shared success/failure type introduced in Core for predictable, boundary-safe error handling
 
 ---
 

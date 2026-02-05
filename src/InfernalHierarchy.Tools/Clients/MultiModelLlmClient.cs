@@ -1,6 +1,7 @@
 using Azure.AI.OpenAI;
 using Azure.Core;
 using InfernalHierarchy.Core.Interfaces;
+using InfernalHierarchy.Core.Results;
 using InfernalHierarchy.Tools.Telemetry;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -35,6 +36,9 @@ public class MultiModelLlmClient : IDisposable
     private readonly ILogger<MultiModelLlmClient> _logger;
     private readonly LlmOptions _options;
     private readonly TokenUsageTracker _tokenTracker;
+
+    private const string ErrorCodeAllModelsFailed = "all_models_failed";
+    private const string ErrorCodeModelNotFound = "model_not_found";
 
     public MultiModelLlmClient(
         IOptions<LlmOptions> options,
@@ -78,15 +82,31 @@ public class MultiModelLlmClient : IDisposable
         TaskComplexity complexity = TaskComplexity.Medium,
         CancellationToken ct = default)
     {
+        var result = await TryGetCompletionAsync(systemPrompt, userMessage, complexity, ct);
+        return result.GetValueOrThrow();
+    }
+
+    /// <summary>
+    /// Get completion without throwing for expected failures.
+    /// </summary>
+    public async Task<Result<LlmResponse>> TryGetCompletionAsync(
+        string systemPrompt,
+        string userMessage,
+        TaskComplexity complexity = TaskComplexity.Medium,
+        CancellationToken ct = default)
+    {
         var selectedModel = SelectModelForComplexity(complexity);
         var fallbackModels = GetFallbackModels(selectedModel);
 
         Exception? lastException = null;
 
-        // Try primary model
         try
         {
-            return await ExecuteCompletionAsync(selectedModel, systemPrompt, userMessage, ct);
+            return Result.Ok(await ExecuteCompletionAsync(selectedModel, systemPrompt, userMessage, ct));
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -94,13 +114,16 @@ public class MultiModelLlmClient : IDisposable
             lastException = ex;
         }
 
-        // Try fallback models
         foreach (var fallbackModel in fallbackModels)
         {
             try
             {
                 _logger.LogInformation("Falling back to model: {Model}", fallbackModel.Name);
-                return await ExecuteCompletionAsync(fallbackModel, systemPrompt, userMessage, ct);
+                return Result.Ok(await ExecuteCompletionAsync(fallbackModel, systemPrompt, userMessage, ct));
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw;
             }
             catch (Exception ex)
             {
@@ -109,8 +132,11 @@ public class MultiModelLlmClient : IDisposable
             }
         }
 
-        // All models failed
-        throw new Exception($"All LLM models failed. Last error: {lastException?.Message}", lastException);
+        var errorMessage = lastException?.Message is { Length: > 0 }
+            ? $"All LLM models failed. Last error: {lastException.Message}"
+            : "All LLM models failed.";
+
+        return Result.Fail<LlmResponse>(errorMessage, ErrorCodeAllModelsFailed, lastException);
     }
 
     /// <summary>
@@ -122,13 +148,46 @@ public class MultiModelLlmClient : IDisposable
         TaskComplexity complexity = TaskComplexity.Medium,
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
     {
+        var result = TryGetStreamingCompletionAsync(systemPrompt, userMessage, complexity, ct);
+        if (!result.Succeeded || result.Value is null)
+        {
+            throw new InvalidOperationException(result.Error?.Message ?? "Streaming failed", result.Error?.Exception);
+        }
+
+        await foreach (var chunk in result.Value.WithCancellation(ct))
+        {
+            yield return chunk;
+        }
+    }
+
+    /// <summary>
+    /// Get streaming completion without throwing for expected failures.
+    /// </summary>
+    public Result<IAsyncEnumerable<string>> TryGetStreamingCompletionAsync(
+        string systemPrompt,
+        string userMessage,
+        TaskComplexity complexity = TaskComplexity.Medium,
+        CancellationToken ct = default)
+    {
         var model = SelectModelForComplexity(complexity);
 
         if (!_modelClients.TryGetValue(model.Name, out var client))
         {
-            throw new Exception($"Model {model.Name} not found");
+            return Result.Fail<IAsyncEnumerable<string>>(
+                $"Model {model.Name} not found",
+                ErrorCodeModelNotFound);
         }
 
+        return Result.Ok(StreamWithUsageAsync(client, model, systemPrompt, userMessage, ct));
+    }
+
+    private async IAsyncEnumerable<string> StreamWithUsageAsync(
+        IChatModelClient client,
+        ModelConfig model,
+        string systemPrompt,
+        string userMessage,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct)
+    {
         var startTime = DateTime.UtcNow;
         var tokensGenerated = 0;
 

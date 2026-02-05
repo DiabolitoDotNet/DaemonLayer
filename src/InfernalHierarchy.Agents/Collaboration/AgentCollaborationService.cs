@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using InfernalHierarchy.Core.Entities;
 using InfernalHierarchy.Core.Interfaces;
+using InfernalHierarchy.Agents.Collaboration.Strategies;
 using Microsoft.Extensions.Logging;
 
 namespace InfernalHierarchy.Agents.Collaboration;
@@ -19,6 +20,7 @@ public class AgentCollaborationService : IAgentCollaborationService
     private readonly ConcurrentDictionary<string, List<AgentResponse>> _responses;
     private readonly ConcurrentDictionary<string, int> _collaborationRounds;
     private readonly ConcurrentDictionary<string, DateTime> _roundStartTimes;
+    private readonly IReadOnlyDictionary<CollaborationStrategy, IAggregationStrategy> _aggregationStrategies;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="AgentCollaborationService"/> class.
@@ -30,6 +32,15 @@ public class AgentCollaborationService : IAgentCollaborationService
         ILogger<AgentCollaborationService> logger,
         IMessageBus messageBus,
         IAgentRegistry agentRegistry)
+        : this(logger, messageBus, agentRegistry, CreateDefaultStrategies())
+    {
+    }
+
+    public AgentCollaborationService(
+        ILogger<AgentCollaborationService> logger,
+        IMessageBus messageBus,
+        IAgentRegistry agentRegistry,
+        IEnumerable<IAggregationStrategy> aggregationStrategies)
     {
         _logger = logger;
         _messageBus = messageBus;
@@ -38,7 +49,26 @@ public class AgentCollaborationService : IAgentCollaborationService
         _responses = new ConcurrentDictionary<string, List<AgentResponse>>();
         _collaborationRounds = new ConcurrentDictionary<string, int>();
         _roundStartTimes = new ConcurrentDictionary<string, DateTime>();
+
+        _aggregationStrategies = (aggregationStrategies ?? CreateDefaultStrategies())
+            .GroupBy(s => s.Strategy)
+            .ToDictionary(g => g.Key, g => g.First());
     }
+
+    private static IEnumerable<IAggregationStrategy> CreateDefaultStrategies()
+        =>
+        [
+            new VotingAggregationStrategy(),
+            new WeightedVotingAggregationStrategy(),
+            new ConsensusAggregationStrategy(),
+            new HighestConfidenceAggregationStrategy(),
+            new HierarchicalAggregationStrategy()
+        ];
+
+    private IAggregationStrategy GetAggregationStrategy(CollaborationStrategy strategy)
+        => _aggregationStrategies.TryGetValue(strategy, out var found)
+            ? found
+            : _aggregationStrategies[CollaborationStrategy.WeightedVoting];
 
     /// <inheritdoc/>
     public async Task<CollaborationResult> RequestCollaborationAsync(
@@ -409,224 +439,8 @@ Instruction: If you change your decision, explain why. If you keep it, explain w
                 ct).ConfigureAwait(false);
         }
 
-        return request.Strategy switch
-        {
-            CollaborationStrategy.Voting => AggregateByVoting(responses, request.Strategy),
-            CollaborationStrategy.WeightedVoting => AggregateByWeightedVoting(responses, request.Strategy),
-            CollaborationStrategy.Consensus => AggregateByConsensus(responses, request.Strategy),
-            CollaborationStrategy.HighestConfidence => AggregateByHighestConfidence(responses, request.Strategy),
-            CollaborationStrategy.Hierarchical => AggregateByHierarchical(responses, request.Strategy),
-            _ => AggregateByWeightedVoting(responses, request.Strategy) // Default fallback
-        };
+        return GetAggregationStrategy(request.Strategy).Aggregate(responses);
     }
-
-    /// <summary>
-    /// Simple majority voting - most common response wins.
-    /// </summary>
-    private CollaborationResult AggregateByVoting(List<AgentResponse> responses, CollaborationStrategy strategy)
-    {
-        var grouped = responses
-            .GroupBy(r => r.Response.Trim().ToLowerInvariant())
-            .OrderByDescending(g => g.Count())
-            .ToList();
-
-        var winningGroup = grouped.FirstOrDefault();
-        if (winningGroup == null)
-        {
-            return new CollaborationResult
-            {
-                Decision = "NO_CONSENSUS",
-                Confidence = 0.0,
-                Responses = responses,
-                ParticipantCount = responses.Count,
-                AgreementScore = 0.0,
-                Strategy = strategy
-            };
-        }
-
-        var winningResponse = winningGroup.OrderByDescending(r => r.Confidence).First();
-        var agreementScore = (double)winningGroup.Count() / responses.Count;
-
-        return new CollaborationResult
-        {
-            Decision = winningResponse.Response,
-            Confidence = agreementScore, // Agreement percentage as confidence
-            Responses = responses,
-            ParticipantCount = responses.Count,
-            AgreementScore = agreementScore,
-            Strategy = strategy,
-            WinningResponse = winningResponse,
-            AggregatedReasoning = string.Join("\n\n", winningGroup.Select(r => $"[{r.AgentId}]: {r.Reasoning}"))
-        };
-    }
-
-    /// <summary>
-    /// Weighted voting based on agent rank and expertise.
-    /// </summary>
-    private CollaborationResult AggregateByWeightedVoting(List<AgentResponse> responses, CollaborationStrategy strategy)
-    {
-        var grouped = responses
-            .GroupBy(r => r.Response.Trim().ToLowerInvariant())
-            .Select(g => new
-            {
-                Response = g.First().Response,
-                TotalWeight = g.Sum(r => r.Weight * r.Confidence),
-                Responses = g.ToList(),
-                AverageConfidence = g.Average(r => r.Confidence)
-            })
-            .OrderByDescending(g => g.TotalWeight)
-            .ToList();
-
-        var winner = grouped.FirstOrDefault();
-        if (winner == null)
-        {
-            return new CollaborationResult
-            {
-                Decision = "NO_CONSENSUS",
-                Confidence = 0.0,
-                Responses = responses,
-                ParticipantCount = responses.Count,
-                AgreementScore = 0.0,
-                Strategy = strategy
-            };
-        }
-
-        var totalWeight = responses.Sum(r => r.Weight * r.Confidence);
-        var agreementScore = winner.TotalWeight / totalWeight;
-
-        return new CollaborationResult
-        {
-            Decision = winner.Response,
-            Confidence = Math.Min(winner.AverageConfidence * agreementScore, 1.0),
-            Responses = responses,
-            ParticipantCount = responses.Count,
-            AgreementScore = agreementScore,
-            Strategy = strategy,
-            WinningResponse = winner.Responses.OrderByDescending(r => r.Confidence).First(),
-            AggregatedReasoning = string.Join("\n\n", winner.Responses.Select(r => $"[{r.AgentId} (weight: {r.Weight:F2})]: {r.Reasoning}"))
-        };
-    }
-
-    /// <summary>
-    /// All agents must agree (unanimous consensus).
-    /// </summary>
-    private CollaborationResult AggregateByConsensus(List<AgentResponse> responses, CollaborationStrategy strategy)
-    {
-        var uniqueResponses = responses
-            .Select(r => r.Response.Trim().ToLowerInvariant())
-            .Distinct()
-            .ToList();
-
-        if (uniqueResponses.Count == 1)
-        {
-            // Perfect consensus
-            var averageConfidence = responses.Average(r => r.Confidence);
-            var firstResponse = responses.First();
-
-            return new CollaborationResult
-            {
-                Decision = firstResponse.Response,
-                Confidence = averageConfidence,
-                Responses = responses,
-                ParticipantCount = responses.Count,
-                AgreementScore = 1.0,
-                Strategy = strategy,
-                WinningResponse = responses.OrderByDescending(r => r.Confidence).First(),
-                AggregatedReasoning = string.Join("\n\n", responses.Select(r => $"[{r.AgentId}]: {r.Reasoning}"))
-            };
-        }
-
-        // No consensus - return conflict summary
-        var grouped = responses
-            .GroupBy(r => r.Response.Trim().ToLowerInvariant())
-            .OrderByDescending(g => g.Count())
-            .ToList();
-
-        var conflictSummary = string.Join("; ", grouped.Select(g => $"{g.Count()} voted '{g.First().Response}'"));
-
-        return new CollaborationResult
-        {
-            Decision = $"NO_CONSENSUS: {conflictSummary}",
-            Confidence = 0.0,
-            Responses = responses,
-            ParticipantCount = responses.Count,
-            AgreementScore = (double)grouped.First().Count() / responses.Count,
-            Strategy = strategy,
-            AggregatedReasoning = "Agents could not reach unanimous agreement. " + conflictSummary
-        };
-    }
-
-    /// <summary>
-    /// Use the response with the highest confidence score.
-    /// </summary>
-    private CollaborationResult AggregateByHighestConfidence(List<AgentResponse> responses, CollaborationStrategy strategy)
-    {
-        var winner = responses.OrderByDescending(r => r.Confidence).First();
-
-        // Calculate agreement score - how many agents gave similar response
-        var similarResponses = responses
-            .Where(r => r.Response.Trim().ToLowerInvariant() == winner.Response.Trim().ToLowerInvariant())
-            .ToList();
-
-        var agreementScore = (double)similarResponses.Count / responses.Count;
-
-        return new CollaborationResult
-        {
-            Decision = winner.Response,
-            Confidence = winner.Confidence,
-            Responses = responses,
-            ParticipantCount = responses.Count,
-            AgreementScore = agreementScore,
-            Strategy = strategy,
-            WinningResponse = winner,
-            AggregatedReasoning = $"Highest confidence response from {winner.AgentId}:\n{winner.Reasoning}"
-        };
-    }
-
-    /// <summary>
-    /// Hierarchical decision - higher ranks override lower ranks.
-    /// </summary>
-    private CollaborationResult AggregateByHierarchical(List<AgentResponse> responses, CollaborationStrategy strategy)
-    {
-        // Get response from highest-ranked agent
-        var winner = responses
-            .OrderByDescending(r => GetRankPriority(r.AgentRank))
-            .ThenByDescending(r => r.Confidence)
-            .First();
-
-        // Count how many agents at the same rank agreed
-        var sameRankResponses = responses
-            .Where(r => r.AgentRank == winner.AgentRank)
-            .ToList();
-
-        var sameRankAgreement = sameRankResponses
-            .Count(r => r.Response.Trim().ToLowerInvariant() == winner.Response.Trim().ToLowerInvariant());
-
-        var agreementScore = (double)sameRankAgreement / sameRankResponses.Count;
-
-        return new CollaborationResult
-        {
-            Decision = winner.Response,
-            Confidence = winner.Confidence * agreementScore,
-            Responses = responses,
-            ParticipantCount = responses.Count,
-            AgreementScore = agreementScore,
-            Strategy = strategy,
-            WinningResponse = winner,
-            AggregatedReasoning = $"Hierarchical decision from {winner.AgentRank} agent {winner.AgentId} " +
-                                 $"(agreement among {winner.AgentRank} agents: {agreementScore:P0}):\n{winner.Reasoning}"
-        };
-    }
-
-    private static int GetRankPriority(AgentRank rank)
-        => rank switch
-        {
-            AgentRank.Supreme => 4,
-            AgentRank.Prince => 3,
-            AgentRank.Duke => 2,
-            AgentRank.Worker => 1,
-            _ => 0
-        };
 
     /// <summary>
     /// Resolve conflicts when voting results in a tie or low confidence
@@ -649,20 +463,20 @@ Instruction: If you change your decision, explain why. If you keep it, explain w
         if (originalStrategy == CollaborationStrategy.Voting)
         {
             _logger.LogInformation("Escalating to weighted voting for conflict resolution");
-            return AggregateByWeightedVoting(responses, CollaborationStrategy.WeightedVoting);
+            return GetAggregationStrategy(CollaborationStrategy.WeightedVoting).Aggregate(responses);
         }
 
         if (originalStrategy == CollaborationStrategy.WeightedVoting || originalStrategy == CollaborationStrategy.Voting)
         {
             _logger.LogInformation("Escalating to hierarchical strategy for conflict resolution");
-            return AggregateByHierarchical(responses, CollaborationStrategy.Hierarchical);
+            return GetAggregationStrategy(CollaborationStrategy.Hierarchical).Aggregate(responses);
         }
 
         // Hierarchical can fall back to highest-confidence as a tie-breaker.
         if (originalStrategy == CollaborationStrategy.Hierarchical)
         {
             _logger.LogInformation("Using highest confidence for conflict resolution");
-            return AggregateByHighestConfidence(responses, CollaborationStrategy.HighestConfidence);
+            return GetAggregationStrategy(CollaborationStrategy.HighestConfidence).Aggregate(responses);
         }
 
         // HighestConfidence (or other): multi-round refinement.

@@ -1,4 +1,5 @@
 using FluentAssertions;
+using InfernalHierarchy.Tools.Clients.Search;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Moq;
@@ -15,9 +16,9 @@ public sealed class SearXNGSearchToolTests
     public async Task ExecuteAsync_ShouldReturnError_WhenDisabled()
     {
         var options = Microsoft.Extensions.Options.Options.Create(new SearXNGOptions { Enabled = false });
-        using var httpClient = new HttpClient();
+        var client = Mock.Of<ISearXngClient>();
         var logger = Mock.Of<ILogger<SearXNGSearchTool>>();
-        var tool = new SearXNGSearchTool(httpClient, options, logger);
+        var tool = new SearXNGSearchTool(client, options, logger);
 
         var result = await tool.ExecuteAsync(new Dictionary<string, object> { ["query"] = "x" });
 
@@ -29,9 +30,9 @@ public sealed class SearXNGSearchToolTests
     public async Task ExecuteAsync_ShouldReturnError_WhenQueryMissing()
     {
         var options = Microsoft.Extensions.Options.Options.Create(new SearXNGOptions { Enabled = true });
-        using var httpClient = new HttpClient();
+        var client = Mock.Of<ISearXngClient>();
         var logger = Mock.Of<ILogger<SearXNGSearchTool>>();
-        var tool = new SearXNGSearchTool(httpClient, options, logger);
+        var tool = new SearXNGSearchTool(client, options, logger);
 
         var result = await tool.ExecuteAsync(new Dictionary<string, object>());
 
@@ -58,9 +59,10 @@ public sealed class SearXNGSearchToolTests
             });
 
         using var httpClient = new HttpClient(mockHttpMessageHandler.Object, disposeHandler: false);
-    var options = Microsoft.Extensions.Options.Options.Create(new SearXNGOptions { Enabled = true, BaseUrl = new Uri("http://localhost:1234") });
+        var options = Microsoft.Extensions.Options.Options.Create(new SearXNGOptions { Enabled = true, BaseUrl = new Uri("http://localhost:1234") });
+        var client = new SearXngClient(httpClient, options, Mock.Of<ILogger<SearXngClient>>());
         var logger = Mock.Of<ILogger<SearXNGSearchTool>>();
-        var tool = new SearXNGSearchTool(httpClient, options, logger);
+        var tool = new SearXNGSearchTool(client, options, logger);
 
         var result = await tool.ExecuteAsync(new Dictionary<string, object> { ["query"] = "test" });
 
@@ -94,9 +96,10 @@ public sealed class SearXNGSearchToolTests
             });
 
         using var httpClient = new HttpClient(mockHttpMessageHandler.Object, disposeHandler: false);
-    var options = Microsoft.Extensions.Options.Options.Create(new SearXNGOptions { Enabled = true, BaseUrl = new Uri("http://localhost:1234") });
+        var options = Microsoft.Extensions.Options.Options.Create(new SearXNGOptions { Enabled = true, BaseUrl = new Uri("http://localhost:1234") });
+        var client = new SearXngClient(httpClient, options, Mock.Of<ILogger<SearXngClient>>());
         var logger = Mock.Of<ILogger<SearXNGSearchTool>>();
-        var tool = new SearXNGSearchTool(httpClient, options, logger);
+        var tool = new SearXNGSearchTool(client, options, logger);
 
         var result = await tool.ExecuteAsync(new Dictionary<string, object> { ["query"] = "test" });
 
@@ -122,9 +125,10 @@ public sealed class SearXNGSearchToolTests
             .ThrowsAsync(new HttpRequestException("boom"));
 
         using var httpClient = new HttpClient(mockHttpMessageHandler.Object, disposeHandler: false);
-    var options = Microsoft.Extensions.Options.Options.Create(new SearXNGOptions { Enabled = true, BaseUrl = new Uri("http://localhost:1234") });
+        var options = Microsoft.Extensions.Options.Options.Create(new SearXNGOptions { Enabled = true, BaseUrl = new Uri("http://localhost:1234") });
+        var client = new SearXngClient(httpClient, options, Mock.Of<ILogger<SearXngClient>>());
         var logger = Mock.Of<ILogger<SearXNGSearchTool>>();
-        var tool = new SearXNGSearchTool(httpClient, options, logger);
+        var tool = new SearXNGSearchTool(client, options, logger);
 
         var result = await tool.ExecuteAsync(new Dictionary<string, object> { ["query"] = "test" });
 

@@ -1,4 +1,5 @@
 using InfernalHierarchy.Agents.Collaboration;
+using InfernalHierarchy.Agents.Collaboration.Strategies;
 using InfernalHierarchy.Agents.Factory;
 using InfernalHierarchy.Agents.Orchestration;
 using InfernalHierarchy.Agents.Registry;
@@ -33,11 +34,13 @@ using InfernalHierarchy.Tools.Tools.Search;
 using InfernalHierarchy.Tools.Tools.Telegram;
 using InfernalHierarchy.Tools.Tools.Templates;
 using InfernalHierarchy.Host.Configuration;
+using InfernalHierarchy.Host.Configuration.Validation;
 using InfernalHierarchy.Host.Hosting;
 using InfernalHierarchy.Host.Observability;
 using InfernalHierarchy.Host.Resilience;
 using InfernalHierarchy.Host.Security;
 using InfernalHierarchy.Host.Telegram;
+using InfernalHierarchy.Tools.Clients.Search;
 using Serilog;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
@@ -47,6 +50,7 @@ using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Options;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
 using System.Text.Json;
@@ -81,13 +85,34 @@ builder.Services.AddSingleton(agentContextEnricher);
 builder.Services.AddSingleton(messageContextEnricher);
 builder.Services.AddSingleton(toolContextEnricher);
 
-// Register configuration sections
-builder.Services.Configure<OllamaOptions>(builder.Configuration.GetSection("Ollama"));
-builder.Services.Configure<TelegramOptions>(builder.Configuration.GetSection("Telegram"));
-builder.Services.Configure<MemoryOptions>(builder.Configuration.GetSection("Memory"));
-builder.Services.Configure<HierarchyOptions>(builder.Configuration.GetSection("Hierarchy"));
-builder.Services.Configure<SearXNGOptions>(builder.Configuration.GetSection("SearXNG"));
-builder.Services.Configure<BraveSearchOptions>(builder.Configuration.GetSection("BraveSearch"));
+// Register configuration sections + validation
+builder.Services.AddSingleton<IValidateOptions<OllamaOptions>, OllamaOptionsValidator>();
+builder.Services.AddSingleton<IValidateOptions<TelegramOptions>, TelegramOptionsValidator>();
+builder.Services.AddSingleton<IValidateOptions<MemoryOptions>, MemoryOptionsValidator>();
+builder.Services.AddSingleton<IValidateOptions<HierarchyOptions>, HierarchyOptionsValidator>();
+builder.Services.AddSingleton<IValidateOptions<SearXNGOptions>, SearXngOptionsValidator>();
+builder.Services.AddSingleton<IValidateOptions<BraveSearchOptions>, BraveSearchOptionsValidator>();
+builder.Services.AddSingleton<IValidateOptions<SearXNGOptions>, WebSearchProvidersValidator>();
+builder.Services.AddSingleton<IValidateOptions<BraveSearchOptions>, WebSearchProvidersValidator>();
+
+builder.Services.AddOptions<OllamaOptions>()
+    .Bind(builder.Configuration.GetSection("Ollama"))
+    .ValidateOnStart();
+builder.Services.AddOptions<TelegramOptions>()
+    .Bind(builder.Configuration.GetSection("Telegram"))
+    .ValidateOnStart();
+builder.Services.AddOptions<MemoryOptions>()
+    .Bind(builder.Configuration.GetSection("Memory"))
+    .ValidateOnStart();
+builder.Services.AddOptions<HierarchyOptions>()
+    .Bind(builder.Configuration.GetSection("Hierarchy"))
+    .ValidateOnStart();
+builder.Services.AddOptions<SearXNGOptions>()
+    .Bind(builder.Configuration.GetSection("SearXNG"))
+    .ValidateOnStart();
+builder.Services.AddOptions<BraveSearchOptions>()
+    .Bind(builder.Configuration.GetSection("BraveSearch"))
+    .ValidateOnStart();
 builder.Services.Configure<LlmOptions>(builder.Configuration.GetSection("LlmOptions"));
 builder.Services.Configure<VectorMemoryOptions>(builder.Configuration.GetSection("VectorMemoryOptions"));
 builder.Services.Configure<MemoryPruningOptions>(builder.Configuration.GetSection("MemoryPruningOptions"));
@@ -194,6 +219,11 @@ builder.Services.AddHostedService<MemoryLearningService>();
 
 // Agent Collaboration
 builder.Services.AddSingleton<IAgentCollaborationService, AgentCollaborationService>();
+builder.Services.AddSingleton<IAggregationStrategy, VotingAggregationStrategy>();
+builder.Services.AddSingleton<IAggregationStrategy, WeightedVotingAggregationStrategy>();
+builder.Services.AddSingleton<IAggregationStrategy, ConsensusAggregationStrategy>();
+builder.Services.AddSingleton<IAggregationStrategy, HighestConfidenceAggregationStrategy>();
+builder.Services.AddSingleton<IAggregationStrategy, HierarchicalAggregationStrategy>();
 
 // Agent Templates
 builder.Services.AddSingleton<ITemplateService>(sp =>
@@ -221,8 +251,10 @@ builder.Services.AddSingleton<EventStore>(sp =>
 builder.Services.AddSingleton<IAgentEventSink>(sp => sp.GetRequiredService<EventStore>());
 
 // Register search tools
-builder.Services.AddHttpClient<SearXNGSearchTool>();
-builder.Services.AddHttpClient<BraveSearchTool>();
+builder.Services.AddHttpClient<ISearXngClient, SearXngClient>();
+builder.Services.AddHttpClient<IBraveSearchClient, BraveSearchClient>();
+builder.Services.AddSingleton<SearXNGSearchTool>();
+builder.Services.AddSingleton<BraveSearchTool>();
 builder.Services.AddSingleton<WebSearchTool>();
 
 // Register unified web search as IWebSearchTool
@@ -241,9 +273,6 @@ builder.Services.AddSingleton<ITool, PromptAbTestTool>();
 
 // Register all tools in the registry
 builder.Services.AddHostedService<ToolRegistrationService>();
-
-// Configuration validation (runs first)
-builder.Services.AddHostedService<ConfigurationValidator>();
 
 // Configuration management
 builder.Services.AddHostedService<ConfigurationReloadService>();

@@ -1,9 +1,8 @@
 using InfernalHierarchy.Core.Interfaces;
+using InfernalHierarchy.Tools.Clients.Search;
 using InfernalHierarchy.Tools.Options;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using System.Text.Json;
-using System.Text.Json.Serialization;
 
 namespace InfernalHierarchy.Tools.Tools.Search;
 
@@ -13,7 +12,7 @@ namespace InfernalHierarchy.Tools.Tools.Search;
 /// </summary>
 public class BraveSearchTool : IWebSearchTool
 {
-    private readonly HttpClient _httpClient;
+    private readonly IBraveSearchClient _client;
     private readonly ILogger<BraveSearchTool> _logger;
     private readonly BraveSearchOptions _options;
 
@@ -21,11 +20,11 @@ public class BraveSearchTool : IWebSearchTool
     public string Description => "Search the web using Brave Search API. High-quality results with privacy focus.";
 
     public BraveSearchTool(
-        HttpClient httpClient,
+        IBraveSearchClient client,
         IOptions<BraveSearchOptions> options,
         ILogger<BraveSearchTool> logger)
     {
-        _httpClient = httpClient;
+        _client = client;
         _options = options.Value;
         _logger = logger;
     }
@@ -52,32 +51,29 @@ public class BraveSearchTool : IWebSearchTool
 
         try
         {
-            var url = $"https://api.search.brave.com/res/v1/web/search?q={Uri.EscapeDataString(query)}&count=5";
-
             _logger.LogInformation("🔍 Brave Search: {Query}", query);
 
-            var request = new HttpRequestMessage(HttpMethod.Get, url);
-            request.Headers.Add("X-Subscription-Token", _options.ApiKey);
-            request.Headers.Add("Accept", "application/json");
-
-            var response = await _httpClient.SendAsync(request, ct);
-
-            if (!response.IsSuccessStatusCode)
+            var searchResult = await _client.SearchAsync(query, count: 5, ct).ConfigureAwait(false);
+            if (searchResult.Error != null)
             {
-                var errorContent = await response.Content.ReadAsStringAsync(ct);
-                _logger.LogError("Brave Search API error: {StatusCode} - {Error}", response.StatusCode, errorContent);
+                if (searchResult.Error.StartsWith("Network error:", StringComparison.OrdinalIgnoreCase) ||
+                    searchResult.Error.StartsWith("Invalid response format", StringComparison.OrdinalIgnoreCase))
+                {
+                    return new ToolResult
+                    {
+                        Success = false,
+                        Error = searchResult.Error
+                    };
+                }
 
                 return new ToolResult
                 {
                     Success = false,
-                    Error = $"Brave Search API returned {response.StatusCode}"
+                    Error = $"Brave Search API returned {searchResult.Error}"
                 };
             }
 
-            var json = await response.Content.ReadAsStringAsync(ct);
-            var searchResult = JsonSerializer.Deserialize<BraveSearchResponse>(json);
-
-            if (searchResult?.Web?.Results == null || searchResult.Web.Results.Length == 0)
+            if (searchResult.Results.Count == 0)
             {
                 return new ToolResult
                 {
@@ -87,35 +83,17 @@ public class BraveSearchTool : IWebSearchTool
             }
 
             // Format results
-            var results = searchResult.Web.Results.Select(r =>
-                $"Title: {r.Title}\nURL: {r.Url}\nDescription: {r.Description}");
+            var results = searchResult.Results.Select(r =>
+                $"Title: {r.Title}\nURL: {r.Url}\nDescription: {r.Snippet}");
 
             var output = string.Join("\n\n---\n\n", results);
 
-            _logger.LogInformation("✅ Found {Count} results", searchResult.Web.Results.Length);
+            _logger.LogInformation("✅ Found {Count} results", searchResult.Results.Count);
 
             return new ToolResult
             {
                 Success = true,
                 Output = output
-            };
-        }
-        catch (HttpRequestException ex)
-        {
-            _logger.LogError(ex, "Brave Search HTTP request failed");
-            return new ToolResult
-            {
-                Success = false,
-                Error = $"Network error: {ex.Message}"
-            };
-        }
-        catch (JsonException ex)
-        {
-            _logger.LogError(ex, "Failed to parse Brave Search response");
-            return new ToolResult
-            {
-                Success = false,
-                Error = "Invalid response format from Brave Search"
             };
         }
         catch (Exception ex)
@@ -128,35 +106,4 @@ public class BraveSearchTool : IWebSearchTool
             };
         }
     }
-}
-
-// Response models
-internal class BraveSearchResponse
-{
-    [JsonPropertyName("web")]
-    public WebResults? Web { get; set; }
-}
-
-internal class WebResults
-{
-    [JsonPropertyName("results")]
-    public BraveResult[] Results { get; set; } = Array.Empty<BraveResult>();
-}
-
-internal class BraveResult
-{
-    [JsonPropertyName("title")]
-    public string Title { get; set; } = string.Empty;
-
-    [JsonPropertyName("url")]
-    public string Url { get; set; } = string.Empty;
-
-    [JsonPropertyName("description")]
-    public string Description { get; set; } = string.Empty;
-
-    [JsonPropertyName("age")]
-    public string? Age { get; set; }
-
-    [JsonPropertyName("page_age")]
-    public string? PageAge { get; set; }
 }

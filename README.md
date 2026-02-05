@@ -212,6 +212,20 @@ dotnet run --project src/InfernalHierarchy.Host --launch-profile Development
 logs/infernal-YYYYMMDD.log
 ```
 
+### Coverage (tests)
+
+Pour générer un rapport de couverture local (HTML + résumé texte) :
+
+```powershell
+dotnet test -c Release --no-restore --collect:"XPlat Code Coverage"
+dotnet tool restore
+dotnet tool run reportgenerator -reports:"tests/**/coverage.cobertura.xml" -targetdir:"coverage-report" -reporttypes:"Html;TextSummary"
+```
+
+- Rapport : `coverage-report/index.html`
+- Résumé : `coverage-report/Summary.txt`
+- Synthèse versionnée : [TEST_COVERAGE_SUMMARY.md](TEST_COVERAGE_SUMMARY.md)
+
 ## 🔒 Sécurité
 
 - **User Secrets** pour données sensibles (tokens, API keys)

@@ -1,4 +1,5 @@
 using FluentAssertions;
+using InfernalHierarchy.Core.Results;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Moq;
@@ -174,14 +175,18 @@ public sealed class MultiModelLlmClientTests : IDisposable
             attemptsByModel: attempts);
 
         // Act
-        var response = await client.GetCompletionAsync(
+        var result = await client.TryGetCompletionAsync(
             systemPrompt: "sys",
             userMessage: "user",
             complexity: TaskComplexity.Medium,
             ct: CancellationToken.None);
 
+        result.Succeeded.Should().BeTrue();
+        var response = result.Value;
+        response.Should().NotBeNull();
+
         // Assert
-        response.ModelUsed.Should().NotBe("llama3.1:8b");
+        response!.ModelUsed.Should().NotBe("llama3.1:8b");
         attempts["llama3.1:8b"].Should().Be(1);
 
         // Fallback order is by Priority excluding primary:
@@ -207,16 +212,17 @@ public sealed class MultiModelLlmClientTests : IDisposable
             attemptsByModel: attempts);
 
         // Act
-        var act = async () => await client.GetCompletionAsync(
+        var result = await client.TryGetCompletionAsync(
             systemPrompt: "sys",
             userMessage: "user",
             complexity: TaskComplexity.Simple,
             ct: CancellationToken.None);
 
         // Assert
-        var ex = await act.Should().ThrowAsync<Exception>();
-        ex.Which.Message.Should().StartWith("All LLM models failed");
-        ex.Which.InnerException.Should().NotBeNull();
+        result.Succeeded.Should().BeFalse();
+        result.Error.Should().NotBeNull();
+        result.Error!.Message.Should().StartWith("All LLM models failed");
+        result.Error.Exception.Should().NotBeNull();
 
         // Primary + all fallbacks attempted
         attempts.Values.Sum().Should().Be(_options.Models.Count);
@@ -331,16 +337,12 @@ public sealed class MultiModelLlmClientTests : IDisposable
         ((IDictionary)clients).Clear();
 
         // Act
-        var act = async () =>
-        {
-            await foreach (var _ in _sut.GetStreamingCompletionAsync("sys", "user", TaskComplexity.Simple))
-            {
-                // no-op
-            }
-        };
+        var result = _sut.TryGetStreamingCompletionAsync("sys", "user", TaskComplexity.Simple);
 
         // Assert
-        await act.Should().ThrowAsync<Exception>().WithMessage("Model*not found*");
+        result.Succeeded.Should().BeFalse();
+        result.Error.Should().NotBeNull();
+        result.Error!.Message.Should().Contain("Model").And.Contain("not found");
     }
 
     [Fact]

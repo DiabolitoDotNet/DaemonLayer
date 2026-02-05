@@ -44,6 +44,17 @@ public class MemoryReadTool : ITool
         parameters.TryGetValue("count", out var countObj);
         var count = countObj is int c ? c : 10;
 
+        if (!type.Equals("decisions", StringComparison.OrdinalIgnoreCase)
+            && !type.Equals("facts", StringComparison.OrdinalIgnoreCase)
+            && !type.Equals("tasks", StringComparison.OrdinalIgnoreCase))
+        {
+            return new ToolResult
+            {
+                Success = false,
+                Error = $"Invalid type: {type}. Expected: decisions/facts/tasks"
+            };
+        }
+
         try
         {
             string output = type switch
@@ -51,7 +62,7 @@ public class MemoryReadTool : ITool
                 var t when t.Equals("decisions", StringComparison.OrdinalIgnoreCase) => await GetDecisionsAsync(query, count, ct),
                 var t when t.Equals("facts", StringComparison.OrdinalIgnoreCase) => await GetFactsAsync(query, agentId, agentRank, ct),
                 var t when t.Equals("tasks", StringComparison.OrdinalIgnoreCase) => await GetTasksAsync(query, ct),
-                _ => throw new ArgumentException($"Invalid type: {type}")
+                _ => ""
             };
 
             return new ToolResult

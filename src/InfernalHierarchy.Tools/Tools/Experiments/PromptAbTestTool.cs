@@ -263,15 +263,11 @@ public class PromptAbTestTool : ITool
         var expectedRegex = TryGetString(parameters, "expected_regex", out var rex) ? rex : null;
         var expectedContains = TryGetStringArray(parameters, "expected_contains");
 
-        List<PromptVariant> variants;
-        try
+        var (variants, variantsError) = await ParseVariantsAsync(parameters, ct);
+        if (!string.IsNullOrWhiteSpace(variantsError))
         {
-            variants = await ParseVariantsAsync(parameters, ct);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed parsing variants");
-            return new ToolResult { Success = false, Error = $"Invalid variants: {ex.Message}" };
+            _logger.LogWarning("Failed parsing variants: {Error}", variantsError);
+            return new ToolResult { Success = false, Error = $"Invalid variants: {variantsError}" };
         }
 
         if (variants.Count < 2)
@@ -376,7 +372,9 @@ public class PromptAbTestTool : ITool
         };
     }
 
-    private async Task<List<PromptVariant>> ParseVariantsAsync(Dictionary<string, object> parameters, CancellationToken ct)
+    private async Task<(List<PromptVariant> Variants, string? Error)> ParseVariantsAsync(
+        Dictionary<string, object> parameters,
+        CancellationToken ct)
     {
         // Prefer variants_json for easy manual invocation.
         if (TryGetString(parameters, "variants_json", out var json) && !string.IsNullOrWhiteSpace(json))
@@ -400,13 +398,25 @@ public class PromptAbTestTool : ITool
                     return await NormalizeVariantsAsync(parsed, ct);
                 }
             }
-            catch (JsonException)
+            catch (JsonException ex)
             {
                 // Fall back to Deserialize for callers who already match our CLR property names.
+                _logger.LogDebug(ex, "Failed to parse variants_json as JsonDocument; falling back to deserialization");
+            }
+            catch (Exception ex)
+            {
+                return (new List<PromptVariant>(), ex.Message);
             }
 
-            var parsedFallback = JsonSerializer.Deserialize<List<VariantInput>>(json, _jsonOptions) ?? new();
-            return await NormalizeVariantsAsync(parsedFallback, ct);
+            try
+            {
+                var parsedFallback = JsonSerializer.Deserialize<List<VariantInput>>(json, _jsonOptions) ?? new();
+                return await NormalizeVariantsAsync(parsedFallback, ct);
+            }
+            catch (Exception ex)
+            {
+                return (new List<PromptVariant>(), ex.Message);
+            }
         }
 
         if (parameters.TryGetValue("variants", out var variantsObj))
@@ -428,23 +438,39 @@ public class PromptAbTestTool : ITool
 
             if (variantsObj is IEnumerable<object> list)
             {
-                // Best-effort: try to serialize and parse.
-                var serialized = JsonSerializer.Serialize(list, _jsonOptions);
-                var parsed = JsonSerializer.Deserialize<List<VariantInput>>(serialized, _jsonOptions) ?? new();
-                return await NormalizeVariantsAsync(parsed, ct);
+                try
+                {
+                    // Best-effort: try to serialize and parse.
+                    var serialized = JsonSerializer.Serialize(list, _jsonOptions);
+                    var parsed = JsonSerializer.Deserialize<List<VariantInput>>(serialized, _jsonOptions) ?? new();
+                    return await NormalizeVariantsAsync(parsed, ct);
+                }
+                catch (Exception ex)
+                {
+                    return (new List<PromptVariant>(), ex.Message);
+                }
             }
 
             if (variantsObj is string variantsString && !string.IsNullOrWhiteSpace(variantsString))
             {
-                var parsed = JsonSerializer.Deserialize<List<VariantInput>>(variantsString, _jsonOptions) ?? new();
-                return await NormalizeVariantsAsync(parsed, ct);
+                try
+                {
+                    var parsed = JsonSerializer.Deserialize<List<VariantInput>>(variantsString, _jsonOptions) ?? new();
+                    return await NormalizeVariantsAsync(parsed, ct);
+                }
+                catch (Exception ex)
+                {
+                    return (new List<PromptVariant>(), ex.Message);
+                }
             }
         }
 
-        return new List<PromptVariant>();
+        return (new List<PromptVariant>(), null);
     }
 
-    private async Task<List<PromptVariant>> NormalizeVariantsAsync(List<VariantInput> inputs, CancellationToken ct)
+    private async Task<(List<PromptVariant> Variants, string? Error)> NormalizeVariantsAsync(
+        List<VariantInput> inputs,
+        CancellationToken ct)
     {
         var variants = new List<PromptVariant>();
 
@@ -469,14 +495,14 @@ public class PromptAbTestTool : ITool
                 var persona = await _personaLoader.LoadPersonaAsync(input.Persona, ct);
                 if (persona == null)
                 {
-                    throw new InvalidOperationException($"Persona '{input.Persona}' not found");
+                    return (new List<PromptVariant>(), $"Variant '{name}': persona '{input.Persona}' not found");
                 }
 
                 systemPrompt = persona.SystemPrompt;
             }
             else
             {
-                throw new InvalidOperationException($"Variant '{name}' must specify system_prompt or persona");
+                return (new List<PromptVariant>(), $"Variant '{name}' must specify system_prompt or persona");
             }
 
             if (!string.IsNullOrWhiteSpace(input.Prepend))
@@ -492,7 +518,7 @@ public class PromptAbTestTool : ITool
             variants.Add(new PromptVariant(name, systemPrompt));
         }
 
-        return variants;
+        return (variants, null);
     }
 
     private sealed record PromptVariant(string Name, string SystemPrompt);

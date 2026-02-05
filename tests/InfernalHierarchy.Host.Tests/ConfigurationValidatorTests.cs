@@ -1,15 +1,10 @@
 using FluentAssertions;
 using InfernalHierarchy.Agents.Orchestration;
-using InfernalHierarchy.Host.Configuration;
-using InfernalHierarchy.Host.Hosting;
-using InfernalHierarchy.Host.Observability;
-using InfernalHierarchy.Host.Resilience;
-using InfernalHierarchy.Host.Security;
-using InfernalHierarchy.Host.Telegram;
+using InfernalHierarchy.Host.Configuration.Validation;
 using InfernalHierarchy.Memory.Configuration;
 using InfernalHierarchy.Telegram.Options;
+using InfernalHierarchy.Tools.Options;
 using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.Extensions.Options;
 using Xunit;
 
 namespace InfernalHierarchy.Host.Tests;
@@ -17,93 +12,55 @@ namespace InfernalHierarchy.Host.Tests;
 public class ConfigurationValidatorTests
 {
     [Fact]
-    public void StartAsync_WhenRequiredValuesMissing_ThrowsInvalidOperationException()
+    public void OllamaOptionsValidator_WhenRequiredValuesMissing_Fails()
     {
-        var validator = new ConfigurationValidator(
-            Options.Create(new OllamaOptions
-            {
-                BaseUrl = null!,
-                DefaultModel = "",
-                MaxTokens = 0,
-                Temperature = 0.7
-            }),
-            Options.Create(new TelegramOptions
-            {
-                BotToken = "",
-                AllowedUserIds = []
-            }),
-            Options.Create(new MemoryOptions { DatabasePath = "" }),
-            Options.Create(new HierarchyOptions
-            {
-                MainAgentName = "",
-                MainAgentPersonaPath = "",
-                MaxAgentDepth = 0
-            }),
-            Options.Create(new SearXNGOptions { Enabled = true, BaseUrl = null! }),
-            Options.Create(new BraveSearchOptions { Enabled = true, ApiKey = "" }),
-            NullLogger<ConfigurationValidator>.Instance);
+        var validator = new OllamaOptionsValidator(NullLogger<OllamaOptionsValidator>.Instance);
 
-        Action act = () => validator.StartAsync(CancellationToken.None);
+        var result = validator.Validate(null, new OllamaOptions
+        {
+            BaseUrl = null!,
+            DefaultModel = "",
+            MaxTokens = 0,
+            Temperature = 0.7
+        });
 
-        act.Should().Throw<InvalidOperationException>()
-            .WithMessage("Configuration validation failed*");
+        result.Succeeded.Should().BeFalse();
     }
 
     [Fact]
-    public void StartAsync_WhenConfigurationIsValid_CreatesMemoryDirectoryAndDoesNotThrow()
+    public void Validators_WhenValid_Succeed()
     {
-        var tempRoot = Path.Combine(Path.GetTempPath(), "InfernalHierarchy.Host.Tests", Guid.NewGuid().ToString("N"));
-        var memoryPath = Path.Combine(tempRoot, "memory", "infernal.db");
+        var ollama = new OllamaOptionsValidator(NullLogger<OllamaOptionsValidator>.Instance);
+        var telegram = new TelegramOptionsValidator(NullLogger<TelegramOptionsValidator>.Instance);
+        var memory = new MemoryOptionsValidator();
+        var hierarchy = new HierarchyOptionsValidator(NullLogger<HierarchyOptionsValidator>.Instance);
+        var searx = new SearXngOptionsValidator();
+        var brave = new BraveSearchOptionsValidator(NullLogger<BraveSearchOptionsValidator>.Instance);
 
-        Directory.Exists(Path.GetDirectoryName(memoryPath)!).Should().BeFalse();
-
-        var personaFile = Path.Combine(tempRoot, "persona.json");
-        Directory.CreateDirectory(tempRoot);
-        File.WriteAllText(personaFile, "{}");
-
-        var validator = new ConfigurationValidator(
-            Options.Create(new OllamaOptions
-            {
-                BaseUrl = new Uri("http://localhost:11434"),
-                DefaultModel = "llama3",
-                MaxTokens = 1024,
-                Temperature = 0.7
-            }),
-            Options.Create(new TelegramOptions
-            {
-                BotToken = "",
-                AllowedUserIds = []
-            }),
-            Options.Create(new MemoryOptions { DatabasePath = memoryPath }),
-            Options.Create(new HierarchyOptions
-            {
-                MainAgentName = "Lucifer",
-                MainAgentPersonaPath = personaFile,
-                MaxAgentDepth = 4
-            }),
-            Options.Create(new SearXNGOptions { Enabled = false }),
-            Options.Create(new BraveSearchOptions { Enabled = false, ApiKey = "" }),
-            NullLogger<ConfigurationValidator>.Instance);
-
-        try
+        ollama.Validate(null, new OllamaOptions
         {
-            validator.StartAsync(CancellationToken.None);
+            BaseUrl = new Uri("http://localhost:11434/v1"),
+            DefaultModel = "llama3",
+            MaxTokens = 1024,
+            Temperature = 0.7
+        }).Succeeded.Should().BeTrue();
 
-            Directory.Exists(Path.GetDirectoryName(memoryPath)!).Should().BeTrue();
-        }
-        finally
+        telegram.Validate(null, new TelegramOptions
         {
-            try
-            {
-                if (Directory.Exists(tempRoot))
-                {
-                    Directory.Delete(tempRoot, recursive: true);
-                }
-            }
-            catch
-            {
-                // Best-effort cleanup
-            }
-        }
+            BotToken = "",
+            AllowedUserIds = []
+        }).Succeeded.Should().BeTrue();
+
+        memory.Validate(null, new MemoryOptions { DatabasePath = "data/infernal.db" }).Succeeded.Should().BeTrue();
+
+        hierarchy.Validate(null, new HierarchyOptions
+        {
+            MainAgentName = "Lucifer",
+            MainAgentPersonaPath = "souls/lucifer.json",
+            MaxAgentDepth = 4
+        }).Succeeded.Should().BeTrue();
+
+        searx.Validate(null, new SearXNGOptions { Enabled = true, BaseUrl = new Uri("http://localhost:8080") }).Succeeded.Should().BeTrue();
+        brave.Validate(null, new BraveSearchOptions { Enabled = true, ApiKey = "" }).Succeeded.Should().BeTrue();
     }
 }

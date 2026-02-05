@@ -1,4 +1,5 @@
 using FluentAssertions;
+using InfernalHierarchy.Tools.Clients.Search;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Moq;
@@ -51,14 +52,22 @@ public sealed class WebSearchToolTests
         using var searxClient = new HttpClient(searxHandler.Object, disposeHandler: false);
         using var braveClient = new HttpClient(braveHandler.Object, disposeHandler: false);
 
+        var searxOptions = Microsoft.Extensions.Options.Options.Create(
+            new SearXNGOptions { Enabled = true, BaseUrl = new Uri("http://localhost:8080") });
+        var braveOptions = Microsoft.Extensions.Options.Options.Create(
+            new BraveSearchOptions { Enabled = true, ApiKey = "test" });
+
+        var searxTypedClient = new SearXngClient(searxClient, searxOptions, Mock.Of<ILogger<SearXngClient>>());
+        var braveTypedClient = new BraveSearchClient(braveClient, braveOptions, Mock.Of<ILogger<BraveSearchClient>>());
+
         var searx = new SearXNGSearchTool(
-            searxClient,
-            Microsoft.Extensions.Options.Options.Create(new SearXNGOptions { Enabled = true, BaseUrl = new Uri("http://localhost:8080") }),
+            searxTypedClient,
+            searxOptions,
             Mock.Of<ILogger<SearXNGSearchTool>>());
 
         var brave = new BraveSearchTool(
-            braveClient,
-            Microsoft.Extensions.Options.Options.Create(new BraveSearchOptions { Enabled = true, ApiKey = "test" }),
+            braveTypedClient,
+            braveOptions,
             Mock.Of<ILogger<BraveSearchTool>>());
 
         var tool = new WebSearchTool(searx, brave, Mock.Of<ILogger<WebSearchTool>>());
@@ -114,14 +123,22 @@ public sealed class WebSearchToolTests
         using var searxClient = new HttpClient(searxHandler.Object, disposeHandler: false);
         using var braveClient = new HttpClient(braveHandler.Object, disposeHandler: false);
 
+        var searxOptions = Microsoft.Extensions.Options.Options.Create(
+            new SearXNGOptions { Enabled = true, BaseUrl = new Uri("http://localhost:8080") });
+        var braveOptions = Microsoft.Extensions.Options.Options.Create(
+            new BraveSearchOptions { Enabled = true, ApiKey = "test" });
+
+        var searxTypedClient = new SearXngClient(searxClient, searxOptions, Mock.Of<ILogger<SearXngClient>>());
+        var braveTypedClient = new BraveSearchClient(braveClient, braveOptions, Mock.Of<ILogger<BraveSearchClient>>());
+
         var searx = new SearXNGSearchTool(
-            searxClient,
-            Microsoft.Extensions.Options.Options.Create(new SearXNGOptions { Enabled = true, BaseUrl = new Uri("http://localhost:8080") }),
+            searxTypedClient,
+            searxOptions,
             Mock.Of<ILogger<SearXNGSearchTool>>());
 
         var brave = new BraveSearchTool(
-            braveClient,
-            Microsoft.Extensions.Options.Options.Create(new BraveSearchOptions { Enabled = true, ApiKey = "test" }),
+            braveTypedClient,
+            braveOptions,
             Mock.Of<ILogger<BraveSearchTool>>());
 
         var tool = new WebSearchTool(searx, brave, Mock.Of<ILogger<WebSearchTool>>());
@@ -166,14 +183,22 @@ public sealed class WebSearchToolTests
         using var searxClient = new HttpClient(searxHandler.Object, disposeHandler: false);
         using var braveClient = new HttpClient(braveHandler.Object, disposeHandler: false);
 
+        var searxOptions = Microsoft.Extensions.Options.Options.Create(
+            new SearXNGOptions { Enabled = true, BaseUrl = new Uri("http://localhost:8080") });
+        var braveOptions = Microsoft.Extensions.Options.Options.Create(
+            new BraveSearchOptions { Enabled = true, ApiKey = "test" });
+
+        var searxTypedClient = new SearXngClient(searxClient, searxOptions, Mock.Of<ILogger<SearXngClient>>());
+        var braveTypedClient = new BraveSearchClient(braveClient, braveOptions, Mock.Of<ILogger<BraveSearchClient>>());
+
         var searx = new SearXNGSearchTool(
-            searxClient,
-            Microsoft.Extensions.Options.Options.Create(new SearXNGOptions { Enabled = true, BaseUrl = new Uri("http://localhost:8080") }),
+            searxTypedClient,
+            searxOptions,
             Mock.Of<ILogger<SearXNGSearchTool>>());
 
         var brave = new BraveSearchTool(
-            braveClient,
-            Microsoft.Extensions.Options.Options.Create(new BraveSearchOptions { Enabled = true, ApiKey = "test" }),
+            braveTypedClient,
+            braveOptions,
             Mock.Of<ILogger<BraveSearchTool>>());
 
         var tool = new WebSearchTool(searx, brave, Mock.Of<ILogger<WebSearchTool>>());

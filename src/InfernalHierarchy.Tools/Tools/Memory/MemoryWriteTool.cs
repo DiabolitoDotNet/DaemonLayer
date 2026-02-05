@@ -48,6 +48,17 @@ public class MemoryWriteTool : ITool
             };
         }
 
+        if (!type.Equals("decision", StringComparison.OrdinalIgnoreCase)
+            && !type.Equals("fact", StringComparison.OrdinalIgnoreCase)
+            && !type.Equals("task", StringComparison.OrdinalIgnoreCase))
+        {
+            return new ToolResult
+            {
+                Success = false,
+                Error = $"Invalid type: {type}. Expected: decision/fact/task"
+            };
+        }
+
         try
         {
             var output = type switch
@@ -55,7 +66,7 @@ public class MemoryWriteTool : ITool
                 var t when t.Equals("decision", StringComparison.OrdinalIgnoreCase) => await WriteDecisionAsync(parameters, agentId, ct),
                 var t when t.Equals("fact", StringComparison.OrdinalIgnoreCase) => await WriteFactAsync(parameters, agentId, ct),
                 var t when t.Equals("task", StringComparison.OrdinalIgnoreCase) => await WriteTaskAsync(parameters, agentId, ct),
-                _ => throw new ArgumentException($"Invalid type: {type}")
+                _ => ""
             };
 
             return new ToolResult

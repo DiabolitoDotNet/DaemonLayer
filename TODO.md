@@ -46,18 +46,18 @@
     - [x] **Decompose `TelegramBotService` into handlers**
        - Split: update routing, command parsing, authorization, response formatting, error handling.
        - Use “command handlers” (e.g., `ITelegramCommandHandler`) registered via DI.
-    - [ ] **Decompose `AgentCollaborationService` strategies**
+    - [x] **Decompose `AgentCollaborationService` strategies**
        - Extract aggregation strategies into separate classes (voting/consensus/hierarchical) behind `IAggregationStrategy`.
        - This reduces branching complexity and makes strategies independently testable.
 
     **Phase 3 — Hardening & Clean Architecture Edges**
-    - [ ] **Typed HTTP clients per external integration**
+    - [x] **Typed HTTP clients per external integration**
        - Introduce typed clients (e.g., `ISearXngClient`, `IBraveSearchClient`) with consistent error mapping.
        - Keep retry/timeouts centralized (policy provider).
-    - [ ] **Standardize result/error model**
+    - [x] **Standardize result/error model**
        - Prefer a consistent `Result<T>`/`ToolResult`-style outcome object instead of ad-hoc exceptions.
        - Map exceptions at the boundary (Telegram/HTTP) only.
-    - [ ] **Configuration validation via `IValidateOptions<T>`**
+    - [x] **Configuration validation via `IValidateOptions<T>`**
        - Move validation logic into dedicated validators; keep `Program.cs` composition-only.
 
 3. **Vector search operational dependency**
