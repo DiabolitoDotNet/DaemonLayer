@@ -16,7 +16,7 @@ using InfernalHierarchy.Memory.Maintenance;
 using InfernalHierarchy.Memory.Storage;
 using InfernalHierarchy.Memory.Vector;
 using InfernalHierarchy.Messaging.Bus;
-using InfernalHierarchy.Personas;
+using InfernalHierarchy.Personas.Loading;
 using InfernalHierarchy.Telegram.DependencyInjection;
 using InfernalHierarchy.Telegram.Options;
 using InfernalHierarchy.Telegram.Services;

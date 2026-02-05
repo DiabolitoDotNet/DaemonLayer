@@ -1,5 +1,5 @@
 using FluentAssertions;
-using InfernalHierarchy.Personas;
+using InfernalHierarchy.Personas.Loading;
 using Microsoft.Extensions.Logging;
 using Moq;
 using System.Text.Json;

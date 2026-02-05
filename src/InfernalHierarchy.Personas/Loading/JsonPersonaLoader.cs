@@ -3,7 +3,7 @@ using InfernalHierarchy.Core.Interfaces;
 using Microsoft.Extensions.Logging;
 using System.Text.Json;
 
-namespace InfernalHierarchy.Personas;
+namespace InfernalHierarchy.Personas.Loading;
 
 /// <summary>
 /// Loads demon personas from JSON files in the souls/ directory
