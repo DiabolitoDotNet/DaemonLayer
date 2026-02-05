@@ -37,15 +37,15 @@ public sealed class LiteDbSharedMemory : ISharedMemory, IDisposable
         _db = new LiteDatabase(dbPath);
 
         // Create indexes for better query performance
-        Decisions.EnsureIndex(x => x.CreatedAt);
-        Decisions.EnsureIndex(x => x.CreatedBy);
+        Decisions.EnsureIndex(nameof(MemoryEntry.CreatedAt));
+        Decisions.EnsureIndex(nameof(MemoryEntry.CreatedBy));
 
-        Facts.EnsureIndex(x => x.Category);
-        Facts.EnsureIndex(x => x.CreatedAt);
+        Facts.EnsureIndex(nameof(Fact.Category));
+        Facts.EnsureIndex(nameof(MemoryEntry.CreatedAt));
 
-        Tasks.EnsureIndex(x => x.Status);
-        Tasks.EnsureIndex(x => x.AssignedTo);
-        Tasks.EnsureIndex(x => x.CreatedAt);
+        Tasks.EnsureIndex(nameof(TaskEntry.Status));
+        Tasks.EnsureIndex(nameof(TaskEntry.AssignedTo));
+        Tasks.EnsureIndex(nameof(MemoryEntry.CreatedAt));
 
         _logger.LogInformation("💾 LiteDB shared memory initialized at {Path}", dbPath);
     }
@@ -62,7 +62,7 @@ public sealed class LiteDbSharedMemory : ISharedMemory, IDisposable
     public Task<Decision?> GetDecisionAsync(string id, CancellationToken ct = default)
     {
         var decision = Decisions.FindById(id);
-        return Task.FromResult(decision);
+        return Task.FromResult<Decision?>(decision);
     }
 
     public Task<IEnumerable<Decision>> GetRecentDecisionsAsync(int count = 10, CancellationToken ct = default)
@@ -115,7 +115,7 @@ public sealed class LiteDbSharedMemory : ISharedMemory, IDisposable
     public Task<Fact?> GetFactAsync(string id, CancellationToken ct = default)
     {
         var fact = Facts.FindById(id);
-        return Task.FromResult(fact);
+        return Task.FromResult<Fact?>(fact);
     }
 
     public Task<IEnumerable<Fact>> GetFactsByCategoryAsync(string category, CancellationToken ct = default)
@@ -210,7 +210,7 @@ public sealed class LiteDbSharedMemory : ISharedMemory, IDisposable
     public Task<TaskEntry?> GetTaskAsync(string id, CancellationToken ct = default)
     {
         var task = Tasks.FindById(id);
-        return Task.FromResult(task);
+        return Task.FromResult<TaskEntry?>(task);
     }
 
     public Task UpdateTaskAsync(TaskEntry task, CancellationToken ct = default)

@@ -8,12 +8,29 @@ using System.ClientModel;
 
 namespace InfernalHierarchy.Tools;
 
+public interface IChatModelClient
+{
+    Task<string> CompleteAsync(
+        string systemPrompt,
+        string userMessage,
+        double temperature,
+        int maxOutputTokens,
+        CancellationToken ct);
+
+    IAsyncEnumerable<string> CompleteStreamingAsync(
+        string systemPrompt,
+        string userMessage,
+        double temperature,
+        int maxOutputTokens,
+        CancellationToken ct);
+}
+
 /// <summary>
 /// Multi-model LLM client with automatic model selection and fallback
 /// </summary>
 public class MultiModelLlmClient : IDisposable
 {
-    private readonly Dictionary<string, ChatClient> _modelClients = new();
+    private readonly Dictionary<string, IChatModelClient> _modelClients = new();
     private readonly ILogger<MultiModelLlmClient> _logger;
     private readonly LlmOptions _options;
     private readonly TokenUsageTracker _tokenTracker;
@@ -34,16 +51,21 @@ public class MultiModelLlmClient : IDisposable
     {
         foreach (var model in _options.Models)
         {
-            var clientOptions = new AzureOpenAIClientOptions();
-            var apiKey = new ApiKeyCredential(model.ApiKey ?? "ollama-local");
-            var endpoint = model.BaseUrl;
-            var azureClient = new AzureOpenAIClient(endpoint, apiKey, clientOptions);
-
-            _modelClients[model.Name] = azureClient.GetChatClient(model.Name);
+            _modelClients[model.Name] = CreateModelClient(model);
 
             _logger.LogInformation("🧠 Initialized LLM model: {Model} ({Complexity})",
                 model.Name, model.Complexity);
         }
+    }
+
+    protected virtual IChatModelClient CreateModelClient(ModelConfig model)
+    {
+        var clientOptions = new AzureOpenAIClientOptions();
+        var apiKey = new ApiKeyCredential(model.ApiKey ?? "ollama-local");
+        var endpoint = model.BaseUrl;
+        var azureClient = new AzureOpenAIClient(endpoint, apiKey, clientOptions);
+
+        return new AzureChatModelClient(azureClient.GetChatClient(model.Name));
     }
 
     /// <summary>
@@ -97,7 +119,7 @@ public class MultiModelLlmClient : IDisposable
         string systemPrompt,
         string userMessage,
         TaskComplexity complexity = TaskComplexity.Medium,
-        CancellationToken ct = default)
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
     {
         var model = SelectModelForComplexity(complexity);
 
@@ -106,33 +128,17 @@ public class MultiModelLlmClient : IDisposable
             throw new Exception($"Model {model.Name} not found");
         }
 
-        var messages = new List<ChatMessage>
-        {
-            new SystemChatMessage(systemPrompt),
-            new UserChatMessage(userMessage)
-        };
-
-        var options = new ChatCompletionOptions
-        {
-            Temperature = (float)model.Temperature,
-            MaxOutputTokenCount = model.MaxTokens
-        };
-
-        var streamingResponse = client.CompleteChatStreamingAsync(messages, options, ct);
-
         var startTime = DateTime.UtcNow;
         var tokensGenerated = 0;
 
-        await foreach (var chunk in streamingResponse.WithCancellation(ct))
+        await foreach (var text in client
+            .CompleteStreamingAsync(systemPrompt, userMessage, model.Temperature, model.MaxTokens, ct)
+            .WithCancellation(ct))
         {
-            foreach (var contentPart in chunk.ContentUpdate)
+            if (!string.IsNullOrEmpty(text))
             {
-                var text = contentPart.Text;
-                if (!string.IsNullOrEmpty(text))
-                {
-                    tokensGenerated++;
-                    yield return text;
-                }
+                tokensGenerated++;
+                yield return text;
             }
         }
 
@@ -151,7 +157,7 @@ public class MultiModelLlmClient : IDisposable
             tokensGenerated, duration.TotalMilliseconds);
     }
 
-    private async Task<LlmResponse> ExecuteCompletionAsync(
+    protected virtual async Task<LlmResponse> ExecuteCompletionAsync(
         ModelConfig model,
         string systemPrompt,
         string userMessage,
@@ -162,22 +168,9 @@ public class MultiModelLlmClient : IDisposable
             throw new Exception($"Model {model.Name} not found");
         }
 
-        var messages = new List<ChatMessage>
-        {
-            new SystemChatMessage(systemPrompt),
-            new UserChatMessage(userMessage)
-        };
-
-        var options = new ChatCompletionOptions
-        {
-            Temperature = (float)model.Temperature,
-            MaxOutputTokenCount = model.MaxTokens
-        };
-
         var startTime = DateTime.UtcNow;
 
-        var response = await client.CompleteChatAsync(messages, options, ct);
-        var content = response.Value.Content[0].Text;
+        var content = await client.CompleteAsync(systemPrompt, userMessage, model.Temperature, model.MaxTokens, ct);
 
         var duration = DateTime.UtcNow - startTime;
         var inputTokens = EstimateTokens(systemPrompt + userMessage);
@@ -200,6 +193,75 @@ public class MultiModelLlmClient : IDisposable
             OutputTokens = outputTokens,
             Duration = duration
         };
+    }
+
+    private sealed class AzureChatModelClient : IChatModelClient
+    {
+        private readonly ChatClient _client;
+
+        public AzureChatModelClient(ChatClient client)
+        {
+            _client = client;
+        }
+
+        public async Task<string> CompleteAsync(
+            string systemPrompt,
+            string userMessage,
+            double temperature,
+            int maxOutputTokens,
+            CancellationToken ct)
+        {
+            var messages = new List<ChatMessage>
+            {
+                new SystemChatMessage(systemPrompt),
+                new UserChatMessage(userMessage)
+            };
+
+            var options = new ChatCompletionOptions
+            {
+                Temperature = (float)temperature,
+                MaxOutputTokenCount = maxOutputTokens
+            };
+
+            var response = await _client.CompleteChatAsync(messages, options, ct);
+            return response.Value.Content.Count > 0
+                ? response.Value.Content[0].Text
+                : string.Empty;
+        }
+
+        public async IAsyncEnumerable<string> CompleteStreamingAsync(
+            string systemPrompt,
+            string userMessage,
+            double temperature,
+            int maxOutputTokens,
+            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct)
+        {
+            var messages = new List<ChatMessage>
+            {
+                new SystemChatMessage(systemPrompt),
+                new UserChatMessage(userMessage)
+            };
+
+            var options = new ChatCompletionOptions
+            {
+                Temperature = (float)temperature,
+                MaxOutputTokenCount = maxOutputTokens
+            };
+
+            var streamingResponse = _client.CompleteChatStreamingAsync(messages, options, ct);
+
+            await foreach (var chunk in streamingResponse.WithCancellation(ct))
+            {
+                foreach (var contentPart in chunk.ContentUpdate)
+                {
+                    var text = contentPart.Text;
+                    if (!string.IsNullOrEmpty(text))
+                    {
+                        yield return text;
+                    }
+                }
+            }
+        }
     }
 
     private ModelConfig SelectModelForComplexity(TaskComplexity complexity)

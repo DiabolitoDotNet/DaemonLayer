@@ -84,9 +84,7 @@ public static class ExceptionHandlingExtensions
                 attempt => TimeSpan.FromSeconds(Math.Pow(2, attempt - 1)),
                 onRetry: async (outcome, timespan, retryCount, context) =>
                 {
-                    var correlationId = context.CorrelationId != default
-                        ? context.CorrelationId.ToString()
-                        : Guid.NewGuid().ToString();
+                    var correlationId = context.CorrelationId.ToString();
                     await handler.HandleExceptionAsync(
                         outcome.Exception,
                         operationName,

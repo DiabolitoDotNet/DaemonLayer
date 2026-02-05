@@ -20,22 +20,22 @@ public class ResiliencePolicies
     /// <summary>
     /// HTTP request policy with retry and circuit breaker
     /// </summary>
-    public IAsyncPolicy<HttpResponseMessage> HttpRequestPolicy { get; private set; }
+    public IAsyncPolicy<HttpResponseMessage> HttpRequestPolicy { get; private set; } = Policy.NoOpAsync<HttpResponseMessage>();
 
     /// <summary>
     /// LLM call policy with retry
     /// </summary>
-    public IAsyncPolicy LlmCallPolicy { get; private set; }
+    public IAsyncPolicy LlmCallPolicy { get; private set; } = Policy.NoOpAsync();
 
     /// <summary>
     /// Database operation policy with retry
     /// </summary>
-    public IAsyncPolicy DatabasePolicy { get; private set; }
+    public IAsyncPolicy DatabasePolicy { get; private set; } = Policy.NoOpAsync();
 
     /// <summary>
     /// Tool execution policy
     /// </summary>
-    public IAsyncPolicy ToolExecutionPolicy { get; private set; }
+    public IAsyncPolicy ToolExecutionPolicy { get; private set; } = Policy.NoOpAsync();
 
     public void Initialize()
     {

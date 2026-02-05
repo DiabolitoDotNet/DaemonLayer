@@ -309,6 +309,7 @@ Action Input: done
 
         // Act
         var tool = _mockToolRegistry.Object.GetTool("test_tool");
+        Assert.NotNull(tool);
         var result = await tool.ExecuteAsync(parameters, CancellationToken.None);
 
         // Assert
@@ -331,6 +332,7 @@ Action Input: done
         await Assert.ThrowsAsync<Exception>(async () =>
         {
             var tool = _mockToolRegistry.Object.GetTool("failing_tool");
+            Assert.NotNull(tool);
             await tool.ExecuteAsync(new Dictionary<string, object>(), CancellationToken.None);
         });
     }
@@ -361,7 +363,9 @@ Action Input: done
 
         // Assert
         Assert.NotEmpty(activeTasks);
-        Assert.Equal("Test task", activeTasks.First().Description);
+        var firstTask = activeTasks.FirstOrDefault();
+        Assert.NotNull(firstTask);
+        Assert.Equal("Test task", firstTask!.Description);
     }
 
     [Fact]
@@ -393,7 +397,7 @@ Action Input: done
 
         // Assert
         Assert.NotNull(receivedMessage);
-        Assert.Equal("Test message", receivedMessage.Content);
+        Assert.Equal("Test message", receivedMessage!.Content);
     }
 
     [Fact]

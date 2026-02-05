@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using InfernalHierarchy.Core;
 using InfernalHierarchy.Core.Interfaces;
 using Microsoft.Extensions.Logging;
 
@@ -12,10 +13,7 @@ namespace InfernalHierarchy.Tools;
 /// </summary>
 public class PromptAbTestTool : ITool
 {
-    private static readonly JsonSerializerOptions _jsonOptions = new(JsonSerializerDefaults.Web)
-    {
-        WriteIndented = true
-    };
+    private static readonly JsonSerializerOptions _jsonOptions = JsonDefaults.WebIndented;
 
     private static double ScoreResponse(string response, ScoringCriteria criteria)
     {

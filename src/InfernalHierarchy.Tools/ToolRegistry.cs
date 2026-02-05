@@ -18,17 +18,20 @@ public class ToolRegistry : IToolRegistry
     private readonly AgentLearningService? _learningService;
     private readonly IServiceProvider? _serviceProvider;
     private readonly IAgentEventSink? _eventSink;
+    private readonly IToolExecutionPipeline? _pipeline;
 
     public ToolRegistry(
         ILogger<ToolRegistry> logger,
         AgentLearningService? learningService = null,
         IServiceProvider? serviceProvider = null,
-        IAgentEventSink? eventSink = null)
+        IAgentEventSink? eventSink = null,
+        IToolExecutionPipeline? pipeline = null)
     {
         _logger = logger;
         _learningService = learningService;
         _serviceProvider = serviceProvider;
         _eventSink = eventSink;
+        _pipeline = pipeline;
     }
 
     public void RegisterTool(ITool tool)
@@ -99,6 +102,17 @@ public class ToolRegistry : IToolRegistry
                 Output = $"Tool '{toolName}' not found",
                 Error = "Tool not found in registry"
             };
+        }
+
+        if (_pipeline != null)
+        {
+            return await _pipeline.ExecuteAsync(new ToolExecutionContext(
+                ToolName: toolName,
+                Tool: tool,
+                Parameters: parameters,
+                AgentId: agentId,
+                AgentRank: agentRank,
+                CancellationToken: ct)).ConfigureAwait(false);
         }
 
         var stopwatch = Stopwatch.StartNew();
@@ -255,7 +269,7 @@ public class ToolRegistry : IToolRegistry
     {
         try
         {
-            return JsonSerializer.Serialize(parameters);
+            return JsonSerializer.Serialize(parameters, JsonDefaults.Web);
         }
         catch
         {

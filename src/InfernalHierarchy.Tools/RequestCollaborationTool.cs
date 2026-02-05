@@ -1,4 +1,5 @@
 using System.Text.Json;
+using InfernalHierarchy.Core;
 using InfernalHierarchy.Core.Entities;
 using InfernalHierarchy.Core.Interfaces;
 using Microsoft.Extensions.Logging;
@@ -62,7 +63,6 @@ public class RequestCollaborationTool : ITool
             var strategy = strategyStr switch
             {
                 "voting" => CollaborationStrategy.Voting,
-                "weighted" => CollaborationStrategy.WeightedVoting,
                 "consensus" => CollaborationStrategy.Consensus,
                 "highest_confidence" => CollaborationStrategy.HighestConfidence,
                 "hierarchical" => CollaborationStrategy.Hierarchical,
@@ -184,7 +184,7 @@ public class RequestCollaborationTool : ITool
                 reasoning = result.AggregatedReasoning.Length > 500 
                     ? result.AggregatedReasoning[..500] + "..." 
                     : result.AggregatedReasoning
-            }, new JsonSerializerOptions { WriteIndented = true });
+            }, JsonDefaults.WebIndented);
 
             return new ToolResult
             {

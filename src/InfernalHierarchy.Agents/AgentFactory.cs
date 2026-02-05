@@ -4,6 +4,7 @@ using InfernalHierarchy.Core.Interfaces;
 using InfernalHierarchy.Messaging;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using InfernalHierarchy.Tools;
 
 namespace InfernalHierarchy.Agents;
 
@@ -24,6 +25,9 @@ public class AgentFactory : IAgentFactory
     private readonly IVectorMemory? _vectorMemory;
     private readonly RagOptions _ragOptions;
     private readonly ReActOptions _reActOptions;
+    private readonly TokenUsageTracker? _tokenUsageTracker;
+    private readonly MultiModelLlmClient? _multiModelLlmClient;
+    private readonly IAgentCollaborationService? _collaborationService;
 
     public AgentFactory(
         IPersonaLoader personaLoader,
@@ -37,7 +41,10 @@ public class AgentFactory : IAgentFactory
         IVectorMemory vectorMemory,
         IOptions<RagOptions> ragOptions,
         IOptions<ReActOptions> reActOptions,
-        IAgentEventSink? eventSink)
+        IAgentEventSink? eventSink,
+        TokenUsageTracker? tokenUsageTracker = null,
+        MultiModelLlmClient? multiModelLlmClient = null,
+        IAgentCollaborationService? collaborationService = null)
         : this(
             personaLoader,
             messageBus,
@@ -47,7 +54,10 @@ public class AgentFactory : IAgentFactory
             ollamaClient,
             logger,
             loggerFactory,
-            eventSink)
+            eventSink,
+            tokenUsageTracker,
+            multiModelLlmClient,
+            collaborationService)
     {
         _vectorMemory = vectorMemory;
         _ragOptions = ragOptions.Value;
@@ -99,6 +109,38 @@ public class AgentFactory : IAgentFactory
         _vectorMemory = null;
         _ragOptions = new RagOptions();
         _reActOptions = new ReActOptions();
+        _tokenUsageTracker = null;
+        _multiModelLlmClient = null;
+        _collaborationService = null;
+    }
+
+    public AgentFactory(
+        IPersonaLoader personaLoader,
+        IMessageBus messageBus,
+        ISharedMemory sharedMemory,
+        IToolRegistry toolRegistry,
+        AgentRegistry registry,
+        ILlmClient ollamaClient,
+        ILogger<AgentFactory> logger,
+        ILoggerFactory loggerFactory,
+        IAgentEventSink? eventSink,
+        TokenUsageTracker? tokenUsageTracker,
+        MultiModelLlmClient? multiModelLlmClient,
+        IAgentCollaborationService? collaborationService)
+        : this(
+            personaLoader,
+            messageBus,
+            sharedMemory,
+            toolRegistry,
+            registry,
+            ollamaClient,
+            logger,
+            loggerFactory,
+            eventSink)
+    {
+        _tokenUsageTracker = tokenUsageTracker;
+        _multiModelLlmClient = multiModelLlmClient;
+        _collaborationService = collaborationService;
     }
 
     public async Task<IAgent> CreateAgentAsync(string personaName, AgentRank rank, string? parentId = null, CancellationToken ct = default)
@@ -137,7 +179,10 @@ public class AgentFactory : IAgentFactory
             _eventSink,
             _vectorMemory,
             _ragOptions,
-            _reActOptions);
+            _reActOptions,
+            _tokenUsageTracker,
+            _multiModelLlmClient,
+            _collaborationService);
 
         TryAppendAgentEvent(
             agentEntity.Id,

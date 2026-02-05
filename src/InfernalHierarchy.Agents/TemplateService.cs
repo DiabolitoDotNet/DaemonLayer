@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Text.Json;
+using InfernalHierarchy.Core;
 using System.Text.RegularExpressions;
 using InfernalHierarchy.Core.Entities;
 using InfernalHierarchy.Core.Interfaces;
@@ -313,10 +314,7 @@ public class TemplateService : ITemplateService
             try
             {
                 var json = await File.ReadAllTextAsync(filePath, ct);
-                var template = JsonSerializer.Deserialize<AgentTemplate>(json, new JsonSerializerOptions
-                {
-                    PropertyNameCaseInsensitive = true
-                });
+                var template = JsonSerializer.Deserialize<AgentTemplate>(json, JsonDefaults.WebCaseInsensitive);
 
                 if (template != null && !string.IsNullOrWhiteSpace(template.TemplateId))
                 {
@@ -336,11 +334,7 @@ public class TemplateService : ITemplateService
     private async Task SaveTemplateAsync(AgentTemplate template, CancellationToken ct)
     {
         var filePath = Path.Combine(_templatesDirectory, $"{template.TemplateId}.json");
-        var json = JsonSerializer.Serialize(template, new JsonSerializerOptions
-        {
-            WriteIndented = true,
-            PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-        });
+        var json = JsonSerializer.Serialize(template, JsonDefaults.WebIndented);
 
         await File.WriteAllTextAsync(filePath, json, ct);
         _logger.LogDebug("💾 Saved template to {FilePath}", filePath);

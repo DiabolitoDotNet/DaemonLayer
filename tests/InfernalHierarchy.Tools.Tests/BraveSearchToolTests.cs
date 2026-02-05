@@ -76,6 +76,25 @@ public class BraveSearchToolTests
     }
 
     [Fact]
+    public async Task ExecuteAsync_ShouldReturnError_WhenQueryNotString()
+    {
+        var options = Options.Create(new BraveSearchOptions { Enabled = true, ApiKey = "test-key" });
+        using var httpClient = new HttpClient();
+        var logger = Mock.Of<ILogger<BraveSearchTool>>();
+        var tool = new BraveSearchTool(httpClient, options, logger);
+
+        var parameters = new Dictionary<string, object>
+        {
+            ["query"] = 123
+        };
+
+        var result = await tool.ExecuteAsync(parameters);
+
+        result.Success.Should().BeFalse();
+        result.Error.Should().Contain("query");
+    }
+
+    [Fact]
     public async Task ExecuteAsync_ShouldReturnResults_WhenApiReturnsData()
     {
         // Arrange
@@ -85,8 +104,8 @@ public class BraveSearchToolTests
             {
                 results = new[]
                 {
-                    new { title = "Test Result 1", url = "https://example.com/1", description = "First result" },
-                    new { title = "Test Result 2", url = "https://example.com/2", description = "Second result" }
+                    new { title = "Test Result 1", url = "https://example.com/1", description = "First result", age = (string?)"1d", page_age = (string?)"2026-02-04" },
+                    new { title = "Test Result 2", url = "https://example.com/2", description = "Second result", age = (string?)null, page_age = (string?)null }
                 }
             }
         };
@@ -125,6 +144,40 @@ public class BraveSearchToolTests
     }
 
     [Fact]
+    public async Task ExecuteAsync_ShouldReturnNoResults_WhenApiReturnsEmptyArray()
+    {
+        var mockResponse = new
+        {
+            web = new
+            {
+                results = Array.Empty<object>()
+            }
+        };
+
+        var mockHttpMessageHandler = new Mock<HttpMessageHandler>();
+        mockHttpMessageHandler
+            .Protected()
+            .Setup<Task<HttpResponseMessage>>(
+                "SendAsync",
+                ItExpr.IsAny<HttpRequestMessage>(),
+                ItExpr.IsAny<CancellationToken>())
+            .ReturnsAsync(() => new HttpResponseMessage
+            {
+                StatusCode = HttpStatusCode.OK,
+                Content = new StringContent(JsonSerializer.Serialize(mockResponse))
+            });
+
+        using var httpClient = new HttpClient(mockHttpMessageHandler.Object, disposeHandler: false);
+        var options = Options.Create(new BraveSearchOptions { Enabled = true, ApiKey = "test-key" });
+        var tool = new BraveSearchTool(httpClient, options, Mock.Of<ILogger<BraveSearchTool>>());
+
+        var result = await tool.ExecuteAsync(new Dictionary<string, object> { ["query"] = "test" });
+
+        result.Success.Should().BeTrue();
+        result.Output.Should().Be("No results found.");
+    }
+
+    [Fact]
     public async Task ExecuteAsync_ShouldHandleApiErrors()
     {
         // Arrange
@@ -157,6 +210,54 @@ public class BraveSearchToolTests
         // Assert
         result.Success.Should().BeFalse();
         result.Error.Should().Contain("Unauthorized");
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_ShouldHandleHttpRequestException()
+    {
+        var mockHttpMessageHandler = new Mock<HttpMessageHandler>();
+        mockHttpMessageHandler
+            .Protected()
+            .Setup<Task<HttpResponseMessage>>(
+                "SendAsync",
+                ItExpr.IsAny<HttpRequestMessage>(),
+                ItExpr.IsAny<CancellationToken>())
+            .ThrowsAsync(new HttpRequestException("boom"));
+
+        using var httpClient = new HttpClient(mockHttpMessageHandler.Object, disposeHandler: false);
+        var options = Options.Create(new BraveSearchOptions { Enabled = true, ApiKey = "test-key" });
+        var tool = new BraveSearchTool(httpClient, options, Mock.Of<ILogger<BraveSearchTool>>());
+
+        var result = await tool.ExecuteAsync(new Dictionary<string, object> { ["query"] = "test" });
+
+        result.Success.Should().BeFalse();
+        result.Error.Should().Contain("Network error");
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_ShouldHandleInvalidJson()
+    {
+        var mockHttpMessageHandler = new Mock<HttpMessageHandler>();
+        mockHttpMessageHandler
+            .Protected()
+            .Setup<Task<HttpResponseMessage>>(
+                "SendAsync",
+                ItExpr.IsAny<HttpRequestMessage>(),
+                ItExpr.IsAny<CancellationToken>())
+            .ReturnsAsync(() => new HttpResponseMessage
+            {
+                StatusCode = HttpStatusCode.OK,
+                Content = new StringContent("not-json")
+            });
+
+        using var httpClient = new HttpClient(mockHttpMessageHandler.Object, disposeHandler: false);
+        var options = Options.Create(new BraveSearchOptions { Enabled = true, ApiKey = "test-key" });
+        var tool = new BraveSearchTool(httpClient, options, Mock.Of<ILogger<BraveSearchTool>>());
+
+        var result = await tool.ExecuteAsync(new Dictionary<string, object> { ["query"] = "test" });
+
+        result.Success.Should().BeFalse();
+        result.Error.Should().Contain("Invalid response format");
     }
 
     [Fact]

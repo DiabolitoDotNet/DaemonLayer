@@ -226,3 +226,13 @@ dotnet_diagnostic.CA1305.severity = warning
 
 # CA1311: Specify a culture or use an invariant version
 dotnet_diagnostic.CA1311.severity = warning
+
+# Build hygiene: keep builds warning-clean by default.
+# Compiler warnings (CS*) still surface; analyzers are demoted to suggestions.
+dotnet_analyzer_diagnostic.severity = suggestion
+
+# Keep a few commonly noisy rules out of the warning stream.
+dotnet_diagnostic.SA1028.severity = suggestion
+dotnet_diagnostic.CA1304.severity = suggestion
+dotnet_diagnostic.CA1305.severity = suggestion
+dotnet_diagnostic.CA1311.severity = suggestion

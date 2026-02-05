@@ -2,6 +2,7 @@ using FluentAssertions;
 using InfernalHierarchy.Core;
 using InfernalHierarchy.Core.Interfaces;
 using InfernalHierarchy.Tools;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Moq;
 using Xunit;
@@ -157,5 +158,132 @@ public class ToolRegistryTests
         result.Success.Should().BeFalse();
         eventSink.Verify(x => x.AppendEvent(It.Is<AgentEvent>(e =>
             e.AgentId == "agent-1" && e.Type == EventType.ErrorOccurred && (string)e.Metadata["tool"] == "boom")), Times.Once);
+    }
+
+    [Fact]
+    public async Task ExecuteToolWithTrackingAsync_ShouldReturnNotFound_WhenToolMissing()
+    {
+        var result = await _registry.ExecuteToolWithTrackingAsync(
+            "missing_tool",
+            new Dictionary<string, object>(),
+            agentId: "agent-1",
+            agentRank: "Worker",
+            ct: CancellationToken.None);
+
+        result.Success.Should().BeFalse();
+        result.Error.Should().NotBeNull();
+        result.Output.Should().Contain("not found");
+    }
+
+    [Fact]
+    public async Task ExecuteToolWithTrackingAsync_ShouldNotAppendEvent_WhenAgentIdMissing()
+    {
+        var logger = Mock.Of<ILogger<ToolRegistry>>();
+        var eventSink = new Mock<IAgentEventSink>();
+        var registry = new ToolRegistry(logger, eventSink: eventSink.Object);
+
+        var tool = new Mock<ITool>();
+        tool.Setup(x => x.Name).Returns("test_tool");
+        tool.Setup(x => x.Description).Returns("test");
+        tool.Setup(x => x.ExecuteAsync(It.IsAny<Dictionary<string, object>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ToolResult { Success = true, Output = "ok" });
+        registry.RegisterTool(tool.Object);
+
+        var result = await registry.ExecuteToolWithTrackingAsync(
+            "test_tool",
+            new Dictionary<string, object> { ["a"] = 1 },
+            agentId: null,
+            agentRank: "Duke",
+            ct: CancellationToken.None);
+
+        result.Success.Should().BeTrue();
+        eventSink.Verify(x => x.AppendEvent(It.IsAny<AgentEvent>()), Times.Never);
+    }
+
+    private sealed class CyclicNode
+    {
+        public CyclicNode? Next { get; set; }
+        public override string ToString() => "CyclicNode";
+    }
+
+    [Fact]
+    public async Task ExecuteToolWithTrackingAsync_ShouldFallbackSerializeParameters_WhenJsonSerializationFails()
+    {
+        var logger = Mock.Of<ILogger<ToolRegistry>>();
+        var eventSink = new Mock<IAgentEventSink>();
+        var registry = new ToolRegistry(logger, eventSink: eventSink.Object);
+
+        var tool = new Mock<ITool>();
+        tool.Setup(x => x.Name).Returns("test_tool");
+        tool.Setup(x => x.Description).Returns("test");
+        tool.Setup(x => x.ExecuteAsync(It.IsAny<Dictionary<string, object>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ToolResult { Success = true, Output = "ok" });
+        registry.RegisterTool(tool.Object);
+
+        var node = new CyclicNode();
+        node.Next = node;
+
+        var result = await registry.ExecuteToolWithTrackingAsync(
+            "test_tool",
+            new Dictionary<string, object> { ["cycle"] = node },
+            agentId: "agent-1",
+            agentRank: "Worker",
+            ct: CancellationToken.None);
+
+        result.Success.Should().BeTrue();
+
+        eventSink.Verify(x => x.AppendEvent(It.Is<AgentEvent>(e =>
+            e.AgentId == "agent-1" &&
+            e.Metadata.ContainsKey("parameters_json") &&
+            e.Metadata["parameters_json"] != null &&
+            e.Metadata["parameters_json"]!.ToString()!.Contains("cycle=")
+        )), Times.Once);
+    }
+
+    private sealed class CountingExceptionHandler : GlobalExceptionHandler
+    {
+        public int Calls;
+
+        public CountingExceptionHandler(ILogger<GlobalExceptionHandler> logger)
+            : base(logger)
+        {
+        }
+
+        protected override Task OnExceptionHandledAsync(Exception exception, ExceptionCategory category, string correlationId, CancellationToken ct)
+        {
+            Interlocked.Increment(ref Calls);
+            return Task.CompletedTask;
+        }
+    }
+
+    [Fact]
+    public async Task ExecuteToolWithTrackingAsync_WithGlobalExceptionHandler_ShouldInvokeHandlerInTryAndCatch()
+    {
+        var logger = Mock.Of<ILogger<ToolRegistry>>();
+        var handlerLogger = Mock.Of<ILogger<GlobalExceptionHandler>>();
+        var countingHandler = new CountingExceptionHandler(handlerLogger);
+
+        var services = new ServiceCollection();
+        services.AddSingleton<GlobalExceptionHandler>(countingHandler);
+        var provider = services.BuildServiceProvider();
+
+        var registry = new ToolRegistry(logger, serviceProvider: provider);
+
+        var tool = new Mock<ITool>();
+        tool.Setup(x => x.Name).Returns("boom");
+        tool.Setup(x => x.Description).Returns("boom");
+        tool.Setup(x => x.ExecuteAsync(It.IsAny<Dictionary<string, object>>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("nope"));
+        registry.RegisterTool(tool.Object);
+
+        var result = await registry.ExecuteToolWithTrackingAsync(
+            "boom",
+            new Dictionary<string, object>(),
+            agentId: "agent-1",
+            agentRank: "Worker",
+            ct: CancellationToken.None);
+
+        result.Success.Should().BeFalse();
+        countingHandler.Calls.Should().Be(2);
     }
 }

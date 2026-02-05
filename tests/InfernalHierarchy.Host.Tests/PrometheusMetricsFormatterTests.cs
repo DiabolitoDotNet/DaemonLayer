@@ -7,6 +7,13 @@ namespace InfernalHierarchy.Host.Tests;
 public class PrometheusMetricsFormatterTests
 {
     [Fact]
+    public void Format_WithNullMetrics_ShouldThrow()
+    {
+        Action act = () => PrometheusMetricsFormatter.Format(null!);
+        act.Should().Throw<ArgumentNullException>();
+    }
+
+    [Fact]
     public void Format_ShouldRenderCountersWithTotalSuffix_AndPrefix()
     {
         var metrics = new Dictionary<string, object>
@@ -19,6 +26,21 @@ public class PrometheusMetricsFormatterTests
 
         output.Should().Contain("infernal_tools_executed_web_search_total 3");
         output.Should().Contain("infernal_system_uptime_seconds 12.5");
+    }
+
+    [Fact]
+    public void Format_ShouldTreatMetricPrefixesCaseInsensitive()
+    {
+        var metrics = new Dictionary<string, object>
+        {
+            ["Counter.Tools.Executed"] = 1,
+            ["GAUGE.System.Up"] = 2,
+        };
+
+        var output = PrometheusMetricsFormatter.Format(metrics, prefix: "infernal");
+
+        output.Should().Contain("infernal_Tools_Executed_total 1");
+        output.Should().Contain("infernal_System_Up 2");
     }
 
     [Fact]
@@ -64,5 +86,85 @@ public class PrometheusMetricsFormatterTests
         var output = PrometheusMetricsFormatter.Format(metrics);
 
         output.Should().Contain("infernal_pi 3.14159");
+    }
+
+    [Fact]
+    public void Format_ShouldConvertDecimals()
+    {
+        var metrics = new Dictionary<string, object>
+        {
+            ["gauge.dec"] = 1.25m,
+        };
+
+        var output = PrometheusMetricsFormatter.Format(metrics);
+
+        output.Should().Contain("infernal_dec 1.25");
+    }
+
+    [Fact]
+    public void Format_ShouldUseDefaultPrefix_WhenPrefixIsBlank()
+    {
+        var metrics = new Dictionary<string, object>
+        {
+            ["gauge.x"] = 1,
+        };
+
+        var output = PrometheusMetricsFormatter.Format(metrics, prefix: " ");
+
+        output.Should().Contain("infernal_x 1");
+    }
+
+    [Fact]
+    public void Format_ShouldParseNumericStrings_UsingInvariantCulture()
+    {
+        var metrics = new Dictionary<string, object>
+        {
+            ["gauge.from_string"] = "2.5",
+        };
+
+        var output = PrometheusMetricsFormatter.Format(metrics);
+
+        output.Should().Contain("infernal_from_string 2.5");
+    }
+
+    [Fact]
+    public void Format_ShouldNotParseNumericStrings_WithCommaDecimal()
+    {
+        var metrics = new Dictionary<string, object>
+        {
+            ["gauge.from_string"] = "2,5",
+        };
+
+        var output = PrometheusMetricsFormatter.Format(metrics);
+
+        output.Should().NotContain("infernal_from_string");
+    }
+
+    [Fact]
+    public void Format_ShouldInsertLeadingUnderscore_WhenPrefixStartsWithDigit()
+    {
+        var metrics = new Dictionary<string, object>
+        {
+            ["gauge.1abc"] = 1,
+        };
+
+        var output = PrometheusMetricsFormatter.Format(metrics, prefix: "1bad");
+
+        output.Should().Contain("_1bad_1abc 1");
+    }
+
+    [Fact]
+    public void Format_ShouldSkipWhitespaceKeys()
+    {
+        var metrics = new Dictionary<string, object>
+        {
+            [" "] = 1,
+            ["gauge.ok"] = 2,
+        };
+
+        var output = PrometheusMetricsFormatter.Format(metrics);
+
+        output.Should().Contain("infernal_ok 2");
+        output.Should().NotContain("infernal_ 1");
     }
 }

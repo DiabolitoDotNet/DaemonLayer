@@ -192,4 +192,239 @@ public class AgentCollaborationServiceTests
         result.Decision.Should().Be("A");
         result.Confidence.Should().BeGreaterThanOrEqualTo(0.8);
     }
+
+    [Fact]
+    public async Task RequestCollaborationAsync_ShouldReturnInsufficientParticipants_WhenBelowMinimum()
+    {
+        var bus = new Mock<IMessageBus>();
+        var registry = new AgentRegistry(new Mock<ILogger<AgentRegistry>>().Object);
+        registry.Register(CreateAgent("a1", AgentRank.Worker).Object);
+
+        var service = new AgentCollaborationService(
+            new Mock<ILogger<AgentCollaborationService>>().Object,
+            bus.Object,
+            registry);
+
+        var request = new CollaborationRequest
+        {
+            Id = Guid.NewGuid().ToString(),
+            InitiatorAgentId = "init",
+            Task = "Do thing",
+            Strategy = CollaborationStrategy.Voting,
+            MinimumParticipants = 2,
+            MinimumConfidence = 0.5,
+            Timeout = TimeSpan.FromMilliseconds(50),
+            ParticipantAgentIds = new List<string> { "a1" }
+        };
+
+        var result = await service.RequestCollaborationAsync(request, CancellationToken.None);
+
+        result.Decision.Should().Be("INSUFFICIENT_PARTICIPANTS");
+        result.Confidence.Should().Be(0.0);
+        bus.Verify(b => b.PublishAsync(It.IsAny<AgentMessage>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task SubmitResponseAsync_ShouldNotThrow_WhenRequestUnknown()
+    {
+        var bus = new Mock<IMessageBus>();
+        var registry = new AgentRegistry(new Mock<ILogger<AgentRegistry>>().Object);
+        var service = new AgentCollaborationService(
+            new Mock<ILogger<AgentCollaborationService>>().Object,
+            bus.Object,
+            registry);
+
+        var act = async () => await service.SubmitResponseAsync(
+            "missing",
+            new AgentResponse { AgentId = "a1", AgentRank = AgentRank.Worker, Response = "A", Confidence = 1.0 },
+            CancellationToken.None);
+
+        await act.Should().NotThrowAsync();
+    }
+
+    [Fact]
+    public async Task SubmitResponseAsync_ShouldIgnoreStaleResponse_FromBeforeRoundStart()
+    {
+        var firstPublish = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var bus = new Mock<IMessageBus>();
+        bus.Setup(b => b.PublishAsync(It.IsAny<AgentMessage>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask)
+            .Callback(() => firstPublish.TrySetResult(true));
+
+        var registry = new AgentRegistry(new Mock<ILogger<AgentRegistry>>().Object);
+        registry.Register(CreateAgent("a1", AgentRank.Worker).Object);
+
+        var service = new AgentCollaborationService(
+            new Mock<ILogger<AgentCollaborationService>>().Object,
+            bus.Object,
+            registry);
+
+        var request = new CollaborationRequest
+        {
+            Id = Guid.NewGuid().ToString(),
+            InitiatorAgentId = "init",
+            Task = "Do something",
+            Strategy = CollaborationStrategy.HighestConfidence,
+            MinimumParticipants = 1,
+            MinimumConfidence = 0.1,
+            Timeout = TimeSpan.FromSeconds(2),
+            ParticipantAgentIds = new List<string> { "a1" }
+        };
+
+        var collaborationTask = service.RequestCollaborationAsync(request, CancellationToken.None);
+
+        await firstPublish.Task.WaitAsync(TimeSpan.FromSeconds(2));
+
+        await service.SubmitResponseAsync(request.Id, new AgentResponse
+        {
+            AgentId = "a1",
+            AgentRank = AgentRank.Worker,
+            Response = "STALE",
+            Confidence = 1.0,
+            Timestamp = DateTime.UtcNow.AddMinutes(-10)
+        });
+
+        await service.SubmitResponseAsync(request.Id, new AgentResponse
+        {
+            AgentId = "a1",
+            AgentRank = AgentRank.Worker,
+            Response = "FRESH",
+            Confidence = 0.9,
+            Reasoning = "new",
+            Timestamp = DateTime.UtcNow
+        });
+
+        var result = await collaborationTask;
+        result.Decision.Should().Be("FRESH");
+        result.Responses.Should().HaveCount(1);
+    }
+
+    [Fact]
+    public async Task RequestCollaborationAsync_WhenTimeoutWithPartialResponses_ShouldAggregatePartial_AndMarkTimedOut()
+    {
+        var firstPublish = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var bus = new Mock<IMessageBus>();
+        bus.Setup(b => b.PublishAsync(It.IsAny<AgentMessage>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask)
+            .Callback(() => firstPublish.TrySetResult(true));
+
+        var registry = new AgentRegistry(new Mock<ILogger<AgentRegistry>>().Object);
+        registry.Register(CreateAgent("a1", AgentRank.Worker).Object);
+        registry.Register(CreateAgent("a2", AgentRank.Worker).Object);
+
+        var service = new AgentCollaborationService(
+            new Mock<ILogger<AgentCollaborationService>>().Object,
+            bus.Object,
+            registry);
+
+        var request = new CollaborationRequest
+        {
+            Id = Guid.NewGuid().ToString(),
+            InitiatorAgentId = "init",
+            Task = "Pick A or B",
+            Strategy = CollaborationStrategy.HighestConfidence,
+            MinimumParticipants = 2,
+            MinimumConfidence = 0.5,
+            Timeout = TimeSpan.FromMilliseconds(250),
+            ParticipantAgentIds = new List<string> { "a1", "a2" }
+        };
+
+        var collaborationTask = service.RequestCollaborationAsync(request, CancellationToken.None);
+
+        await firstPublish.Task.WaitAsync(TimeSpan.FromSeconds(2));
+
+        await service.SubmitResponseAsync(request.Id, new AgentResponse
+        {
+            AgentId = "a1",
+            AgentRank = AgentRank.Worker,
+            Response = "A",
+            Confidence = 0.8,
+            Reasoning = "partial"
+        });
+
+        var result = await collaborationTask;
+
+        request.Status.Should().Be(CollaborationStatus.TimedOut);
+        result.Decision.Should().Be("A");
+        result.ParticipantCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task RequestCollaborationAsync_WhenCancelled_ShouldReturnCancelled_AndMarkRequestCancelled()
+    {
+        var bus = new Mock<IMessageBus>();
+        bus.Setup(b => b.PublishAsync(It.IsAny<AgentMessage>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        var registry = new AgentRegistry(new Mock<ILogger<AgentRegistry>>().Object);
+        registry.Register(CreateAgent("a1", AgentRank.Worker).Object);
+
+        var service = new AgentCollaborationService(
+            new Mock<ILogger<AgentCollaborationService>>().Object,
+            bus.Object,
+            registry);
+
+        var request = new CollaborationRequest
+        {
+            Id = Guid.NewGuid().ToString(),
+            InitiatorAgentId = "init",
+            Task = "Do thing",
+            Strategy = CollaborationStrategy.Voting,
+            MinimumParticipants = 1,
+            MinimumConfidence = 0.5,
+            Timeout = TimeSpan.FromSeconds(2),
+            ParticipantAgentIds = new List<string> { "a1" }
+        };
+
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        var result = await service.RequestCollaborationAsync(request, cts.Token);
+
+        request.Status.Should().Be(CollaborationStatus.Cancelled);
+        result.Decision.Should().Be("CANCELLED");
+    }
+
+    [Fact]
+    public async Task RequestCollaborationAsync_VotingWithLowAgreement_ShouldEscalateToWeightedVoting()
+    {
+        var bus = new Mock<IMessageBus>();
+        bus.Setup(b => b.PublishAsync(It.IsAny<AgentMessage>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        var registry = new AgentRegistry(new Mock<ILogger<AgentRegistry>>().Object);
+        registry.Register(CreateAgent("a1", AgentRank.Worker).Object);
+        registry.Register(CreateAgent("a2", AgentRank.Worker).Object);
+        registry.Register(CreateAgent("a3", AgentRank.Worker).Object);
+
+        var service = new AgentCollaborationService(
+            new Mock<ILogger<AgentCollaborationService>>().Object,
+            bus.Object,
+            registry);
+
+        var request = new CollaborationRequest
+        {
+            Id = Guid.NewGuid().ToString(),
+            InitiatorAgentId = "init",
+            Task = "Choose A or B",
+            Strategy = CollaborationStrategy.Voting,
+            MinimumParticipants = 3,
+            MinimumConfidence = 0.9,
+            Timeout = TimeSpan.FromSeconds(2),
+            ParticipantAgentIds = new List<string> { "a1", "a2", "a3" }
+        };
+
+        var collaborationTask = service.RequestCollaborationAsync(request, CancellationToken.None);
+
+        await service.SubmitResponseAsync(request.Id, new AgentResponse { AgentId = "a1", AgentRank = AgentRank.Worker, Response = "A", Confidence = 1.0, Reasoning = "" });
+        await service.SubmitResponseAsync(request.Id, new AgentResponse { AgentId = "a2", AgentRank = AgentRank.Worker, Response = "B", Confidence = 1.0, Reasoning = "" });
+        await service.SubmitResponseAsync(request.Id, new AgentResponse { AgentId = "a3", AgentRank = AgentRank.Worker, Response = "A", Confidence = 1.0, Reasoning = "" });
+
+        var result = await collaborationTask;
+
+        result.Strategy.Should().Be(CollaborationStrategy.WeightedVoting);
+        result.Decision.Should().Be("A");
+    }
 }

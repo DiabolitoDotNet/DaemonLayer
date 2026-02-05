@@ -1,9 +1,12 @@
 using FluentAssertions;
 using InfernalHierarchy.Agents;
+using InfernalHierarchy.Core;
 using InfernalHierarchy.Core.Entities;
 using InfernalHierarchy.Core.Interfaces;
+using InfernalHierarchy.Messaging;
 using InfernalHierarchy.Tools;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Xunit;
 
@@ -83,5 +86,76 @@ public class AgentFactoryTests
         agent.Should().NotBeNull();
         agent.Name.Should().Be("Vassago");
         agent.Rank.Should().Be(AgentRank.Duke);
+    }
+
+    [Fact]
+    public async Task TerminateAgentAsync_WhenUsingChannelMessageBus_ShouldCleanupAgentChannel_AndAppendEvent()
+    {
+        var messageBus = new ChannelMessageBus(NullLogger<ChannelMessageBus>.Instance);
+        await messageBus.PublishAsync(new AgentMessage
+        {
+            Id = Guid.NewGuid().ToString(),
+            Type = MessageType.Task,
+            Content = "test",
+            FromAgentId = "from",
+            ToAgentId = "agent_1",
+            Timestamp = DateTime.UtcNow
+        });
+
+        messageBus.ActiveChannelCount.Should().Be(1);
+
+        var registry = new AgentRegistry(NullLogger<AgentRegistry>.Instance);
+
+        var eventSink = new Mock<IAgentEventSink>();
+        AgentEvent? captured = null;
+        eventSink
+            .Setup(s => s.AppendEvent(It.IsAny<AgentEvent>()))
+            .Callback<AgentEvent>(evt => captured = evt);
+
+        var factory = new AgentFactory(
+            personaLoader: Mock.Of<IPersonaLoader>(),
+            messageBus: messageBus,
+            sharedMemory: Mock.Of<ISharedMemory>(),
+            toolRegistry: Mock.Of<IToolRegistry>(),
+            registry: registry,
+            ollamaClient: Mock.Of<ILlmClient>(),
+            logger: NullLogger<AgentFactory>.Instance,
+            loggerFactory: NullLoggerFactory.Instance,
+            eventSink: eventSink.Object);
+
+        await factory.TerminateAgentAsync("agent_1", CancellationToken.None);
+
+        messageBus.ActiveChannelCount.Should().Be(0);
+        captured.Should().NotBeNull();
+        captured!.AgentId.Should().Be("agent_1");
+        captured.Type.Should().Be(EventType.AgentTerminated);
+    }
+
+    [Fact]
+    public async Task TerminateAgentAsync_WhenEventSinkThrows_ShouldStillSucceed()
+    {
+        var messageBus = new ChannelMessageBus(NullLogger<ChannelMessageBus>.Instance);
+
+        var registry = new AgentRegistry(NullLogger<AgentRegistry>.Instance);
+
+        var eventSink = new Mock<IAgentEventSink>();
+        eventSink
+            .Setup(s => s.AppendEvent(It.IsAny<AgentEvent>()))
+            .Throws(new InvalidOperationException("boom"));
+
+        var factory = new AgentFactory(
+            personaLoader: Mock.Of<IPersonaLoader>(),
+            messageBus: messageBus,
+            sharedMemory: Mock.Of<ISharedMemory>(),
+            toolRegistry: Mock.Of<IToolRegistry>(),
+            registry: registry,
+            ollamaClient: Mock.Of<ILlmClient>(),
+            logger: NullLogger<AgentFactory>.Instance,
+            loggerFactory: NullLoggerFactory.Instance,
+            eventSink: eventSink.Object);
+
+        var act = async () => await factory.TerminateAgentAsync("agent_1", CancellationToken.None);
+
+        await act.Should().NotThrowAsync();
     }
 }

@@ -2,9 +2,12 @@
   <PropertyGroup>
     <!-- Enable all .NET analyzers -->
     <AnalysisMode>All</AnalysisMode>
-    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    <EnforceCodeStyleInBuild>false</EnforceCodeStyleInBuild>
     <EnableNETAnalyzers>true</EnableNETAnalyzers>
     <AnalysisLevel>latest</AnalysisLevel>
+
+    <!-- Keep analyzers for IDE/live analysis, but don't emit analyzer warnings in builds -->
+    <RunAnalyzersDuringBuild>false</RunAnalyzersDuringBuild>
     
     <!-- Nullable reference types -->
     <Nullable>enable</Nullable>

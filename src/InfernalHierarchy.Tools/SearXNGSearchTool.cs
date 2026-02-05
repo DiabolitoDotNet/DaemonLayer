@@ -2,6 +2,7 @@ using InfernalHierarchy.Core.Interfaces;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using System.Text.Json;
+using InfernalHierarchy.Core;
 
 namespace InfernalHierarchy.Tools;
 
@@ -57,7 +58,9 @@ public class SearXNGSearchTool : IWebSearchTool
             response.EnsureSuccessStatusCode();
 
             var json = await response.Content.ReadAsStringAsync(ct);
-            var searchResult = JsonSerializer.Deserialize<SearXNGResponse>(json);
+            var searchResult = JsonSerializer.Deserialize<SearXNGResponse>(
+                json,
+                JsonDefaults.WebCaseInsensitive);
 
             if (searchResult?.Results == null || searchResult.Results.Length == 0)
             {

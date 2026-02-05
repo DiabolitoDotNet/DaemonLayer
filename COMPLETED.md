@@ -117,11 +117,15 @@
 - Memory compression / summarization → **completed**
 - Telegram commands for token usage stats → **completed** (`/usage`, `/models`)
 - Lucifer handlers for `/usage` and `/models` → **completed**
+- Telegram update handling coverage uplift → **completed** (made handler internal + `InternalsVisibleTo`, expanded command-path tests; `TelegramBotService` now high coverage)
 - AgentLearningService integration into tool execution pipeline → **completed**
 - Function calling with structured outputs → **completed** (JSON-first ReAct responses behind `ReActOptions`)
 - Prompt optimization (A/B testing for system prompts) → **completed** (`prompt_ab_test` tool + tests)
 - Complete Agent Collaboration System → **completed** (CollaborationRequest end-to-end handling + E2E tests)
 - Solution-wide test pass in Release configuration → **completed** (0 failures; integration-only tests may be skipped)
+
+## ✅ Repo Hygiene
+- Generated coverage reports and build/test logs ignored → **completed** (`.gitignore` updated to exclude `artifacts/`, `coverage-report/`, `TestResults/`, and common log/coverage files)
 
 ---
 

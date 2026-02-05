@@ -41,9 +41,23 @@ public class ConfigurationReloadService : BackgroundService
         _logger.LogInformation("🔄 Configuration reload service started");
 
         // Register change callbacks for all monitored options
-        _changeTokenRegistrations.Add(_hierarchyOptions.OnChange(OnHierarchyOptionsChanged));
-        _changeTokenRegistrations.Add(_memoryOptions.OnChange(OnMemoryOptionsChanged));
-        _changeTokenRegistrations.Add(_searxngOptions.OnChange(OnSearxngOptionsChanged));
+        IDisposable? hierarchyReg = _hierarchyOptions.OnChange(OnHierarchyOptionsChanged);
+        if (hierarchyReg is not null)
+        {
+            _changeTokenRegistrations.Add(hierarchyReg);
+        }
+
+        IDisposable? memoryReg = _memoryOptions.OnChange(OnMemoryOptionsChanged);
+        if (memoryReg is not null)
+        {
+            _changeTokenRegistrations.Add(memoryReg);
+        }
+
+        IDisposable? searxngReg = _searxngOptions.OnChange(OnSearxngOptionsChanged);
+        if (searxngReg is not null)
+        {
+            _changeTokenRegistrations.Add(searxngReg);
+        }
 
         // Monitor configuration root for file changes
         ChangeToken.OnChange(

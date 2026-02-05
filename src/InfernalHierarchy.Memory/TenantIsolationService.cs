@@ -112,7 +112,24 @@ public class TenantIsolationService : ITenantIsolationService
         using var db = new LiteDatabase(_tenantsDbPath);
         var collection = db.GetCollection<TenantContext>("tenants");
 
-        await Task.Run(() => collection.Update(tenant), ct).ConfigureAwait(false);
+        // Do not rely on LiteDB's internal _id mapping for TenantContext.
+        // TenantId is the logical key, so update by TenantId to avoid null _id issues.
+        collection.EnsureIndex(x => x.TenantId, unique: true);
+
+        await Task.Run(() =>
+        {
+            var existing = collection.FindOne(x => x.TenantId == tenant.TenantId);
+            if (existing != null)
+            {
+                // Preserve stable identity fields unless caller explicitly sets them.
+                tenant.CreatedAt = existing.CreatedAt;
+                tenant.DatabasePath ??= existing.DatabasePath;
+
+                collection.DeleteMany(x => x.TenantId == tenant.TenantId);
+            }
+
+            collection.Insert(tenant);
+        }, ct).ConfigureAwait(false);
         
         // Update cache
         _tenantCache[tenant.TenantId] = tenant;
@@ -144,7 +161,7 @@ public class TenantIsolationService : ITenantIsolationService
         // Remove from tenants database
         using var db = new LiteDatabase(_tenantsDbPath);
         var collection = db.GetCollection<TenantContext>("tenants");
-        await Task.Run(() => collection.Delete(new BsonValue(tenant.TenantId)), ct).ConfigureAwait(false);
+        await Task.Run(() => collection.DeleteMany(x => x.TenantId == tenantId), ct).ConfigureAwait(false);
         
         // Remove from cache
         _tenantCache.TryRemove(tenantId, out _);

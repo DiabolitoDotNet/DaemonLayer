@@ -74,6 +74,7 @@ builder.Services.AddSingleton<ResourceLimitService>();
 // Security and reliability
 builder.Services.AddSingleton<ToolAuthorizationService>();
 builder.Services.AddSingleton<TelegramBotClientFactory>();
+builder.Services.AddSingleton<ITelegramBotClientFactory>(sp => sp.GetRequiredService<TelegramBotClientFactory>());
 
 // Metrics and observability
 builder.Services.AddSingleton<MetricsCollector>();
@@ -133,13 +134,17 @@ builder.Services.AddSingleton<AgentRegistry>();
 builder.Services.AddSingleton<IAgentRegistry>(sp => sp.GetRequiredService<AgentRegistry>());
 builder.Services.AddSingleton<IAgentFactory, AgentFactory>();
 
+// Tool execution pipeline
+builder.Services.AddSingleton<IToolExecutionPipeline, DefaultToolExecutionPipeline>();
+
 // Tools - inject IServiceProvider for command handlers
 builder.Services.AddSingleton<IToolRegistry>(sp =>
 {
     var logger = sp.GetRequiredService<ILogger<ToolRegistry>>();
     var learningService = sp.GetRequiredService<AgentLearningService>();
     var eventSink = sp.GetService<IAgentEventSink>();
-    return new ToolRegistry(logger, learningService, sp, eventSink);
+    var pipeline = sp.GetRequiredService<IToolExecutionPipeline>();
+    return new ToolRegistry(logger, learningService, sp, eventSink, pipeline);
 });
 builder.Services.AddSingleton<ILlmClient, OllamaClient>();
 
@@ -242,10 +247,7 @@ if (httpOptions.Enabled)
                     })
             };
 
-            await context.Response.WriteAsync(JsonSerializer.Serialize(payload, new JsonSerializerOptions
-            {
-                WriteIndented = true
-            }));
+            await context.Response.WriteAsync(JsonSerializer.Serialize(payload, JsonDefaults.WebIndented));
         }
     });
 
@@ -272,39 +274,4 @@ catch (Exception ex)
 finally
 {
     await Log.CloseAndFlushAsync();
-}
-
-/// <summary>
-/// Helper service to register all tools in the registry on startup
-/// </summary>
-class ToolRegistrationService : IHostedService
-{
-    private readonly IToolRegistry _registry;
-    private readonly IEnumerable<ITool> _tools;
-    private readonly ILogger<ToolRegistrationService> _logger;
-
-    public ToolRegistrationService(
-        IToolRegistry registry,
-        IEnumerable<ITool> tools,
-        ILogger<ToolRegistrationService> logger)
-    {
-        _registry = registry;
-        _tools = tools;
-        _logger = logger;
-    }
-
-    public Task StartAsync(CancellationToken cancellationToken)
-    {
-        _logger.LogInformation("🔧 Registering tools...");
-
-        foreach (var tool in _tools)
-        {
-            _registry.RegisterTool(tool);
-        }
-
-        _logger.LogInformation("✅ Registered {Count} tools", _tools.Count());
-        return Task.CompletedTask;
-    }
-
-    public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 }

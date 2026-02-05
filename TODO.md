@@ -16,18 +16,59 @@
 
 ## 🔧 Active Gaps / Known Limitations
 
-1. **StyleCop warnings**
-   - Warning count remains high; focus on fixing the highest-signal categories first.
+1. **Analyzer signal strategy (StyleCop/.NET analyzers)**
+    - Builds are currently warning-clean by running analyzers primarily in the IDE (build-time analyzers disabled).
+    - Recommendation: add a dedicated CI step (or optional local script) that runs analyzers explicitly when you want to tighten quality gates.
 
-2. **Vector search operational dependency**
+2. **Test coverage gaps outside Telegram**
+   - Telegram coverage is now strong, but several areas remain low/zero.
+   - Prioritize: `InfernalHierarchy.Messaging` (non-ChannelMessageBus paths), `InfernalHierarchy.Agents` (Saga/CQRS), and `InfernalHierarchy.Core.CQRS`.
+
+3. **DRY/SOLID refactor plan (proposed)**
+    - Goal: reduce “god classes”, remove service-locator patterns, and centralize cross-cutting concerns.
+    - Success criteria: smaller units (≤300 LOC per class where possible), fewer duplicated patterns, improved unit-testability, no behavior regressions.
+
+    **Phase 1 — High ROI / Low Risk**
+    - [x] **Extract shared JSON defaults**
+       - Create a single reusable `JsonSerializerOptions` source (e.g., `JsonDefaults` or `IJsonOptionsProvider`).
+       - Replace repeated `new JsonSerializerOptions { ... }` across Host/Agents/Tools.
+    - [x] **Introduce a “tool execution pipeline” abstraction**
+       - Centralize: authorization, input validation, metrics, learning tracking, retries/timeouts.
+       - Use a decorator/middleware pattern around `ITool` to remove duplicated concerns.
+    - [x] **Replace “service locator” calls inside agents**
+       - Stop calling `GetService<T>()` inside `ReActAgent` and friends.
+       - Inject explicit collaborators (DIP) or provide small “feature interfaces” with optional implementations.
+
+    **Phase 2 — Split God Classes**
+    - [ ] **Decompose `ReActAgent` into focused components**
+       - `IActionParser` (parse tool/action blocks), `IActionExecutor` (dispatch tools), `IReportGenerator` (usage/models reports).
+       - Keep `ReActAgent` as the coordinator orchestrating these components.
+    - [ ] **Decompose `TelegramBotService` into handlers**
+       - Split: update routing, command parsing, authorization, response formatting, error handling.
+       - Use “command handlers” (e.g., `ITelegramCommandHandler`) registered via DI.
+    - [ ] **Decompose `AgentCollaborationService` strategies**
+       - Extract aggregation strategies into separate classes (voting/consensus/hierarchical) behind `IAggregationStrategy`.
+       - This reduces branching complexity and makes strategies independently testable.
+
+    **Phase 3 — Hardening & Clean Architecture Edges**
+    - [ ] **Typed HTTP clients per external integration**
+       - Introduce typed clients (e.g., `ISearXngClient`, `IBraveSearchClient`) with consistent error mapping.
+       - Keep retry/timeouts centralized (policy provider).
+    - [ ] **Standardize result/error model**
+       - Prefer a consistent `Result<T>`/`ToolResult`-style outcome object instead of ad-hoc exceptions.
+       - Map exceptions at the boundary (Telegram/HTTP) only.
+    - [ ] **Configuration validation via `IValidateOptions<T>`**
+       - Move validation logic into dedicated validators; keep `Program.cs` composition-only.
+
+3. **Vector search operational dependency**
    - Vector memory is implemented and enabled by default in configuration, but requires Qdrant to be running.
    - `/health` now includes a dedicated Qdrant health check (when vector memory is enabled).
 
-3. **ONNX embeddings disabled by default**
+4. **ONNX embeddings disabled by default**
    - `OnnxEmbeddingOptions.Enabled` is off by default, which may reduce semantic search quality.
    - Requires local model assets (see `models/README.md`) and explicit enablement.
 
-4. **MemoryPruningOptions disabled by default**
+5. **MemoryPruningOptions disabled by default**
    - Kept off to reduce accidental data loss; needs explicit enablement and operational guardrails.
 
 ---

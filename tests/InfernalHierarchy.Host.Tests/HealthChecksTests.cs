@@ -163,7 +163,8 @@ public class TelegramHealthCheckTests
     {
         // Arrange
         var options = new TelegramOptions { BotToken = "" };
-        var healthCheck = new TelegramHealthCheck(Options.Create(options));
+        var factory = new Mock<ITelegramBotClientFactory>(MockBehavior.Strict);
+        var healthCheck = new TelegramHealthCheck(Options.Create(options), factory.Object);
 
         // Act
         var result = await healthCheck.CheckHealthAsync(new HealthCheckContext());
@@ -171,6 +172,8 @@ public class TelegramHealthCheckTests
         // Assert
         result.Status.Should().Be(HealthStatus.Degraded);
         result.Description.Should().Contain("not configured");
+
+        factory.Verify(f => f.Create(It.IsAny<string>()), Times.Never);
     }
 
     [Fact]
@@ -178,7 +181,17 @@ public class TelegramHealthCheckTests
     {
         // Arrange
         var options = new TelegramOptions { BotToken = "invalid_token" };
-        var healthCheck = new TelegramHealthCheck(Options.Create(options));
+        var botClient = new Mock<ITelegramBotClientProbe>(MockBehavior.Strict);
+        botClient
+            .Setup(c => c.GetMeAsync(It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("boom"));
+
+        var factory = new Mock<ITelegramBotClientFactory>(MockBehavior.Strict);
+        factory
+            .Setup(f => f.Create(options.BotToken))
+            .Returns(botClient.Object);
+
+        var healthCheck = new TelegramHealthCheck(Options.Create(options), factory.Object);
 
         // Act
         var result = await healthCheck.CheckHealthAsync(new HealthCheckContext());
@@ -187,6 +200,9 @@ public class TelegramHealthCheckTests
         result.Status.Should().Be(HealthStatus.Unhealthy);
         result.Description.Should().Contain("Cannot connect to Telegram");
         result.Exception.Should().NotBeNull();
+
+        factory.VerifyAll();
+        botClient.VerifyAll();
     }
 
     // Note: Testing valid Telegram connection requires real token or extensive mocking

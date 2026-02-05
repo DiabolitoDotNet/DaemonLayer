@@ -129,6 +129,7 @@ public class SecretRotationService : BackgroundService
 /// Factory for creating and managing TelegramBotClient with secret rotation support
 /// </summary>
 public class TelegramBotClientFactory
+    : ITelegramBotClientFactory
 {
     private readonly ILogger<TelegramBotClientFactory> _logger;
     private TelegramBotClient? _client;
@@ -137,6 +138,11 @@ public class TelegramBotClientFactory
     public TelegramBotClientFactory(ILogger<TelegramBotClientFactory> logger)
     {
         _logger = logger;
+    }
+
+    public ITelegramBotClientProbe Create(string botToken)
+    {
+        return new TelegramBotClientProbe(GetOrCreateClient(botToken));
     }
 
     public TelegramBotClient GetOrCreateClient(string botToken)

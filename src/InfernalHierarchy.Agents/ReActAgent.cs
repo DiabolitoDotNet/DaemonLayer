@@ -21,6 +21,9 @@ public class ReActAgent : BaseAgent
     private readonly IVectorMemory? _vectorMemory;
     private readonly RagOptions _ragOptions;
     private readonly ReActOptions _reActOptions;
+    private readonly TokenUsageTracker? _tokenUsageTracker;
+    private readonly MultiModelLlmClient? _multiModelLlmClient;
+    private readonly IAgentCollaborationService? _collaborationService;
     private const int MaxIterations = 5;
 
     public ReActAgent(
@@ -57,7 +60,10 @@ public class ReActAgent : BaseAgent
         IAgentEventSink? eventSink,
         IVectorMemory? vectorMemory = null,
         RagOptions? ragOptions = null,
-        ReActOptions? reActOptions = null)
+        ReActOptions? reActOptions = null,
+        TokenUsageTracker? tokenUsageTracker = null,
+        MultiModelLlmClient? multiModelLlmClient = null,
+        IAgentCollaborationService? collaborationService = null)
         : base(agent, persona, messageBus, sharedMemory, toolRegistry, logger)
     {
         _agentFactory = agentFactory;
@@ -66,6 +72,9 @@ public class ReActAgent : BaseAgent
         _vectorMemory = vectorMemory;
         _ragOptions = ragOptions ?? new RagOptions();
         _reActOptions = reActOptions ?? new ReActOptions();
+        _tokenUsageTracker = tokenUsageTracker;
+        _multiModelLlmClient = multiModelLlmClient;
+        _collaborationService = collaborationService;
     }
 
     protected override async Task<string> BuildContextAsync(AgentMessage task, CancellationToken ct)
@@ -725,16 +734,13 @@ public class ReActAgent : BaseAgent
     /// </summary>
     private async Task<string> GenerateUsageReportAsync(CancellationToken ct)
     {
-        // Get TokenUsageTracker from tool registry
-        var tokenTracker = _toolRegistry.GetService<TokenUsageTracker>();
-        
-        if (tokenTracker == null)
+        if (_tokenUsageTracker == null)
         {
             _logger.LogWarning("TokenUsageTracker not available");
             return "⚠️ Token usage tracking not available";
         }
 
-        var stats = tokenTracker.GetOverallStats();
+        var stats = _tokenUsageTracker.GetOverallStats();
         
         var report = new StringBuilder();
         report.AppendLine("📊 **Token Usage Statistics**\n");
@@ -744,7 +750,7 @@ public class ReActAgent : BaseAgent
         report.AppendLine($"**Total Tokens:** {stats.TotalTokens:N0}");
         report.AppendLine($"**Avg Duration:** {stats.AverageDuration.TotalMilliseconds:F0}ms\n");
 
-        if (stats.ModelBreakdown.Any())
+        if (stats.ModelBreakdown?.Any() == true)
         {
             report.AppendLine("**Per-Model Breakdown:**");
             foreach (var kvp in stats.ModelBreakdown.OrderByDescending(x => x.Value.CallCount))
@@ -763,16 +769,13 @@ public class ReActAgent : BaseAgent
     /// </summary>
     private async Task<string> GenerateModelsReportAsync(CancellationToken ct)
     {
-        // Get MultiModelLlmClient from tool registry
-        var llmClient = _toolRegistry.GetService<MultiModelLlmClient>();
-        
-        if (llmClient == null)
+        if (_multiModelLlmClient == null)
         {
             _logger.LogWarning("MultiModelLlmClient not available");
             return "⚠️ LLM model information not available";
         }
 
-        var models = llmClient.GetAvailableModels();
+        var models = _multiModelLlmClient.GetAvailableModels();
         
         var report = new StringBuilder();
         report.AppendLine("🧠 **Available LLM Models**\n");
@@ -826,8 +829,7 @@ public class ReActAgent : BaseAgent
             var confidence = CalculateConfidence(result);
 
             // Submit response to collaboration service
-            var collaborationService = _toolRegistry.GetService<IAgentCollaborationService>();
-            if (collaborationService != null)
+            if (_collaborationService != null)
             {
                 var response = new AgentResponse
                 {
@@ -840,7 +842,7 @@ public class ReActAgent : BaseAgent
                     ProcessingTimeMs = result.Iterations * 1000 // Rough estimate
                 };
 
-                await collaborationService.SubmitResponseAsync(requestId, response, ct);
+                await _collaborationService.SubmitResponseAsync(requestId, response, ct);
 
                 _logger.LogInformation(
                     "✅ {AgentName} submitted collaboration response with confidence {Confidence:F2}",

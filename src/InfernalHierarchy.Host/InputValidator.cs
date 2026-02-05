@@ -133,14 +133,14 @@ public static class InputValidator
     /// <summary>
     /// Validate URL is safe and uses allowed schemes
     /// </summary>
-    public static bool IsValidUrl(string url, string[] allowedSchemes = null)
+    public static bool IsValidUrl(string url, string[]? allowedSchemes = null)
     {
         allowedSchemes ??= new[] { "http", "https" };
 
         if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
             return false;
 
-        return allowedSchemes.Contains(uri.Scheme.ToLower());
+        return allowedSchemes.Contains(uri.Scheme.ToLowerInvariant());
     }
 
     /// <summary>

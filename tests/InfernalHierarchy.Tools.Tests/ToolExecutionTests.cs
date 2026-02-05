@@ -171,6 +171,400 @@ public class ToolExecutionTests
     }
 
     [Fact]
+    public async Task CreateSubAgentTool_WithMissingPersonaName_ReturnsError()
+    {
+        // Arrange
+        var mockFactory = new Mock<IAgentFactory>();
+        var mockLogger = new Mock<ILogger<CreateSubAgentTool>>();
+        var tool = new CreateSubAgentTool(mockFactory.Object, mockLogger.Object);
+
+        var parameters = new Dictionary<string, object>
+        {
+            { "rank", "Worker" }
+        };
+
+        // Act
+        var result = await tool.ExecuteAsync(parameters, CancellationToken.None);
+
+        // Assert
+        Assert.False(result.Success);
+        Assert.Contains("persona_name", result.Error ?? string.Empty, StringComparison.Ordinal);
+        mockFactory.Verify(x => x.CreateAgentAsync(It.IsAny<string>(), It.IsAny<AgentRank>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task CreateSubAgentTool_WithMissingRank_ReturnsError()
+    {
+        // Arrange
+        var mockFactory = new Mock<IAgentFactory>();
+        var mockLogger = new Mock<ILogger<CreateSubAgentTool>>();
+        var tool = new CreateSubAgentTool(mockFactory.Object, mockLogger.Object);
+
+        var parameters = new Dictionary<string, object>
+        {
+            { "persona_name", "TestAgent" }
+        };
+
+        // Act
+        var result = await tool.ExecuteAsync(parameters, CancellationToken.None);
+
+        // Assert
+        Assert.False(result.Success);
+        Assert.Contains("rank", result.Error ?? string.Empty, StringComparison.Ordinal);
+        mockFactory.Verify(x => x.CreateAgentAsync(It.IsAny<string>(), It.IsAny<AgentRank>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task CreateSubAgentTool_WithInvalidRank_ReturnsError()
+    {
+        // Arrange
+        var mockFactory = new Mock<IAgentFactory>();
+        var mockLogger = new Mock<ILogger<CreateSubAgentTool>>();
+        var tool = new CreateSubAgentTool(mockFactory.Object, mockLogger.Object);
+
+        var parameters = new Dictionary<string, object>
+        {
+            { "persona_name", "TestAgent" },
+            { "rank", "NotARank" }
+        };
+
+        // Act
+        var result = await tool.ExecuteAsync(parameters, CancellationToken.None);
+
+        // Assert
+        Assert.False(result.Success);
+        Assert.Contains("Invalid rank", result.Error ?? string.Empty, StringComparison.Ordinal);
+        mockFactory.Verify(x => x.CreateAgentAsync(It.IsAny<string>(), It.IsAny<AgentRank>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task CreateSubAgentTool_WhenParentIdMissing_PassesNullToFactory()
+    {
+        // Arrange
+        var mockFactory = new Mock<IAgentFactory>();
+        var mockLogger = new Mock<ILogger<CreateSubAgentTool>>();
+
+        var mockAgent = new Mock<IAgent>();
+        mockAgent.SetupGet(x => x.Id).Returns("new_agent_id");
+        mockAgent.SetupGet(x => x.Name).Returns("TestAgent");
+        mockAgent.Setup(x => x.StartAsync(It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+
+        mockFactory.Setup(x => x.CreateAgentAsync(
+                It.IsAny<string>(),
+                It.IsAny<AgentRank>(),
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(mockAgent.Object);
+
+        var tool = new CreateSubAgentTool(mockFactory.Object, mockLogger.Object);
+
+        var parameters = new Dictionary<string, object>
+        {
+            { "persona_name", "TestAgent" },
+            { "rank", "Duke" }
+        };
+
+        // Act
+        var result = await tool.ExecuteAsync(parameters, CancellationToken.None);
+
+        // Assert
+        Assert.True(result.Success);
+        mockFactory.Verify(x => x.CreateAgentAsync("TestAgent", AgentRank.Duke, null, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task CreateSubAgentTool_WhenFactoryThrows_ReturnsError()
+    {
+        // Arrange
+        var mockFactory = new Mock<IAgentFactory>();
+        var mockLogger = new Mock<ILogger<CreateSubAgentTool>>();
+
+        mockFactory.Setup(x => x.CreateAgentAsync(
+                It.IsAny<string>(),
+                It.IsAny<AgentRank>(),
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("factory failed"));
+
+        var tool = new CreateSubAgentTool(mockFactory.Object, mockLogger.Object);
+
+        var parameters = new Dictionary<string, object>
+        {
+            { "persona_name", "TestAgent" },
+            { "rank", "Worker" }
+        };
+
+        // Act
+        var result = await tool.ExecuteAsync(parameters, CancellationToken.None);
+
+        // Assert
+        Assert.False(result.Success);
+        Assert.Contains("factory failed", result.Error ?? string.Empty, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task CreateSubAgentTool_WhenStartAsyncThrows_ReturnsError()
+    {
+        // Arrange
+        var mockFactory = new Mock<IAgentFactory>();
+        var mockLogger = new Mock<ILogger<CreateSubAgentTool>>();
+
+        var mockAgent = new Mock<IAgent>();
+        mockAgent.SetupGet(x => x.Id).Returns("new_agent_id");
+        mockAgent.SetupGet(x => x.Name).Returns("TestAgent");
+        mockAgent.Setup(x => x.StartAsync(It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("start failed"));
+
+        mockFactory.Setup(x => x.CreateAgentAsync(
+                It.IsAny<string>(),
+                It.IsAny<AgentRank>(),
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(mockAgent.Object);
+
+        var tool = new CreateSubAgentTool(mockFactory.Object, mockLogger.Object);
+
+        var parameters = new Dictionary<string, object>
+        {
+            { "persona_name", "TestAgent" },
+            { "rank", "Worker" }
+        };
+
+        // Act
+        var result = await tool.ExecuteAsync(parameters, CancellationToken.None);
+
+        // Assert
+        Assert.False(result.Success);
+        Assert.Contains("start failed", result.Error ?? string.Empty, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task MemoryReadTool_WithMissingType_ReturnsError()
+    {
+        // Arrange
+        var mockMemory = new Mock<ISharedMemory>();
+        var mockLogger = new Mock<ILogger<MemoryReadTool>>();
+        var tool = new MemoryReadTool(mockMemory.Object, mockLogger.Object);
+
+        var parameters = new Dictionary<string, object>();
+
+        // Act
+        var result = await tool.ExecuteAsync(parameters, CancellationToken.None);
+
+        // Assert
+        Assert.False(result.Success);
+        Assert.Contains("type", result.Error ?? string.Empty, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task MemoryReadTool_WithInvalidType_ReturnsError()
+    {
+        // Arrange
+        var mockMemory = new Mock<ISharedMemory>();
+        var mockLogger = new Mock<ILogger<MemoryReadTool>>();
+        var tool = new MemoryReadTool(mockMemory.Object, mockLogger.Object);
+
+        var parameters = new Dictionary<string, object>
+        {
+            { "type", "nope" }
+        };
+
+        // Act
+        var result = await tool.ExecuteAsync(parameters, CancellationToken.None);
+
+        // Assert
+        Assert.False(result.Success);
+        Assert.Contains("Invalid type", result.Error ?? string.Empty, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task MemoryReadTool_DecisionsWithoutQuery_UsesRecentDecisionsAndHonorsCount()
+    {
+        // Arrange
+        var mockMemory = new Mock<ISharedMemory>();
+        var mockLogger = new Mock<ILogger<MemoryReadTool>>();
+
+        mockMemory.Setup(x => x.GetRecentDecisionsAsync(1, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<Decision>
+            {
+                new Decision
+                {
+                    CreatedAt = DateTime.UtcNow,
+                    CreatedBy = "agent1",
+                    Action = "Do thing",
+                    Reasoning = "Because"
+                }
+            });
+
+        var tool = new MemoryReadTool(mockMemory.Object, mockLogger.Object);
+
+        var parameters = new Dictionary<string, object>
+        {
+            { "type", "decisions" },
+            { "count", 1 }
+        };
+
+        // Act
+        var result = await tool.ExecuteAsync(parameters, CancellationToken.None);
+
+        // Assert
+        Assert.True(result.Success);
+        Assert.Contains("Do thing", result.Output, StringComparison.Ordinal);
+        mockMemory.Verify(x => x.GetRecentDecisionsAsync(1, It.IsAny<CancellationToken>()), Times.Once);
+        mockMemory.Verify(x => x.SearchDecisionsAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task MemoryReadTool_DecisionsWithQuery_UsesSearchAndReturnsNoResultsMessage()
+    {
+        // Arrange
+        var mockMemory = new Mock<ISharedMemory>();
+        var mockLogger = new Mock<ILogger<MemoryReadTool>>();
+
+        mockMemory.Setup(x => x.SearchDecisionsAsync("search", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<Decision>());
+
+        var tool = new MemoryReadTool(mockMemory.Object, mockLogger.Object);
+
+        var parameters = new Dictionary<string, object>
+        {
+            { "type", "decisions" },
+            { "query", "search" }
+        };
+
+        // Act
+        var result = await tool.ExecuteAsync(parameters, CancellationToken.None);
+
+        // Assert
+        Assert.True(result.Success);
+        Assert.Equal("No decisions found.", result.Output);
+        mockMemory.Verify(x => x.SearchDecisionsAsync("search", It.IsAny<CancellationToken>()), Times.Once);
+        mockMemory.Verify(x => x.GetRecentDecisionsAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task MemoryReadTool_FactsWithoutQuery_UsesVisibleFactsAndReturnsNoResultsMessage()
+    {
+        // Arrange
+        var mockMemory = new Mock<ISharedMemory>();
+        var mockLogger = new Mock<ILogger<MemoryReadTool>>();
+
+        mockMemory.Setup(x => x.GetVisibleFactsAsync(It.IsAny<string>(), It.IsAny<AgentRank>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<Fact>());
+
+        var tool = new MemoryReadTool(mockMemory.Object, mockLogger.Object);
+
+        var parameters = new Dictionary<string, object>
+        {
+            { "type", "facts" },
+            { "agent_id", "agent1" }
+        };
+
+        // Act
+        var result = await tool.ExecuteAsync(parameters, CancellationToken.None);
+
+        // Assert
+        Assert.True(result.Success);
+        Assert.Equal("No facts found.", result.Output);
+        mockMemory.Verify(x => x.GetVisibleFactsAsync("agent1", AgentRank.Worker, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task MemoryReadTool_FactsWithInvalidRank_DefaultsToWorker()
+    {
+        // Arrange
+        var mockMemory = new Mock<ISharedMemory>();
+        var mockLogger = new Mock<ILogger<MemoryReadTool>>();
+
+        mockMemory.Setup(x => x.SearchVisibleFactsAsync(
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<AgentRank>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<Fact>());
+
+        var tool = new MemoryReadTool(mockMemory.Object, mockLogger.Object);
+
+        var parameters = new Dictionary<string, object>
+        {
+            { "type", "facts" },
+            { "query", "test" },
+            { "agent_id", "agent1" },
+            { "agent_rank", "NotARank" }
+        };
+
+        // Act
+        var result = await tool.ExecuteAsync(parameters, CancellationToken.None);
+
+        // Assert
+        Assert.True(result.Success);
+        mockMemory.Verify(x => x.SearchVisibleFactsAsync("test", "agent1", AgentRank.Worker, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task MemoryReadTool_TasksWithoutQuery_UsesPendingStatus()
+    {
+        // Arrange
+        var mockMemory = new Mock<ISharedMemory>();
+        var mockLogger = new Mock<ILogger<MemoryReadTool>>();
+
+        mockMemory.Setup(x => x.GetTasksByStatusAsync(InfernalHierarchy.Core.Entities.TaskStatus.Pending, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<TaskEntry>
+            {
+                new TaskEntry
+                {
+                    Description = "Do work",
+                    AssignedTo = "agent1",
+                    Status = InfernalHierarchy.Core.Entities.TaskStatus.Pending
+                }
+            });
+
+        var tool = new MemoryReadTool(mockMemory.Object, mockLogger.Object);
+
+        var parameters = new Dictionary<string, object>
+        {
+            { "type", "tasks" }
+        };
+
+        // Act
+        var result = await tool.ExecuteAsync(parameters, CancellationToken.None);
+
+        // Assert
+        Assert.True(result.Success);
+        Assert.Contains("Do work", result.Output, StringComparison.Ordinal);
+        mockMemory.Verify(x => x.GetTasksByStatusAsync(InfernalHierarchy.Core.Entities.TaskStatus.Pending, It.IsAny<CancellationToken>()), Times.Once);
+        mockMemory.Verify(x => x.GetTasksByAgentAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task MemoryReadTool_TasksWithQuery_UsesAgentQueryAndReturnsNoResultsMessage()
+    {
+        // Arrange
+        var mockMemory = new Mock<ISharedMemory>();
+        var mockLogger = new Mock<ILogger<MemoryReadTool>>();
+
+        mockMemory.Setup(x => x.GetTasksByAgentAsync("agent1", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<TaskEntry>());
+
+        var tool = new MemoryReadTool(mockMemory.Object, mockLogger.Object);
+
+        var parameters = new Dictionary<string, object>
+        {
+            { "type", "tasks" },
+            { "query", "agent1" }
+        };
+
+        // Act
+        var result = await tool.ExecuteAsync(parameters, CancellationToken.None);
+
+        // Assert
+        Assert.True(result.Success);
+        Assert.Equal("No tasks found.", result.Output);
+        mockMemory.Verify(x => x.GetTasksByAgentAsync("agent1", It.IsAny<CancellationToken>()), Times.Once);
+        mockMemory.Verify(x => x.GetTasksByStatusAsync(It.IsAny<InfernalHierarchy.Core.Entities.TaskStatus>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
     public async Task ToolExecution_WithMissingRequiredParameter_ReturnsError()
     {
         // Arrange

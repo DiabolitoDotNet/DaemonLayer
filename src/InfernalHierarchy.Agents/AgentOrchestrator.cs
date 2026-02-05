@@ -129,8 +129,10 @@ public class AgentOrchestrator : BackgroundService
         }
 
         // Stop all other agents gracefully
-        var registry = _agentFactory as AgentFactory;
-        var allAgents = registry?.GetAllAgents().ToList() ?? new List<IAgent>();
+        var allAgents = _agentFactory
+            .GetAllAgents()
+            .Where(a => _mainAgent == null || a.Id != _mainAgent.Id)
+            .ToList();
 
         foreach (var agent in allAgents)
         {

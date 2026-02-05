@@ -135,10 +135,12 @@ public class QdrantHealthCheck : IHealthCheck
 public class TelegramHealthCheck : IHealthCheck
 {
     private readonly TelegramOptions _options;
+    private readonly ITelegramBotClientFactory _botClientFactory;
 
-    public TelegramHealthCheck(IOptions<TelegramOptions> options)
+    public TelegramHealthCheck(IOptions<TelegramOptions> options, ITelegramBotClientFactory botClientFactory)
     {
         _options = options.Value;
+        _botClientFactory = botClientFactory;
     }
 
     public async Task<HealthCheckResult> CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken = default)
@@ -150,8 +152,8 @@ public class TelegramHealthCheck : IHealthCheck
 
         try
         {
-            var botClient = new TelegramBotClient(_options.BotToken);
-            var me = await botClient.GetMe(cancellationToken);
+            var botClient = _botClientFactory.Create(_options.BotToken);
+            var me = await botClient.GetMeAsync(cancellationToken);
 
             var data = new Dictionary<string, object>
             {

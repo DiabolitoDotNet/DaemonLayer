@@ -14,10 +14,11 @@ public sealed class OnnxEmbeddingService : IDisposable
 {
     private readonly ILogger<OnnxEmbeddingService> _logger;
     private readonly OnnxEmbeddingOptions _options;
-    private InferenceSession? _session;
-    private Tokenizer? _tokenizer;
+    private IInferenceSession? _session;
+    private ITokenizerAdapter? _tokenizer;
     private bool _initialized;
     private readonly SemaphoreSlim _initLock = new(1, 1);
+    private readonly IOnnxRuntimeFactory _runtimeFactory;
 
     public OnnxEmbeddingService(
         IOptions<OnnxEmbeddingOptions> options,
@@ -25,6 +26,19 @@ public sealed class OnnxEmbeddingService : IDisposable
     {
         _options = options.Value;
         _logger = logger;
+        _tokenizer = null;
+        _runtimeFactory = new DefaultOnnxRuntimeFactory();
+    }
+
+    internal OnnxEmbeddingService(
+        IOptions<OnnxEmbeddingOptions> options,
+        ILogger<OnnxEmbeddingService> logger,
+        IOnnxRuntimeFactory runtimeFactory)
+    {
+        _options = options.Value;
+        _logger = logger;
+        _tokenizer = null;
+        _runtimeFactory = runtimeFactory;
     }
 
     /// <summary>
@@ -66,23 +80,34 @@ public sealed class OnnxEmbeddingService : IDisposable
                 GraphOptimizationLevel = GraphOptimizationLevel.ORT_ENABLE_ALL
             };
 
-            _session = new InferenceSession(_options.ModelPath, sessionOptions);
-            _logger.LogInformation("✅ Loaded ONNX model from {Path}", _options.ModelPath);
-
-            // Load tokenizer
-            if (File.Exists(_options.TokenizerPath))
+            try
             {
-                _logger.LogWarning("⚠️ Microsoft.ML.Tokenizers 1.0.0 API not yet supported - ONNX embeddings disabled");
-                _logger.LogInformation("📘 Fallback to deterministic embeddings until tokenizer API is updated");
+                _session = _runtimeFactory.CreateSession(_options.ModelPath, sessionOptions);
+                _logger.LogInformation("✅ Loaded ONNX model from {Path}", _options.ModelPath);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "⚠️ Failed to load ONNX model - will use fallback embeddings");
                 _initialized = true;
                 return;
-
-                // TODO: Update when Microsoft.ML.Tokenizers stabilizes API
-                // Need to find correct factory method for 1.0.0
             }
-            else
+
+            // Load tokenizer
+            if (!File.Exists(_options.TokenizerPath))
             {
                 _logger.LogWarning("⚠️ Tokenizer not found at {Path} - ONNX embeddings disabled", _options.TokenizerPath);
+                _initialized = true;
+                return;
+            }
+
+            try
+            {
+                _tokenizer = _runtimeFactory.CreateTokenizer(_options.TokenizerPath);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "⚠️ Failed to load tokenizer - ONNX embeddings disabled");
+                _logger.LogInformation("📘 Fallback to deterministic embeddings until tokenizer API is updated");
                 _initialized = true;
                 return;
             }
@@ -111,8 +136,7 @@ public sealed class OnnxEmbeddingService : IDisposable
         try
         {
             // Tokenize input
-            var encoding = _tokenizer!.EncodeToIds(text);
-            var inputIds = encoding.Select(id => (int)id).ToArray();
+            var inputIds = _tokenizer.EncodeToIds(text);
             var attentionMask = Enumerable.Repeat(1, inputIds.Length).ToArray();
 
             // Truncate or pad to model's max length
@@ -130,14 +154,7 @@ public sealed class OnnxEmbeddingService : IDisposable
                 new[] { 1, attentionMask.Length });
 
             // Run inference
-            var inputs = new List<NamedOnnxValue>
-            {
-                NamedOnnxValue.CreateFromTensor("input_ids", inputIdsTensor),
-                NamedOnnxValue.CreateFromTensor("attention_mask", attentionMaskTensor)
-            };
-
-            using var results = _session.Run(inputs);
-            var output = results.First().AsEnumerable<float>().ToArray();
+            var output = _session.Run(inputIdsTensor, attentionMaskTensor);
 
             // Mean pooling over token embeddings
             var embedding = MeanPooling(output, attentionMask, _options.EmbeddingDimension);
@@ -244,6 +261,73 @@ public sealed class OnnxEmbeddingService : IDisposable
     {
         _session?.Dispose();
         _initLock?.Dispose();
+    }
+}
+
+internal interface ITokenizerAdapter
+{
+    int[] EncodeToIds(string text);
+}
+
+internal interface IInferenceSession : IDisposable
+{
+    float[] Run(DenseTensor<long> inputIds, DenseTensor<long> attentionMask);
+}
+
+internal interface IOnnxRuntimeFactory
+{
+    IInferenceSession CreateSession(string modelPath, SessionOptions sessionOptions);
+    ITokenizerAdapter CreateTokenizer(string tokenizerPath);
+}
+
+internal sealed class DefaultOnnxRuntimeFactory : IOnnxRuntimeFactory
+{
+    public IInferenceSession CreateSession(string modelPath, SessionOptions sessionOptions)
+    {
+        if (string.IsNullOrWhiteSpace(modelPath))
+        {
+            throw new ArgumentException("Model path must be provided.", nameof(modelPath));
+        }
+
+        if (sessionOptions is null)
+        {
+            throw new ArgumentNullException(nameof(sessionOptions));
+        }
+
+        if (!File.Exists(modelPath))
+        {
+            throw new FileNotFoundException("ONNX model not found.", modelPath);
+        }
+
+        return new InferenceSessionAdapter(new InferenceSession(modelPath, sessionOptions));
+    }
+
+    public ITokenizerAdapter CreateTokenizer(string tokenizerPath)
+        => throw new NotSupportedException(
+            "Microsoft.ML.Tokenizers 1.0.0 tokenizer loading is not yet supported by this service.");
+
+    private sealed class InferenceSessionAdapter : IInferenceSession
+    {
+        private readonly InferenceSession _inner;
+
+        public InferenceSessionAdapter(InferenceSession inner)
+        {
+            _inner = inner;
+        }
+
+        public float[] Run(DenseTensor<long> inputIds, DenseTensor<long> attentionMask)
+        {
+            var inputs = new List<NamedOnnxValue>
+            {
+                NamedOnnxValue.CreateFromTensor("input_ids", inputIds),
+                NamedOnnxValue.CreateFromTensor("attention_mask", attentionMask)
+            };
+
+            using var results = _inner.Run(inputs);
+            return results.First().AsEnumerable<float>().ToArray();
+        }
+
+        public void Dispose() => _inner.Dispose();
     }
 }
 

@@ -248,6 +248,95 @@ public class MemoryPruningServiceTests
         exception.Should().BeNull();
     }
 
+    [Fact]
+    public async Task PruneMemoryAsync_WhenSearchFactsThrows_ShouldNotThrow()
+    {
+        _options.EnableArchival = false;
+
+        _mockSharedMemory
+            .Setup(x => x.SearchFactsAsync("", It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("boom"));
+
+        _mockSharedMemory
+            .Setup(x => x.GetTasksByStatusAsync(InfernalHierarchy.Core.Entities.TaskStatus.Completed, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<TaskEntry>());
+
+        var service = new TestableMemoryPruningService(
+            _mockSharedMemory.Object,
+            Options.Create(_options),
+            _mockLogger.Object);
+
+        var act = async () => await service.PublicPruneMemoryAsync(CancellationToken.None);
+        await act.Should().NotThrowAsync();
+
+        _mockSharedMemory.Verify(x => x.DeleteFactAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task PruneMemoryAsync_WhenGetTasksThrows_ShouldNotThrow()
+    {
+        _options.EnableArchival = false;
+
+        _mockSharedMemory
+            .Setup(x => x.SearchFactsAsync("", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<Fact>());
+
+        _mockSharedMemory
+            .Setup(x => x.GetTasksByStatusAsync(InfernalHierarchy.Core.Entities.TaskStatus.Completed, It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("boom"));
+
+        var service = new TestableMemoryPruningService(
+            _mockSharedMemory.Object,
+            Options.Create(_options),
+            _mockLogger.Object);
+
+        var act = async () => await service.PublicPruneMemoryAsync(CancellationToken.None);
+        await act.Should().NotThrowAsync();
+
+        _mockSharedMemory.Verify(x => x.DeleteTaskAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task PruneMemoryAsync_WhenArchivePathInvalid_ShouldNotThrow_AndShouldNotDeleteDecision()
+    {
+        _options.EnableArchival = true;
+        _options.ArchivePath = "invalid\0path";
+        var oldDate = DateTime.UtcNow.AddDays(-40);
+
+        _mockSharedMemory
+            .Setup(x => x.SearchFactsAsync("", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<Fact>());
+
+        _mockSharedMemory
+            .Setup(x => x.GetTasksByStatusAsync(InfernalHierarchy.Core.Entities.TaskStatus.Completed, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<TaskEntry>());
+
+        _mockSharedMemory
+            .Setup(x => x.GetRecentDecisionsAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<Decision>
+            {
+                new()
+                {
+                    Id = "dec_1",
+                    Context = "Old decision",
+                    Action = "Archive me",
+                    Outcome = "Success",
+                    CreatedBy = "agent",
+                    CreatedAt = oldDate
+                }
+            });
+
+        var service = new TestableMemoryPruningService(
+            _mockSharedMemory.Object,
+            Options.Create(_options),
+            _mockLogger.Object);
+
+        var act = async () => await service.PublicPruneMemoryAsync(CancellationToken.None);
+        await act.Should().NotThrowAsync();
+
+        _mockSharedMemory.Verify(x => x.DeleteDecisionAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
     // Helper class to expose protected method for testing
     private class TestableMemoryPruningService : MemoryPruningService
     {
