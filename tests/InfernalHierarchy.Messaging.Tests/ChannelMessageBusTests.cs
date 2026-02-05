@@ -132,4 +132,103 @@ public class ChannelMessageBusTests
         // Assert
         receivedMessages.Should().BeEmpty();
     }
+
+    [Fact]
+    public async Task CleanupAgent_ShouldCompleteAndRemoveChannel()
+    {
+        // Arrange
+        var agentId = "agent-clean";
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+
+        var receivedMessages = new List<AgentMessage>();
+        var subscribeTask = Task.Run(async () =>
+        {
+            await foreach (var msg in _messageBus.SubscribeAsync(agentId, cts.Token))
+            {
+                receivedMessages.Add(msg);
+            }
+        }, cts.Token);
+
+        await Task.Delay(50, cts.Token); // Let subscription setup and channel be created
+        _messageBus.ActiveChannelCount.Should().Be(1);
+
+        // Act
+        await _messageBus.PublishAsync(new AgentMessage
+        {
+            FromAgentId = "sender",
+            ToAgentId = agentId,
+            Type = MessageType.Task,
+            Content = "hello"
+        }, cts.Token);
+
+        await Task.Delay(50, cts.Token); // Let message propagate
+        _messageBus.CleanupAgent(agentId);
+
+        await subscribeTask;
+
+        // Assert
+        receivedMessages.Should().ContainSingle(m => m.Content == "hello");
+        _messageBus.ActiveChannelCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Dispose_ShouldCompleteAndClearAllChannels_AndBeIdempotent()
+    {
+        // Arrange
+        await _messageBus.PublishAsync(new AgentMessage
+        {
+            FromAgentId = "sender",
+            ToAgentId = "agent-a",
+            Type = MessageType.Task,
+            Content = "hi"
+        });
+
+        _messageBus.ActiveChannelCount.Should().Be(1);
+
+        // Act
+        _messageBus.Dispose();
+        _messageBus.Dispose(); // idempotent
+
+        // Assert
+        _messageBus.ActiveChannelCount.Should().Be(0);
+
+        // Disposed bus should not throw on publish
+        var act = async () => await _messageBus.PublishAsync(new AgentMessage
+        {
+            FromAgentId = "sender",
+            ToAgentId = "agent-a",
+            Type = MessageType.Task,
+            Content = "ignored"
+        });
+
+        await act.Should().NotThrowAsync();
+    }
+
+    [Fact]
+    public async Task SubscribeAsync_WhenDisposed_YieldsNoMessages()
+    {
+        _messageBus.Dispose();
+
+        var received = new List<AgentMessage>();
+        await foreach (var msg in _messageBus.SubscribeAsync("any", CancellationToken.None))
+        {
+            received.Add(msg);
+        }
+
+        received.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task SubscribeToBroadcastsAsync_WhenDisposed_YieldsNoMessages()
+    {
+        _messageBus.Dispose();
+
+        var received = new List<AgentMessage>();
+        await foreach (var msg in _messageBus.SubscribeToBroadcastsAsync(CancellationToken.None))
+        {
+            received.Add(msg);
+        }
+
+        received.Should().BeEmpty();
+    }
 }

@@ -4,20 +4,20 @@ Coverage was collected and aggregated locally on **2026-02-05** using the built-
 
 ## Overall
 
-- **Line coverage**: **83.9%** (10,966 / 13,056)
-- **Branch coverage**: **72.1%** (2,784 / 3,856)
-- **Method coverage**: **93.0%** (1,795 / 1,929)
+- **Line coverage**: **85.3%** (11,968 / 14,015)
+- **Branch coverage**: **73.9%** (3,190 / 4,316)
+- **Method coverage**: **94.0%** (1,994 / 2,120)
 
 ## Per Assembly (Line Coverage)
 
-- **InfernalHierarchy.Core**: 90.3%
-- **InfernalHierarchy.Host**: 92.3%
-- **InfernalHierarchy.Messaging**: 94.7%
+- **InfernalHierarchy.Core**: 91.0%
+- **InfernalHierarchy.Host**: 91.9%
+- **InfernalHierarchy.Messaging**: 95.9%
 - **InfernalHierarchy.Personas**: 98.0%
 - **InfernalHierarchy.Telegram**: 87.9%
 - **InfernalHierarchy.Memory**: 81.2%
-- **InfernalHierarchy.Agents**: 80.2%
-- **InfernalHierarchy.Tools**: 79.3%
+- **InfernalHierarchy.Agents**: 81.9%
+- **InfernalHierarchy.Tools**: 83.4%
 
 ## Where the report is
 

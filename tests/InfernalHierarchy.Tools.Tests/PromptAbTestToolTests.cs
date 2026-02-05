@@ -415,4 +415,112 @@ public class PromptAbTestToolTests
 
         await act.Should().ThrowAsync<OperationCanceledException>();
     }
+
+    [Fact]
+    public async Task ExecuteAsync_WithExpectedContainsAsJsonArray_UsesJsonElementArrayParsing()
+    {
+        var llm = new Mock<ILlmClient>();
+        llm.Setup(x => x.GetCompletionAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((string system, string _, CancellationToken _) =>
+                system.Contains("P1", StringComparison.Ordinal) ? "alpha beta" : "alpha");
+
+        var tool = new PromptAbTestTool(llm.Object, Mock.Of<IPersonaLoader>(), Mock.Of<ILogger<PromptAbTestTool>>());
+
+        using var expectedDoc = JsonDocument.Parse(@"[""alpha"",""beta"","""",""  ""]");
+
+        var result = await tool.ExecuteAsync(new Dictionary<string, object>
+        {
+            ["task"] = "Do something",
+            ["expected_contains"] = expectedDoc.RootElement,
+            ["trials"] = 1,
+            ["variants_json"] = "[" +
+                             "{\"name\":\"A\",\"system_prompt\":\"P1\"}," +
+                             "{\"name\":\"B\",\"system_prompt\":\"P2\"}" +
+                             "]"
+        }, CancellationToken.None);
+
+        result.Success.Should().BeTrue();
+        result.Metadata!["winner"].Should().Be("A");
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_WithExpectedContainsAsEnumerable_UsesEnumerableParsingAndFilters()
+    {
+        var llm = new Mock<ILlmClient>();
+        llm.Setup(x => x.GetCompletionAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync("alpha beta");
+
+        var tool = new PromptAbTestTool(llm.Object, Mock.Of<IPersonaLoader>(), Mock.Of<ILogger<PromptAbTestTool>>());
+
+        var expected = new object?[] { "alpha", 123, null, " ", "beta" };
+
+        var result = await tool.ExecuteAsync(new Dictionary<string, object>
+        {
+            ["task"] = "Do something",
+            ["expected_contains"] = expected,
+            ["trials"] = 1,
+            ["variants_json"] = "[" +
+                             "{\"name\":\"A\",\"system_prompt\":\"P1\"}," +
+                             "{\"name\":\"B\",\"system_prompt\":\"P2\"}" +
+                             "]"
+        }, CancellationToken.None);
+
+        result.Success.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_WithJsonElementStringTrials_AndJsonElementBool_ParsesValues()
+    {
+        var llm = new Mock<ILlmClient>();
+        llm.Setup(x => x.GetCompletionAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync("{\"ok\":true}");
+
+        var tool = new PromptAbTestTool(llm.Object, Mock.Of<IPersonaLoader>(), Mock.Of<ILogger<PromptAbTestTool>>());
+
+        using var trialsDoc = JsonDocument.Parse("\"2\"");
+        using var mustBeJsonDoc = JsonDocument.Parse("\"true\"");
+
+        var result = await tool.ExecuteAsync(new Dictionary<string, object>
+        {
+            ["task"] = "Do something",
+            ["trials"] = trialsDoc.RootElement,
+            ["must_be_json"] = mustBeJsonDoc.RootElement,
+            ["variants_json"] = "[" +
+                             "{\"name\":\"A\",\"system_prompt\":\"P1\"}," +
+                             "{\"name\":\"B\",\"system_prompt\":\"P2\"}" +
+                             "]"
+        }, CancellationToken.None);
+
+        result.Success.Should().BeTrue();
+        result.Metadata!["trials"].Should().Be(2);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_WithLongResponse_RecordsTruncatedSample()
+    {
+        var longText = new string('x', 1000);
+
+        var llm = new Mock<ILlmClient>();
+        llm.Setup(x => x.GetCompletionAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(longText);
+
+        var tool = new PromptAbTestTool(llm.Object, Mock.Of<IPersonaLoader>(), Mock.Of<ILogger<PromptAbTestTool>>());
+
+        var result = await tool.ExecuteAsync(new Dictionary<string, object>
+        {
+            ["task"] = "Do something",
+            ["trials"] = 1,
+            ["variants_json"] = "[" +
+                             "{\"name\":\"A\",\"system_prompt\":\"P1\"}," +
+                             "{\"name\":\"B\",\"system_prompt\":\"P2\"}" +
+                             "]"
+        }, CancellationToken.None);
+
+        result.Success.Should().BeTrue();
+        using var report = JsonDocument.Parse(result.Output);
+        var sample = report.RootElement.GetProperty("results")[0].GetProperty("samples")[0].GetString();
+        sample.Should().NotBeNull();
+        sample!.Length.Should().BeLessThanOrEqualTo(703);
+        sample.Should().EndWith("...");
+    }
 }

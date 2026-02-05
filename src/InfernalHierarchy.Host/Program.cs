@@ -24,6 +24,7 @@ using InfernalHierarchy.Telegram.Services;
 using InfernalHierarchy.Tools.Clients;
 using InfernalHierarchy.Tools.Execution;
 using InfernalHierarchy.Tools.Learning;
+using InfernalHierarchy.Tools.Notifications;
 using InfernalHierarchy.Tools.Options;
 using InfernalHierarchy.Tools.Telemetry;
 using InfernalHierarchy.Tools.Tools.Agent;
@@ -33,6 +34,7 @@ using InfernalHierarchy.Tools.Tools.Memory;
 using InfernalHierarchy.Tools.Tools.Search;
 using InfernalHierarchy.Tools.Tools.Telegram;
 using InfernalHierarchy.Tools.Tools.Templates;
+using InfernalHierarchy.Tools.Tools.Notifications;
 using InfernalHierarchy.Host.Configuration;
 using InfernalHierarchy.Host.Configuration.Validation;
 using InfernalHierarchy.Host.Hosting;
@@ -94,6 +96,7 @@ builder.Services.AddSingleton<IValidateOptions<SearXNGOptions>, SearXngOptionsVa
 builder.Services.AddSingleton<IValidateOptions<BraveSearchOptions>, BraveSearchOptionsValidator>();
 builder.Services.AddSingleton<IValidateOptions<SearXNGOptions>, WebSearchProvidersValidator>();
 builder.Services.AddSingleton<IValidateOptions<BraveSearchOptions>, WebSearchProvidersValidator>();
+builder.Services.AddSingleton<IValidateOptions<EmailNotificationOptions>, EmailNotificationOptionsValidator>();
 
 builder.Services.AddOptions<OllamaOptions>()
     .Bind(builder.Configuration.GetSection("Ollama"))
@@ -112,6 +115,9 @@ builder.Services.AddOptions<SearXNGOptions>()
     .ValidateOnStart();
 builder.Services.AddOptions<BraveSearchOptions>()
     .Bind(builder.Configuration.GetSection("BraveSearch"))
+    .ValidateOnStart();
+builder.Services.AddOptions<EmailNotificationOptions>()
+    .Bind(builder.Configuration.GetSection("Email"))
     .ValidateOnStart();
 builder.Services.Configure<LlmOptions>(builder.Configuration.GetSection("LlmOptions"));
 builder.Services.Configure<VectorMemoryOptions>(builder.Configuration.GetSection("VectorMemoryOptions"));
@@ -209,6 +215,9 @@ builder.Services.AddSingleton<MultiModelLlmClient>();
 builder.Services.AddSingleton<TokenUsageTracker>();
 builder.Services.AddSingleton<AgentLearningService>();
 
+// Notifications
+builder.Services.AddSingleton<IEmailSender, SmtpEmailSender>();
+
 // Advanced Memory Services
 builder.Services.AddSingleton<OnnxEmbeddingService>();
 builder.Services.AddHttpClient<IVectorMemory, VectorMemoryService>();
@@ -270,6 +279,7 @@ builder.Services.AddSingleton<ITool, TelegramSendTool>();
 builder.Services.AddSingleton<ITool, CreateAgentFromTemplateTool>();
 builder.Services.AddSingleton<ITool, ListTemplatesTool>();
 builder.Services.AddSingleton<ITool, PromptAbTestTool>();
+builder.Services.AddSingleton<ITool, EmailNotificationTool>();
 
 // Register all tools in the registry
 builder.Services.AddHostedService<ToolRegistrationService>();

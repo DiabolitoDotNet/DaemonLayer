@@ -32,10 +32,16 @@ public abstract class SagaBase : ISaga
         Logger = logger;
     }
 
+    /// <summary>
+    /// Creates the saga execution context. Derived sagas can override this to seed initial data.
+    /// </summary>
+    protected virtual SagaContext CreateContext() => new() { SagaId = SagaId };
+
     /// <inheritdoc/>
     public async Task<SagaResult> ExecuteAsync(CancellationToken ct = default)
     {
-        var context = new SagaContext { SagaId = SagaId };
+        var context = CreateContext();
+        context.SagaId = SagaId;
         var startTime = DateTime.UtcNow;
 
         Logger.LogInformation("Starting saga {SagaName} ({SagaId}) with {StepCount} steps",

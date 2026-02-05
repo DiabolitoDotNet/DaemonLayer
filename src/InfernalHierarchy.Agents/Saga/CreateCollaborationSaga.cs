@@ -14,6 +14,8 @@ public class CreateCollaborationSaga : SagaBase
     /// <inheritdoc/>
     public override string Name => "CreateCollaboration";
 
+    private readonly CollaborationRequest _collaborationRequest;
+
     /// <summary>
     /// Initializes a new instance of the <see cref="CreateCollaborationSaga"/> class.
     /// </summary>
@@ -30,6 +32,8 @@ public class CreateCollaborationSaga : SagaBase
         CollaborationRequest collaborationRequest)
         : base(logger)
     {
+        _collaborationRequest = collaborationRequest;
+
         // Step 1: Validate participants
         AddStep(new ValidateParticipantsStep(logger, agentFactory));
 
@@ -44,10 +48,13 @@ public class CreateCollaborationSaga : SagaBase
 
         // Step 5: Store final result
         AddStep(new StoreFinalResultStep(logger, memory));
+    }
 
-        // Store request in context
-        var context = new SagaContext { SagaId = SagaId };
-        context.Data["CollaborationRequest"] = collaborationRequest;
+    protected override SagaContext CreateContext()
+    {
+        var context = base.CreateContext();
+        context.Data["CollaborationRequest"] = _collaborationRequest;
+        return context;
     }
 }
 
