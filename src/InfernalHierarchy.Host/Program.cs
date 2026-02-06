@@ -25,6 +25,7 @@ using InfernalHierarchy.Telegram.Services;
 using InfernalHierarchy.Tools.Clients;
 using InfernalHierarchy.Tools.Execution;
 using InfernalHierarchy.Tools.Learning;
+using InfernalHierarchy.Tools.Marketplace;
 using InfernalHierarchy.Tools.Notifications;
 using InfernalHierarchy.Tools.Options;
 using InfernalHierarchy.Tools.Telemetry;
@@ -33,6 +34,7 @@ using InfernalHierarchy.Tools.Tools.Collaboration;
 using InfernalHierarchy.Tools.Tools.Experiments;
 using InfernalHierarchy.Tools.Tools.FileSystem;
 using InfernalHierarchy.Tools.Tools.Http;
+using InfernalHierarchy.Tools.Tools.CodeExecution;
 using InfernalHierarchy.Tools.Tools.Memory;
 using InfernalHierarchy.Tools.Tools.Search;
 using InfernalHierarchy.Tools.Tools.Telegram;
@@ -108,6 +110,8 @@ builder.Services.AddSingleton<IValidateOptions<VectorMemoryOptions>, VectorMemor
 builder.Services.AddSingleton<IValidateOptions<OnnxEmbeddingOptions>, OnnxEmbeddingOptionsValidator>();
 builder.Services.AddSingleton<IValidateOptions<FileSystemToolOptions>, FileSystemToolOptionsValidator>();
 builder.Services.AddSingleton<IValidateOptions<HttpRequestToolOptions>, HttpRequestToolOptionsValidator>();
+builder.Services.AddSingleton<IValidateOptions<CodeExecutionToolOptions>, CodeExecutionToolOptionsValidator>();
+builder.Services.AddSingleton<IValidateOptions<ToolMarketplaceOptions>, ToolMarketplaceOptionsValidator>();
 
 builder.Services.AddOptions<OllamaOptions>()
     .Bind(builder.Configuration.GetSection("Ollama"))
@@ -138,6 +142,12 @@ builder.Services.AddOptions<FileSystemToolOptions>()
     .ValidateOnStart();
 builder.Services.AddOptions<HttpRequestToolOptions>()
     .Bind(builder.Configuration.GetSection("HttpTool"))
+    .ValidateOnStart();
+builder.Services.AddOptions<CodeExecutionToolOptions>()
+    .Bind(builder.Configuration.GetSection("CodeExecution"))
+    .ValidateOnStart();
+builder.Services.AddOptions<ToolMarketplaceOptions>()
+    .Bind(builder.Configuration.GetSection("ToolMarketplace"))
     .ValidateOnStart();
 builder.Services.Configure<LlmOptions>(builder.Configuration.GetSection("LlmOptions"));
 builder.Services.AddOptions<VectorMemoryOptions>()
@@ -229,6 +239,12 @@ builder.Services.AddSingleton<IToolExecutionPipeline, DefaultToolExecutionPipeli
 // Tool rate limiting
 builder.Services.AddSingleton<IToolRateLimiter, FixedWindowToolRateLimiter>();
 
+// Process execution (for code execution tools)
+builder.Services.AddSingleton<IProcessRunner, DefaultProcessRunner>();
+
+// Tool marketplace (plugin loader)
+builder.Services.AddSingleton<IToolPluginLoader, DefaultToolPluginLoader>();
+
 // Tools - inject IServiceProvider for command handlers
 builder.Services.AddSingleton<IToolRegistry>(sp =>
 {
@@ -317,9 +333,14 @@ builder.Services.AddSingleton<ITool, FileReadTool>();
 builder.Services.AddSingleton<ITool, FileWriteTool>();
 builder.Services.AddSingleton<ITool, FileSearchTool>();
 builder.Services.AddSingleton<ITool, HttpRequestTool>();
+builder.Services.AddSingleton<ITool, PythonExecTool>();
+builder.Services.AddSingleton<ITool, NodeExecTool>();
 
 // Register all tools in the registry
 builder.Services.AddHostedService<ToolRegistrationService>();
+
+// Hot-load external tool plugins
+builder.Services.AddHostedService<ToolMarketplaceHostedService>();
 
 // Configuration management
 builder.Services.AddHostedService<ConfigurationReloadService>();

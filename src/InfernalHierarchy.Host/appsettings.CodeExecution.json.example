@@ -1,0 +1,22 @@
+{
+  "CodeExecution": {
+    "Enabled": false,
+
+    // Root working directory for code execution.
+    // Can be absolute, or relative to the Host content root.
+    "RootDirectory": "sandbox/code",
+
+    // Enable specific runtimes. Keep disabled by default.
+    "EnablePython": false,
+    "EnableNode": false,
+
+    // Executable names/paths (must be available on PATH if not absolute).
+    "PythonExecutable": "python",
+    "NodeExecutable": "node",
+
+    // Hard limits (per-call overrides cannot exceed these).
+    "TimeoutMs": 15000,
+    "MaxOutputBytes": 256000,
+    "MaxCodeChars": 12000
+  }
+}

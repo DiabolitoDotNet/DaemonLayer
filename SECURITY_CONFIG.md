@@ -14,7 +14,10 @@ The `ToolAuthorizationService` enforces permissions before any tool is executed 
 
 ### Configuration
 
-Add the `ToolPermissions` section to `appsettings.json`:
+Add the `ToolPermissions` section to `appsettings.json`.
+
+For a complete, safe-by-default template (including `fs_*` and `http_request`, disabled by default), see:
+- `src/InfernalHierarchy.Host/appsettings.ToolPermissions.json.example`
 
 ```json
 {
@@ -40,6 +43,23 @@ Add the `ToolPermissions` section to `appsettings.json`:
   }
 }
 ```
+
+### Defaults & Overlay Behavior
+
+- **Built-in defaults**: InfernalHierarchy starts with a default permission map for known tools.
+  - This keeps new installs safe-by-default (powerful tools like filesystem/HTTP are disabled unless explicitly enabled).
+- **Partial configuration overlays defaults**: If you configure only a subset of tools under `ToolPermissions`, those entries override the defaults, and the rest of the default map remains in effect.
+- **Unknown tools**: If a tool name is not present in the effective permission map, it is **allowed by default** (fail-open for extensibility). See “Security Considerations” below.
+
+### High-Risk Tools (Filesystem / HTTP / Code Execution)
+
+Some tools are intentionally **disabled by default** and require explicit operator enablement:
+
+- **ToolPermissions**: Enable the tool entry (e.g., `fs_read`, `http_request`, `python_exec`, `node_exec`).
+- **Tool-specific options**: Enable the underlying capability (e.g., `FileSystem:Enabled`, `HttpTool:Enabled`, `CodeExecution:Enabled`).
+
+Code execution tools run local OS processes and are a **constrained execution feature**, not a hardened security boundary.
+For stronger isolation, run the Host in a container/VM and restrict the sandbox directory.
 
 ### Permission Model
 
@@ -94,27 +114,18 @@ Add the `ToolPermissions` section to `appsettings.json`:
 // Inject ToolAuthorizationService
 private readonly IToolAuthorizationService _authService;
 
-public async Task<ToolResult> ExecuteToolAsync(
-    string agentId, 
-    string agentName, 
-    AgentRank agentRank, 
-    string toolName)
+public void AuthorizeOrThrow(string agentId, string agentName, AgentRank agentRank, string toolName)
 {
-    if (!await _authService.IsAuthorizedAsync(agentId, agentName, agentRank, toolName))
+    var result = _authService.IsAuthorized(agentId, agentName, agentRank, toolName);
+
+    if (!result.IsAuthorized)
     {
         _logger.LogWarning(
-            "Agent {AgentId} ({Rank}) denied access to tool {Tool}",
-            agentId, agentRank, toolName);
-            
-        return new ToolResult 
-        { 
-            Success = false, 
-            Output = "Access denied: Insufficient permissions" 
-        };
+            "Agent {AgentId} ({Rank}) denied access to tool {Tool}: {Reason}",
+            agentId, agentRank, toolName, result.Reason);
+
+        throw new UnauthorizedAccessException(result.Reason);
     }
-    
-    // Proceed with tool execution
-    return await _tool.ExecuteAsync(parameters, ct);
 }
 ```
 
@@ -178,36 +189,26 @@ The AgentLearningService stores performance metrics in shared memory:
 }
 ```
 
----
-   └─ Not blacklisted → Continue
-
-5. Check WhitelistedAgents (if populated)
-   ├─ List is empty → ALLOW
-   ├─ Agent in whitelist → ALLOW
-   └─ Agent not in whitelist → DENY
-```
-
 ### Usage in Code
 
-The authorization service is automatically integrated. To manually check:
+The authorization service is automatically integrated into the tool execution pipeline.
+If you have a custom integration point and want to manually check:
 
 ```csharp
 public class MyService
 {
-    private readonly ToolAuthorizationService _authService;
+  private readonly IToolAuthorizationService _authService;
 
-    public async Task ExecuteToolAsync(string agentId, string agentName, AgentRank rank, string toolName)
+  public void AuthorizeOrThrow(string agentId, string agentName, AgentRank rank, string toolName)
+  {
+    var authResult = _authService.IsAuthorized(agentId, agentName, rank, toolName);
+
+    if (!authResult.IsAuthorized)
     {
-        var authResult = _authService.IsAuthorized(agentId, agentName, rank, toolName);
-        
-        if (!authResult.IsAuthorized)
-        {
-            _logger.LogWarning("Authorization denied: {Reason}", authResult.Reason);
-            throw new UnauthorizedAccessException(authResult.Reason);
-        }
-
-        // Execute tool...
+      _logger.LogWarning("Authorization denied: {Reason}", authResult.Reason);
+      throw new UnauthorizedAccessException(authResult.Reason);
     }
+  }
 }
 ```
 

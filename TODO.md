@@ -65,12 +65,9 @@
 _No additional Memory & Learning backlog items currently tracked here._
 
 ### Tool Ecosystem
-- [ ] **Code execution tools** - Sandboxed Python/Node.js execution
 - [ ] **API integration tools** - GraphQL-first client + auth helpers (REST covered by `http_request`)
 - [ ] **Database query tools** - SQL query execution (read-only)
-- [ ] **Notification tools** - Email
 - [ ] **Audio transcription** - Whisper.cpp integration
-- [ ] **Tool marketplace** - Hot-load tools from external assemblies
 
 ### Agent Capabilities
 - [ ] **Agent migration** - Move agents between hosts

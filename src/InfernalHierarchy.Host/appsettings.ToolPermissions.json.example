@@ -53,6 +53,18 @@
       "AllowedRanks": "Supreme,Prince,Duke",
       "WhitelistedAgents": [],
       "BlacklistedAgents": []
+    },
+    "python_exec": {
+      "Enabled": false,
+      "AllowedRanks": "Supreme,Prince,Duke",
+      "WhitelistedAgents": [],
+      "BlacklistedAgents": []
+    },
+    "node_exec": {
+      "Enabled": false,
+      "AllowedRanks": "Supreme,Prince,Duke",
+      "WhitelistedAgents": [],
+      "BlacklistedAgents": []
     }
   }
 }

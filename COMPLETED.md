@@ -89,8 +89,12 @@
   - `fs_read`, `fs_write`, `fs_search` with sandbox root + extension allowlist + size limits
 - **Allowlisted HTTP tool**
   - `http_request` with scheme/host/method allowlists, timeouts, and max response size
+- **Constrained code execution tools**
+  - `python_exec`, `node_exec` with sandboxed working directory + timeouts + output limits
 - **Authorization enforced at execution-time**
   - Tool permissions are checked inside the tool execution pipeline (single choke point), with agent name propagated for allow/deny rules
+- **Tool marketplace (hot-load tools)**
+  - `ToolMarketplaceHostedService` loads allowlisted plugin DLLs from a directory and registers discovered `ITool` implementations at runtime
 
 ### Observability & Monitoring ✅
 - **DistributedTracing**: OpenTelemetry Activity-based tracing

@@ -1,0 +1,19 @@
+{
+  "ToolMarketplace": {
+    "Enabled": false,
+
+    // Folder containing plugin DLLs (relative paths are resolved against Host content root)
+    "PluginsDirectory": "plugins",
+
+    // Allowlist of plugin DLL file names to load from PluginsDirectory
+    "AllowedPluginFiles": [
+      "InfernalHierarchy.ExamplePlugin.dll"
+    ],
+
+    // File size guardrail
+    "MaxPluginBytes": 20971520,
+
+    // Hot-load polling interval
+    "RescanIntervalSeconds": 10
+  }
+}

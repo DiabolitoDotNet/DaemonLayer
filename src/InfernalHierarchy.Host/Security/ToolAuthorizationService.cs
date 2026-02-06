@@ -203,6 +203,20 @@ public class ToolAuthorizationService : IToolAuthorizationService
                 AllowedRanks = new() { AgentRank.Supreme, AgentRank.Prince, AgentRank.Duke },
                 WhitelistedAgents = new(),
                 BlacklistedAgents = new()
+            },
+            ["python_exec"] = new()
+            {
+                Enabled = false,
+                AllowedRanks = new() { AgentRank.Supreme, AgentRank.Prince, AgentRank.Duke },
+                WhitelistedAgents = new(),
+                BlacklistedAgents = new()
+            },
+            ["node_exec"] = new()
+            {
+                Enabled = false,
+                AllowedRanks = new() { AgentRank.Supreme, AgentRank.Prince, AgentRank.Duke },
+                WhitelistedAgents = new(),
+                BlacklistedAgents = new()
             }
         };
     }
