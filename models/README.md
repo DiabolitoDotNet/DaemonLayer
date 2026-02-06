@@ -131,6 +131,20 @@ dotnet run --project src/InfernalHierarchy.Host
 # Check logs for:
 # ✅ Loaded ONNX model from ./models/sentence-transformers/model.onnx
 # ✅ Loaded tokenizer from ./models/sentence-transformers/tokenizer.json
+
+# Or check readiness details:
+curl http://localhost:5080/health/ready
+
+# Look for:
+# checks.onnx_embeddings.status == "Healthy"
+# checks.onnx_embeddings.data.using_fallback == false
+
+## Tokenizer formats
+
+`TokenizerPath` supports:
+
+- `tokenizer.json` (Hugging Face tokenizer export, WordPiece)
+- `vocab.txt` (one token per line)
 ```
 
 ## Performance Notes

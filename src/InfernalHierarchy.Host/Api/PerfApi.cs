@@ -3,6 +3,7 @@ using InfernalHierarchy.Host.Observability;
 using InfernalHierarchy.Host.Security;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Options;
 using System.Collections.Generic;
 
 namespace InfernalHierarchy.Host.Api;
@@ -96,6 +97,83 @@ internal static class PerfApi
 
             var items = store.GetRecentTraces(limit ?? 50);
             return Results.Ok(new { items });
+        });
+
+        app.MapGet("/api/perf/trace-capture", (HttpContext ctx, ITraceCaptureStore store, IOptions<TraceCaptureOptions> options) =>
+        {
+            var forbid = LocalOnlyGuard.ForbidIfNotLoopback(ctx, uiOptions.LocalOnly);
+            if (forbid is not null)
+            {
+                return forbid;
+            }
+
+            var stats = store.GetStats();
+            var o = options.Value;
+            return Results.Ok(new
+            {
+                enabled = o.Enabled,
+                maxTraces = o.MaxTraces,
+                maxSpansPerTrace = o.MaxSpansPerTrace,
+                maxTagsPerSpan = o.MaxTagsPerSpan,
+                tracesStored = stats.TraceCount,
+                spansStored = stats.SpanCount,
+            });
+        });
+
+        app.MapGet("/api/perf/request-profiling", (HttpContext ctx, IHttpRequestProfilingStore store, IOptions<PerfRequestProfilingOptions> options) =>
+        {
+            var forbid = LocalOnlyGuard.ForbidIfNotLoopback(ctx, uiOptions.LocalOnly);
+            if (forbid is not null)
+            {
+                return forbid;
+            }
+
+            var o = options.Value;
+            var stats = store.GetStats();
+            return Results.Ok(new
+            {
+                enabled = o.Enabled,
+                maxRecords = o.MaxRecords,
+                retentionMinutes = o.RetentionMinutes,
+                includeUiRequests = o.IncludeUiRequests,
+                requestsStored = stats.RequestCount,
+            });
+        });
+
+        app.MapGet("/api/perf/requests", (HttpContext ctx, IHttpRequestProfilingStore store, int? limit) =>
+        {
+            var forbid = LocalOnlyGuard.ForbidIfNotLoopback(ctx, uiOptions.LocalOnly);
+            if (forbid is not null)
+            {
+                return forbid;
+            }
+
+            var items = store.GetRecent(limit ?? 50);
+            return Results.Ok(new { items });
+        });
+
+        app.MapGet("/api/perf/requests/{id}", (HttpContext ctx, IHttpRequestProfilingStore store, string id) =>
+        {
+            var forbid = LocalOnlyGuard.ForbidIfNotLoopback(ctx, uiOptions.LocalOnly);
+            if (forbid is not null)
+            {
+                return forbid;
+            }
+
+            var item = store.GetById(id);
+            return item is null ? Results.NotFound() : Results.Ok(item);
+        });
+
+        app.MapPost("/api/perf/requests/clear", (HttpContext ctx, IHttpRequestProfilingStore store) =>
+        {
+            var forbid = LocalOnlyGuard.ForbidIfNotLoopback(ctx, uiOptions.LocalOnly);
+            if (forbid is not null)
+            {
+                return forbid;
+            }
+
+            store.Clear();
+            return Results.Ok(new { cleared = true });
         });
 
         app.MapGet("/api/perf/traces/{traceId}", (HttpContext ctx, ITraceCaptureStore store, string traceId) =>
@@ -199,6 +277,18 @@ internal static class PerfApi
 
             var json = store.ExportTraceJson(traceId);
             return Results.Text(json, "application/json; charset=utf-8");
+        });
+
+        app.MapPost("/api/perf/traces/clear", (HttpContext ctx, ITraceCaptureStore store) =>
+        {
+            var forbid = LocalOnlyGuard.ForbidIfNotLoopback(ctx, uiOptions.LocalOnly);
+            if (forbid is not null)
+            {
+                return forbid;
+            }
+
+            store.Clear();
+            return Results.Ok(new { cleared = true });
         });
     }
 

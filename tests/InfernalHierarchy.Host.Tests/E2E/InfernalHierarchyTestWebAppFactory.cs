@@ -9,7 +9,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace InfernalHierarchy.Host.Tests.E2E;
 
-public sealed class InfernalHierarchyTestWebAppFactory : WebApplicationFactory<Program>
+public class InfernalHierarchyTestWebAppFactory : WebApplicationFactory<Program>
 {
     public string TempDbPath { get; } = Path.Combine(Path.GetTempPath(), $"infernal_e2e_{Guid.NewGuid():N}.db");
     public string TempSoulsDir { get; } = Path.Combine(Path.GetTempPath(), $"infernal_souls_{Guid.NewGuid():N}");

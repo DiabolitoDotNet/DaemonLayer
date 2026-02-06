@@ -49,8 +49,10 @@ public class VectorMemoryServiceLiveQdrantTests
                 Options.Create(new OnnxEmbeddingOptions
                 {
                     Enabled = true,
-                    ModelPath = "./does-not-exist.onnx",
-                    TokenizerPath = "./does-not-exist.tokenizer.json",
+                    ModelPath = Environment.GetEnvironmentVariable("INFERNAL_ONNX_MODEL_PATH")?.Trim()
+                        ?? "./models/sentence-transformers/model.onnx",
+                    TokenizerPath = Environment.GetEnvironmentVariable("INFERNAL_ONNX_TOKENIZER_PATH")?.Trim()
+                        ?? "./models/sentence-transformers/tokenizer.json",
                     EmbeddingDimension = 384,
                     MaxSequenceLength = 128,
                 }),
@@ -64,6 +66,13 @@ public class VectorMemoryServiceLiveQdrantTests
                 NullLogger<VectorMemoryService>.Instance);
 
             await sut.InitializeCollectionAsync();
+
+            var probe = await embeddingService.ProbeAsync();
+            var hasAssets = File.Exists(probe.ModelPath) && File.Exists(probe.TokenizerPath);
+            if (hasAssets)
+            {
+                probe.UsingFallback.Should().BeFalse("model/tokenizer assets exist and should load for the live test");
+            }
 
             var text = "The InfernalHierarchy vector memory roundtrip test.";
 
@@ -80,7 +89,7 @@ public class VectorMemoryServiceLiveQdrantTests
 
             await sut.IndexFactAsync(fact);
 
-            // Query with same text so deterministic fallback embeddings match closely.
+            // Query with the same text: works for both ONNX embeddings and fallback embeddings.
             var results = await sut.SearchSimilarVisibleFactsAsync(
                 query: text,
                 requestingAgentId: "lucifer",

@@ -18,6 +18,8 @@ internal static partial class DashboardAssets
 :root { --bg:#0b0f14; --card:#121826; --text:#e7eefc; --muted:#a9b4c7; --accent:#7aa2ff; --border:#253046; }
 * { box-sizing: border-box; }
 body { margin:0; font-family: ui-sans-serif, system-ui, Segoe UI, Roboto, Arial; background:var(--bg); color:var(--text); }
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
 header { padding:16px 20px; border-bottom:1px solid var(--border); background:rgba(18,24,38,.6); position:sticky; top:0; backdrop-filter: blur(8px); }
 h1 { margin:0; font-size:18px; }
 .sub { color:var(--muted); font-size:12px; margin-top:4px; }
@@ -44,6 +46,7 @@ audio { width: 100%; margin-top: 8px; }
   .list { display:flex; flex-direction: column; gap: 6px; max-height: 520px; overflow:auto; }
   .listItem { padding:10px; border:1px solid var(--border); border-radius:10px; background:#0f1420; cursor:pointer; }
   .listItem:hover { border-color: var(--accent); }
+  .listItem.selected { outline: 1px solid rgba(122,162,255,.35); background: rgba(122,162,255,.06); }
   textarea#personaJson { min-height: 420px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
   .charts { display:grid; gap:12px; margin-bottom:10px; }
   .chart { border: 1px solid var(--border); border-radius: 10px; padding: 10px; background: #0a0e16; }
@@ -242,10 +245,24 @@ const perfHttpTable = qs('perfHttpTable');
 const perfSpanTable = qs('perfSpanTable');
 const perfChartMem = qs('perfChartMem');
 const perfChartCpu = qs('perfChartCpu');
+const perfReqProfiling = qs('perfReqProfiling');
+const perfReqRefresh = qs('perfReqRefresh');
+const perfReqClear = qs('perfReqClear');
+const perfReqStats = qs('perfReqStats');
+const perfReqList = qs('perfReqList');
+const perfReqDetail = qs('perfReqDetail');
 const perfTraceRefresh = qs('perfTraceRefresh');
+const perfTraceAuto = qs('perfTraceAuto');
+const perfTraceAutoSec = qs('perfTraceAutoSec');
+const perfTraceClear = qs('perfTraceClear');
 const perfTraceDownload = qs('perfTraceDownload');
+const perfTraceCapture = qs('perfTraceCapture');
 const perfTraceSelected = qs('perfTraceSelected');
 const perfTraceCritical = qs('perfTraceCritical');
+const perfTraceListFilter = qs('perfTraceListFilter');
+const perfTraceListMinMs = qs('perfTraceListMinMs');
+const perfTraceListErrorsOnly = qs('perfTraceListErrorsOnly');
+const perfTraceListSort = qs('perfTraceListSort');
 const perfTraceList = qs('perfTraceList');
 const perfTraceDetail = qs('perfTraceDetail');
 const perfTraceSummary = qs('perfTraceSummary');
@@ -268,6 +285,10 @@ let perfTraceCollapsed = new Set();
 let perfTraceCriticalIds = new Set();
 let perfSpanById = new Map();
 let perfWaterfallScroll = 0;
+let perfTraceAutoTimer = null;
+let perfTraceListItemsRaw = [];
+let perfReqProfilingEnabled = false;
+let perfReqItemsRaw = [];
 
 function formatNum(n) {
   if (n === null || n === undefined || Number.isNaN(n)) return '-';
@@ -450,7 +471,11 @@ async function refreshPerf() {
     if (!perfTracesInitialized) {
       perfTracesInitialized = true;
       await refreshPerfTraces();
+      await refreshPerfRequests();
     }
+
+    // Best-effort init (safe if disabled).
+    await refreshRequestProfilingStatus();
 
     if (perfUpdated) perfUpdated.textContent = `updated ${new Date().toLocaleTimeString()}`;
   } catch (e) {
@@ -458,24 +483,334 @@ async function refreshPerf() {
   }
 }
 
+async function refreshRequestProfilingStatus() {
+  if (!perfReqProfiling) return;
+
+  try {
+    const res = await fetch('/api/perf/request-profiling');
+    if (!res.ok) {
+      perfReqProfiling.textContent = '';
+      perfReqProfilingEnabled = false;
+      return;
+    }
+
+    const json = await res.json();
+    perfReqProfilingEnabled = !!(json && json.enabled);
+
+    if (!perfReqProfilingEnabled) {
+      perfReqProfiling.textContent = 'request profiling: off';
+      return;
+    }
+
+    const count = (json && typeof json.requestsStored === 'number') ? json.requestsStored : 0;
+    perfReqProfiling.textContent = `request profiling: on (${count})`;
+  } catch {
+    perfReqProfiling.textContent = '';
+    perfReqProfilingEnabled = false;
+  }
+}
+
+function renderPerfRequests() {
+  if (!perfReqList) return;
+  perfReqList.textContent = '';
+
+  const items = perfReqItemsRaw || [];
+  if (perfReqStats) perfReqStats.textContent = items.length ? `${items.length} shown` : '';
+
+  if (!items || items.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'pill';
+    empty.textContent = perfReqProfilingEnabled ? 'No request profiles yet.' : 'Request profiling is disabled.';
+    perfReqList.appendChild(empty);
+    return;
+  }
+
+  for (const r of items) {
+    const div = document.createElement('div');
+    div.className = 'listItem';
+    const dur = formatNum(r.durationMs);
+    const method = (r.method || '').toUpperCase();
+    const status = r.statusCode || 0;
+    const route = r.routeTemplate || '';
+    const path = r.path || '';
+    const traceId = r.traceId || '';
+    const title = route ? route : path;
+
+    const traceLink = traceId ? `<a href="#" data-trace="${traceId}" class="mono">trace</a>` : '';
+    div.innerHTML = `<span class="mono">${dur}ms</span> | <span class="mono">${method}</span> ${status} — ${title} ${traceLink ? ' | ' + traceLink : ''}`;
+
+    div.onclick = async () => {
+      if (!perfReqDetail) return;
+      perfReqDetail.textContent = 'Loading...';
+      try {
+        const detail = await fetch(`/api/perf/requests/${encodeURIComponent(r.id)}`).then(x => x.json());
+        perfReqDetail.textContent = pretty(detail);
+      } catch (e) {
+        perfReqDetail.textContent = String(e);
+      }
+    };
+
+    const a = div.querySelector('a[data-trace]');
+    if (a) {
+      a.onclick = async (evt) => {
+        evt.preventDefault();
+        evt.stopPropagation();
+        const tid = a.getAttribute('data-trace') || '';
+        if (!tid) return;
+        await selectPerfTraceById(tid);
+      };
+    }
+
+    perfReqList.appendChild(div);
+  }
+}
+
+async function refreshPerfRequests() {
+  if (!perfReqList) return;
+  perfReqItemsRaw = [];
+  renderPerfRequests();
+
+  try {
+    const json = await fetch('/api/perf/requests?limit=50').then(r => r.json());
+    perfReqItemsRaw = (json && json.items) ? json.items : [];
+  } catch {
+    perfReqItemsRaw = [];
+  }
+
+  await refreshRequestProfilingStatus();
+  renderPerfRequests();
+}
+
+async function clearPerfRequests() {
+  const yes = confirm('Clear recent request profiles?');
+  if (!yes) return;
+  try {
+    await fetch('/api/perf/requests/clear', { method: 'POST' });
+  } catch {
+  }
+  perfReqItemsRaw = [];
+  if (perfReqDetail) perfReqDetail.textContent = '';
+  await refreshPerfRequests();
+}
+
+async function selectPerfTraceById(traceId) {
+  if (!traceId) return;
+  perfSelectedTraceId = traceId;
+  perfSelectedSpanId = '';
+  if (perfTraceSelected) perfTraceSelected.textContent = `selected: ${traceId}`;
+  if (perfTraceDownload) perfTraceDownload.disabled = false;
+  renderPerfTraceList();
+  await loadPerfTraceDetail(traceId);
+  await loadPerfTraceTree(traceId);
+}
+
 if (perfRefresh) perfRefresh.onclick = refreshPerf;
-if (perfTraceRefresh) perfTraceRefresh.onclick = () => refreshPerfTraces();
+if (perfReqRefresh) perfReqRefresh.onclick = () => refreshPerfRequests();
+if (perfReqClear) perfReqClear.onclick = () => clearPerfRequests();
+if (perfTraceRefresh) perfTraceRefresh.onclick = () => refreshPerfTraces(true);
 if (perfTraceDownload) perfTraceDownload.onclick = () => downloadSelectedTrace();
+if (perfTraceClear) perfTraceClear.onclick = () => clearPerfTraces();
+if (perfTraceAuto) perfTraceAuto.onchange = () => updatePerfTraceAutoRefresh();
+if (perfTraceAutoSec) perfTraceAutoSec.onchange = () => updatePerfTraceAutoRefresh();
+if (perfTraceListFilter) perfTraceListFilter.oninput = () => renderPerfTraceList();
+if (perfTraceListMinMs) perfTraceListMinMs.oninput = () => renderPerfTraceList();
+if (perfTraceListErrorsOnly) perfTraceListErrorsOnly.onchange = () => renderPerfTraceList();
+if (perfTraceListSort) perfTraceListSort.onchange = () => renderPerfTraceList();
 if (perfTraceFilter) perfTraceFilter.oninput = () => renderPerfTraceViews();
 if (perfTraceErrorsOnly) perfTraceErrorsOnly.onchange = () => renderPerfTraceViews();
 if (perfTraceHighlightCritical) perfTraceHighlightCritical.onchange = () => renderPerfTraceViews();
 if (perfTraceCollapseAll) perfTraceCollapseAll.onclick = () => collapseAllTraceNodes();
 if (perfTraceExpandAll) perfTraceExpandAll.onclick = () => expandAllTraceNodes();
 
-async function refreshPerfTraces() {
+async function refreshTraceCaptureStatus() {
+  if (!perfTraceCapture) return;
+  try {
+    const json = await fetch('/api/perf/trace-capture').then(r => r.json());
+    const enabled = !!json.enabled;
+    const traces = json.tracesStored || 0;
+    const spans = json.spansStored || 0;
+    perfTraceCapture.textContent = enabled
+      ? `capture: on | traces=${traces} spans=${spans}`
+      : 'capture: off';
+  } catch {
+    perfTraceCapture.textContent = '';
+  }
+}
+
+function updatePerfTraceAutoRefresh() {
+  if (perfTraceAutoTimer) {
+    clearInterval(perfTraceAutoTimer);
+    perfTraceAutoTimer = null;
+  }
+
+  const enabled = !!(perfTraceAuto && perfTraceAuto.checked);
+  if (!enabled) return;
+
+  const sec = Math.max(1, parseInt((perfTraceAutoSec && perfTraceAutoSec.value) || '5', 10) || 5);
+  perfTraceAutoTimer = setInterval(() => {
+    refreshPerfTraces(true);
+  }, sec * 1000);
+}
+
+function traceListQuery() {
+  return ((perfTraceListFilter && perfTraceListFilter.value) || '').trim().toLowerCase();
+}
+
+function traceListMinMs() {
+  const raw = ((perfTraceListMinMs && perfTraceListMinMs.value) || '').trim();
+  if (!raw) return 0;
+  const n = parseFloat(raw);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
+function traceListSortKey() {
+  return ((perfTraceListSort && perfTraceListSort.value) || 'start_desc').trim();
+}
+
+function matchesTrace(t, q, minMs, errorsOnly) {
+  if (!t) return false;
+  if (errorsOnly && !(t.errorCount > 0)) return false;
+  if (minMs > 0 && !((t.durationMs || 0) >= minMs)) return false;
+  if (!q) return true;
+  const s = `${t.traceId || ''} ${t.rootSpanName || ''}`.toLowerCase();
+  return s.includes(q);
+}
+
+function renderPerfTraceList() {
   if (!perfTraceList) return;
   perfTraceList.textContent = '';
-  if (perfTraceDetail) perfTraceDetail.textContent = '';
-  if (perfTraceSummary) perfTraceSummary.textContent = '';
-  if (perfSpanDetail) perfSpanDetail.textContent = '';
-  if (perfTraceTree) perfTraceTree.textContent = '';
-  if (perfTraceSelected) perfTraceSelected.textContent = '';
-  if (perfTraceCritical) perfTraceCritical.textContent = '';
+
+  const q = traceListQuery();
+  const minMs = traceListMinMs();
+  const errorsOnly = !!(perfTraceListErrorsOnly && perfTraceListErrorsOnly.checked);
+  const sort = traceListSortKey();
+
+  let items = (perfTraceListItemsRaw || []).filter(t => matchesTrace(t, q, minMs, errorsOnly));
+  if (sort === 'duration_desc') {
+    items = items.slice().sort((a, b) => ((b.durationMs || 0) - (a.durationMs || 0)) || ((b.errorCount || 0) - (a.errorCount || 0)));
+  } else if (sort === 'errors_desc') {
+    items = items.slice().sort((a, b) => ((b.errorCount || 0) - (a.errorCount || 0)) || ((b.durationMs || 0) - (a.durationMs || 0)));
+  } else {
+    // Default is newest-first; the API already returns newest-first.
+  }
+
+  if (!items || items.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'pill';
+    empty.textContent = 'No traces match the current filter.';
+    perfTraceList.appendChild(empty);
+    return;
+  }
+
+  for (const t of items) {
+    const div = document.createElement('div');
+    const isSelected = !!(perfSelectedTraceId && t.traceId === perfSelectedTraceId);
+    div.className = `listItem${isSelected ? ' selected' : ''}`;
+    const err = (t.errorCount || 0);
+    const badge = err > 0 ? ` | errors=${err}` : '';
+    div.innerHTML = `<span class="mono">${t.traceId}</span> — ${t.rootSpanName || '(root)'} | ${formatNum(t.durationMs)}ms | spans=${t.spanCount}${badge}`;
+    div.onclick = async () => {
+      perfSelectedTraceId = t.traceId;
+      perfSelectedSpanId = '';
+      if (perfTraceSelected) perfTraceSelected.textContent = `selected: ${t.traceId}`;
+      if (perfTraceDownload) perfTraceDownload.disabled = false;
+      renderPerfTraceList();
+      await loadPerfTraceDetail(t.traceId);
+      await loadPerfTraceTree(t.traceId);
+    };
+    perfTraceList.appendChild(div);
+  }
+}
+
+async function refreshPerfTraces(keepSelection) {
+  if (!perfTraceList) return;
+  perfTraceList.textContent = '';
+
+  const prevTraceId = perfSelectedTraceId;
+  const keep = !!keepSelection && !!prevTraceId;
+  if (!keep) {
+    if (perfTraceDetail) perfTraceDetail.textContent = '';
+    if (perfTraceSummary) perfTraceSummary.textContent = '';
+    if (perfSpanDetail) perfSpanDetail.textContent = '';
+    if (perfTraceTree) perfTraceTree.textContent = '';
+    if (perfTraceSelected) perfTraceSelected.textContent = '';
+    if (perfTraceCritical) perfTraceCritical.textContent = '';
+    perfSelectedTraceId = '';
+    perfSelectedSpanId = '';
+    perfTraceTreeJson = null;
+    perfTraceCollapsed = new Set();
+    perfTraceCriticalIds = new Set();
+    perfSpanById = new Map();
+    perfWaterfallScroll = 0;
+    if (perfTraceDownload) perfTraceDownload.disabled = true;
+  }
+
+  perfTraceListItemsRaw = [];
+
+  try {
+    const json = await fetch('/api/perf/traces?limit=30').then(r => r.json());
+    const items = (json && json.items) ? json.items : [];
+    perfTraceListItemsRaw = items;
+    await refreshTraceCaptureStatus();
+
+    if (!items || items.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'pill';
+      empty.textContent = 'No traces captured yet.';
+      perfTraceList.appendChild(empty);
+
+      if (perfTraceDownload) perfTraceDownload.disabled = true;
+      if (perfTraceSelected) perfTraceSelected.textContent = '';
+      if (perfTraceCritical) perfTraceCritical.textContent = '';
+      return;
+    }
+
+    // If we kept selection, ensure the selected trace still exists.
+    if (keep) {
+      const stillThere = items.some(t => t && t.traceId === prevTraceId);
+      if (!stillThere) {
+        perfSelectedTraceId = '';
+        perfSelectedSpanId = '';
+        perfTraceTreeJson = null;
+        perfTraceCollapsed = new Set();
+        perfTraceCriticalIds = new Set();
+        perfSpanById = new Map();
+        perfWaterfallScroll = 0;
+        if (perfTraceDownload) perfTraceDownload.disabled = true;
+        if (perfTraceDetail) perfTraceDetail.textContent = '';
+        if (perfTraceSummary) perfTraceSummary.textContent = '';
+        if (perfSpanDetail) perfSpanDetail.textContent = '';
+        if (perfTraceTree) perfTraceTree.textContent = '';
+        if (perfTraceSelected) perfTraceSelected.textContent = '';
+        if (perfTraceCritical) perfTraceCritical.textContent = '';
+      }
+    }
+
+    renderPerfTraceList();
+    updatePerfTraceAutoRefresh();
+  } catch (e) {
+    const err = document.createElement('div');
+    err.className = 'pill';
+    err.textContent = `Error loading traces: ${String(e)}`;
+    perfTraceList.appendChild(err);
+  }
+}
+
+async function clearPerfTraces() {
+  const yes = confirm('Clear all captured traces?');
+  if (!yes) return;
+  try {
+    const res = await fetch('/api/perf/traces/clear', { method: 'POST' });
+    if (!res.ok) {
+      append(perfTraceDetail, `[trace] clear failed: ${res.status}`);
+      return;
+    }
+  } catch (e) {
+    append(perfTraceDetail, `[trace] clear error: ${String(e)}`);
+    return;
+  }
+
+  // Hard reset after a clear.
   perfSelectedTraceId = '';
   perfSelectedSpanId = '';
   perfTraceTreeJson = null;
@@ -484,37 +819,14 @@ async function refreshPerfTraces() {
   perfSpanById = new Map();
   perfWaterfallScroll = 0;
   if (perfTraceDownload) perfTraceDownload.disabled = true;
+  if (perfTraceDetail) perfTraceDetail.textContent = '';
+  if (perfTraceSummary) perfTraceSummary.textContent = '';
+  if (perfSpanDetail) perfSpanDetail.textContent = '';
+  if (perfTraceTree) perfTraceTree.textContent = '';
+  if (perfTraceSelected) perfTraceSelected.textContent = '';
+  if (perfTraceCritical) perfTraceCritical.textContent = '';
 
-  try {
-    const json = await fetch('/api/perf/traces?limit=30').then(r => r.json());
-    const items = (json && json.items) ? json.items : [];
-    if (!items || items.length === 0) {
-      const empty = document.createElement('div');
-      empty.className = 'pill';
-      empty.textContent = 'No traces captured yet.';
-      perfTraceList.appendChild(empty);
-      return;
-    }
-
-    for (const t of items) {
-      const div = document.createElement('div');
-      div.className = 'listItem';
-      div.innerHTML = `<span class="mono">${t.traceId}</span> — ${t.rootSpanName || '(root)'} | ${formatNum(t.durationMs)}ms | spans=${t.spanCount} errors=${t.errorCount}`;
-      div.onclick = async () => {
-        perfSelectedTraceId = t.traceId;
-        if (perfTraceSelected) perfTraceSelected.textContent = `selected: ${t.traceId}`;
-        if (perfTraceDownload) perfTraceDownload.disabled = false;
-        await loadPerfTraceDetail(t.traceId);
-        await loadPerfTraceTree(t.traceId);
-      };
-      perfTraceList.appendChild(div);
-    }
-  } catch (e) {
-    const err = document.createElement('div');
-    err.className = 'pill';
-    err.textContent = `Error loading traces: ${String(e)}`;
-    perfTraceList.appendChild(err);
-  }
+  await refreshPerfTraces(false);
 }
 
 async function loadPerfTraceDetail(traceId) {
@@ -638,6 +950,23 @@ function renderPerfTraceViews() {
   tryRenderSelectedSpanDetails();
 }
 
+function ensureSelectedSpanVisibleInWaterfall() {
+  if (!perfTraceWaterfall) return;
+  if (!perfTraceTreeJson || !perfTraceTreeJson.roots) return;
+  if (!perfSelectedSpanId) return;
+
+  const roots = getFilteredRootsForWaterfall();
+  const rows = flattenForWaterfall(roots);
+  const idx = rows.findIndex(r => r && r.node && r.node.spanId === perfSelectedSpanId);
+  if (idx < 0) return;
+
+  const topPad = 18;
+  const rowH = 14;
+  const visibleRows = Math.max(1, Math.floor((perfTraceWaterfall.height - topPad - 6) / rowH));
+  if (idx < perfWaterfallScroll) perfWaterfallScroll = idx;
+  else if (idx >= perfWaterfallScroll + visibleRows) perfWaterfallScroll = Math.max(0, idx - visibleRows + 1);
+}
+
 function renderPerfTraceTree() {
   if (!perfTraceTree) return;
   perfTraceTree.textContent = '';
@@ -698,6 +1027,7 @@ function renderPerfTraceTree() {
     // Click row to select span; click twisty to collapse/expand.
     row.onclick = () => {
       perfSelectedSpanId = node.spanId;
+      ensureSelectedSpanVisibleInWaterfall();
       renderPerfTraceViews();
     };
     if (hasKids && collapseEnabled) {
@@ -724,6 +1054,13 @@ function renderPerfTraceTree() {
 
   for (const r of filteredRoots) {
     renderNode(r, perfTraceTree);
+  }
+
+  // Keep selection in view.
+  try {
+    const sel = perfTraceTree.querySelector('.traceNode.selected');
+    if (sel && sel.scrollIntoView) sel.scrollIntoView({ block: 'nearest' });
+  } catch {
   }
 }
 

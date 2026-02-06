@@ -67,6 +67,14 @@ curl http://localhost:6333/collections
 
 **Tip**: The repo also ships a full-stack compose including the Host + Qdrant + SearXNG in `docker-compose.yml`.
 
+**Ready check** (after starting the Host):
+
+```bash
+curl http://localhost:5080/health/ready
+```
+
+Look for `qdrant` to be `Healthy`.
+
 ---
 
 ### 4️⃣ **Enable Advanced Features** (OPTIONAL)
@@ -116,6 +124,38 @@ For higher-quality semantic search, enable ONNX embeddings and ensure model asse
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.onnx.yml up -d
 ```
+
+**What “good” looks like**:
+
+- `GET /health/ready` includes an `onnx_embeddings` check with:
+  - `status: Healthy`
+  - `data.using_fallback: false`
+
+If model/tokenizer files are present but the runtime fails to initialize, the check returns `Degraded` with `data.status: fallback`.
+
+---
+
+### 4️⃣d **(Operator) End-to-end Vector Smoke Test**
+
+For a deterministic end-to-end check (index → search) without relying on LLM behavior, you can enable the operator-only endpoint:
+
+1) Configure an operator key (user-secrets recommended):
+
+```bash
+dotnet user-secrets set "OperatorApi:Enabled" "true" --project src/InfernalHierarchy.Host
+dotnet user-secrets set "OperatorApi:ApiKey" "<random-long-secret>" --project src/InfernalHierarchy.Host
+```
+
+2) Run the smoke test:
+
+```bash
+curl -H "X-Infernal-Operator-Key: <random-long-secret>" \
+  -H "Content-Type: application/json" \
+  -d "{\"content\":\"The capital of France is Paris.\",\"query\":\"What is the capital of France?\"}" \
+  http://localhost:5080/api/ops/vector/smoke
+```
+
+Expected: JSON response with `hits` containing the inserted fact.
 
 ---
 

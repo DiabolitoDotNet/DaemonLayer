@@ -31,6 +31,11 @@
   - Docker container ports 6333 (REST) / 6334 (gRPC)
   - `StoreFactWithVectorAsync`, `SearchSimilarAsync`
   - `InitializeCollectionAsync` auto-create
+- **Vector search operationalization**
+  - ONNX tokenizer loading supported (`tokenizer.json` / `vocab.txt`) and logged on startup
+  - `/health/ready` embeddings check reports loaded vs fallback (`data.using_fallback`)
+  - Operator-only smoke endpoint for deterministic index→search validation: `POST /api/ops/vector/smoke` (gated by `OperatorApi` key)
+  - Live Qdrant test can validate real ONNX embeddings when assets exist (via `INFERNAL_ONNX_*` env vars)
 - **Vector memory abstraction**
   - `IVectorMemory` interface for agents/tools (decouples from Qdrant implementation)
   - Centralized visibility logic via `MemoryVisibilityRules`
@@ -114,6 +119,12 @@
   - APIs: `GET /api/perf/traces`, `GET /api/perf/traces/{traceId}`, `GET /api/perf/traces/{traceId}/download`
 - **Embedded perf UI trace viewer upgrades**
   - Added span selection, trace summary, and a simple waterfall visualization for relative span timing
+  - Added trace list filter/sort, auto-refresh, and server-side trace management endpoints
+    - `GET /api/perf/trace-capture` (capture status + store stats)
+    - `POST /api/perf/traces/clear` (clear captured traces)
+- **In-memory request profiling (MiniProfiler-like)**
+  - Middleware emits `X-Request-Profile-Id` and stores recent request timings for `/ui/perf`
+  - APIs: `GET /api/perf/request-profiling`, `GET /api/perf/requests`, `GET /api/perf/requests/{id}`, `POST /api/perf/requests/clear`
 - **Health Checks**: Ollama, Telegram, LiteDB, Agent hierarchy, Qdrant (vector memory)
 - **Structured Logging**: Serilog enrichers and sinks
 
@@ -192,6 +203,9 @@
 ## ✅ SOLID/DRY Refactors (Feb 6, 2026)
 - Host composition root simplified: extracted Minimal API mappings out of `Program.cs` into dedicated modules (UI, voice, perf, agents, personas, docs, chat, tools, events, metrics), keeping routes/behavior identical.
 - Centralized repeated guards/normalization: added `LoopbackGuard`/`LocalOnlyGuard` for LocalOnly gating and `MetricKeyNormalizer` for low-cardinality route metric keys.
+- ReActAgent SRP refactor (SOLID): moved command/collaboration/decision/event/RAG orchestration behind `IReAct*` services so `ReActAgent` remains a thin orchestrator.
+  - Introduced `IReActTaskProcessor`, `IRagContextEnricher`, and `IAgentEventAppender` (DI-registered), preserving behavior via defaults.
+  - Validated by full solution test run (`dotnet test` in Release): 479/479 passing.
 
 ---
 

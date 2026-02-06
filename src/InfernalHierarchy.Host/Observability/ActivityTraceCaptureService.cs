@@ -48,7 +48,12 @@ internal interface ITraceCaptureStore
     IReadOnlyList<TraceSummaryRecord> GetRecentTraces(int limit);
     TraceDetailRecord? GetTrace(string traceId);
     string ExportTraceJson(string traceId);
+
+    TraceCaptureStoreStats GetStats();
+    void Clear();
 }
+
+internal sealed record TraceCaptureStoreStats(int TraceCount, int SpanCount);
 
 internal sealed class InMemoryTraceCaptureStore : ITraceCaptureStore
 {
@@ -173,6 +178,27 @@ internal sealed class InMemoryTraceCaptureStore : ITraceCaptureStore
         }
 
         return JsonSerializer.Serialize(trace, JsonDefaults.WebIndented);
+    }
+
+    public TraceCaptureStoreStats GetStats()
+    {
+        // Best-effort snapshot. Counts may be slightly inconsistent under concurrent writes.
+        var traceCount = _spansByTrace.Count;
+        var spanCount = 0;
+        foreach (var spans in _spansByTrace.Values)
+        {
+            spanCount += spans.Count;
+        }
+
+        return new TraceCaptureStoreStats(traceCount, spanCount);
+    }
+
+    public void Clear()
+    {
+        _spansByTrace.Clear();
+        while (_traceOrder.TryDequeue(out _))
+        {
+        }
     }
 
     private void TrimIfNeeded()

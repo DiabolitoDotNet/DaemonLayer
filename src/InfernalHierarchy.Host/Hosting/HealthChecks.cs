@@ -136,13 +136,17 @@ public class QdrantHealthCheck : IHealthCheck
 public class OnnxEmbeddingsHealthCheck : IHealthCheck
 {
     private readonly OnnxEmbeddingOptions _options;
+    private readonly InfernalHierarchy.Memory.Embeddings.OnnxEmbeddingService _embeddingService;
 
-    public OnnxEmbeddingsHealthCheck(IOptions<OnnxEmbeddingOptions> options)
+    public OnnxEmbeddingsHealthCheck(
+        IOptions<OnnxEmbeddingOptions> options,
+        InfernalHierarchy.Memory.Embeddings.OnnxEmbeddingService embeddingService)
     {
         _options = options.Value;
+        _embeddingService = embeddingService;
     }
 
-    public Task<HealthCheckResult> CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken = default)
+    public async Task<HealthCheckResult> CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken = default)
     {
         var data = new Dictionary<string, object>
         {
@@ -156,7 +160,7 @@ public class OnnxEmbeddingsHealthCheck : IHealthCheck
         if (!_options.Enabled)
         {
             data["status"] = "disabled";
-            return Task.FromResult(HealthCheckResult.Healthy("ONNX embeddings disabled", data: data));
+            return HealthCheckResult.Healthy("ONNX embeddings disabled", data: data);
         }
 
         var modelExists = !string.IsNullOrWhiteSpace(_options.ModelPath) && File.Exists(_options.ModelPath);
@@ -165,14 +169,33 @@ public class OnnxEmbeddingsHealthCheck : IHealthCheck
         data["model_exists"] = modelExists;
         data["tokenizer_exists"] = tokenizerExists;
 
-        if (modelExists && tokenizerExists)
+        if (!modelExists || !tokenizerExists)
         {
-            data["status"] = "ready";
-            return Task.FromResult(HealthCheckResult.Healthy("ONNX embeddings assets present", data: data));
+            data["status"] = "missing_assets";
+            return HealthCheckResult.Degraded("ONNX embeddings enabled but model/tokenizer assets are missing", data: data);
         }
 
-        data["status"] = "missing_assets";
-        return Task.FromResult(HealthCheckResult.Degraded("ONNX embeddings enabled but model/tokenizer assets are missing", data: data));
+        try
+        {
+            var probe = await _embeddingService.ProbeAsync(cancellationToken).ConfigureAwait(false);
+            data["model_loaded"] = probe.ModelLoaded;
+            data["tokenizer_loaded"] = probe.TokenizerLoaded;
+            data["using_fallback"] = probe.UsingFallback;
+
+            if (probe.ModelLoaded && probe.TokenizerLoaded)
+            {
+                data["status"] = "ready";
+                return HealthCheckResult.Healthy("ONNX embeddings loaded", data: data);
+            }
+
+            data["status"] = "fallback";
+            return HealthCheckResult.Degraded("ONNX embeddings enabled but runtime loaded fallback (model/tokenizer failed to initialize)", data: data);
+        }
+        catch (Exception ex)
+        {
+            data["status"] = "probe_failed";
+            return HealthCheckResult.Degraded("ONNX embeddings probe failed", ex, data);
+        }
     }
 }
 

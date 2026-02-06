@@ -204,13 +204,36 @@ public sealed class OnnxEmbeddingServiceTests
     }
 
     [Fact]
-    public void DefaultOnnxRuntimeFactory_CreateTokenizer_ShouldThrowNotSupported()
+    public void DefaultOnnxRuntimeFactory_CreateTokenizer_WhenTokenizerMissing_ShouldThrowFileNotFoundException()
     {
         var factory = new DefaultOnnxRuntimeFactory();
 
-        var act = () => factory.CreateTokenizer("tokenizer.json");
+        var missing = Path.Combine(Path.GetTempPath(), $"missing_{Guid.NewGuid():N}.tokenizer.json");
+        var act = () => factory.CreateTokenizer(missing);
 
-        act.Should().Throw<NotSupportedException>();
+        act.Should().Throw<FileNotFoundException>();
+    }
+
+    [Fact]
+    public void DefaultOnnxRuntimeFactory_CreateTokenizer_WhenExtensionUnsupported_ShouldThrowNotSupportedException()
+    {
+        var factory = new DefaultOnnxRuntimeFactory();
+        var path = Path.Combine(Path.GetTempPath(), $"tokenizer_{Guid.NewGuid():N}.bin");
+
+        try
+        {
+            File.WriteAllText(path, "stub");
+
+            var act = () => factory.CreateTokenizer(path);
+            act.Should().Throw<NotSupportedException>();
+        }
+        finally
+        {
+            if (File.Exists(path))
+            {
+                File.Delete(path);
+            }
+        }
     }
 
     [Fact]

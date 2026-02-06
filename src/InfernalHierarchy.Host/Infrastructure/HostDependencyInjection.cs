@@ -9,10 +9,13 @@ using Microsoft.Extensions.Options;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
 using Serilog;
+using InfernalHierarchy.Host.Configuration;
 using InfernalHierarchy.Host.Docs;
 using InfernalHierarchy.Host.Migration;
 using InfernalHierarchy.Host.Personas;
+using InfernalHierarchy.Host.Security;
 using InfernalHierarchy.Host.Telegram;
+using InfernalHierarchy.Host.Observability;
 
 namespace InfernalHierarchy.Host.Infrastructure;
 
@@ -107,6 +110,8 @@ internal static class HostDependencyInjection
         builder.Services.AddSingleton<DistributedTracing>();
         builder.Services.AddHostedService<ActivitySpanProfilingService>();
 
+        builder.Services.AddSingleton<IHttpRequestProfilingStore, InMemoryHttpRequestProfilingStore>();
+
         builder.Services.AddSingleton<InMemoryTraceCaptureStore>();
         builder.Services.AddSingleton<ITraceCaptureStore>(sp => sp.GetRequiredService<InMemoryTraceCaptureStore>());
         builder.Services.AddHostedService<ActivityTraceCaptureService>();
@@ -176,6 +181,9 @@ internal static class HostDependencyInjection
         builder.Services.AddSingleton<IReActLoopRunner, DefaultReActLoopRunner>();
         builder.Services.AddSingleton<IReportGenerator>(sp =>
             new DefaultReportGenerator(sp.GetService<TokenUsageTracker>(), sp.GetService<MultiModelLlmClient>()));
+        builder.Services.AddSingleton<IRagContextEnricher, DefaultRagContextEnricher>();
+        builder.Services.AddSingleton<IAgentEventAppender, DefaultAgentEventAppender>();
+        builder.Services.AddSingleton<IReActTaskProcessor, DefaultReActTaskProcessor>();
         builder.Services.AddSingleton<IAgentFactory, AgentFactory>();
     }
 

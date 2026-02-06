@@ -29,6 +29,7 @@ if (httpOptions.Enabled)
     var wsOptions = app.Services.GetRequiredService<IOptions<WebSocketInterfaceOptions>>().Value;
     var voiceOptions = app.Services.GetRequiredService<IOptions<VoiceInterfaceOptions>>().Value;
 
+    HostUsePipeline.UseRequestProfiling(app);
     HostUsePipeline.UseRequestTiming(app);
     HostUsePipeline.UseWebSocketsIfEnabled(app, wsOptions);
     HostMapEndpoints.MapAll(app, uiOptions, voiceOptions, wsOptions);

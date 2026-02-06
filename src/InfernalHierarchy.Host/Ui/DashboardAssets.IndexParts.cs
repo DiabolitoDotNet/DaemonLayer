@@ -97,6 +97,7 @@ internal static partial class DashboardAssets
           <div class="row">
             <button id="perfRefresh">Refresh</button>
             <span id="perfUpdated" class="pill"></span>
+            <span id="perfReqProfiling" class="pill"></span>
           </div>
           <div class="charts">
             <div class="chart">
@@ -138,12 +139,42 @@ internal static partial class DashboardAssets
         </section>
 
         <section class="card">
+          <h2>Recent Requests</h2>
+          <div class="row">
+            <button id="perfReqRefresh">Refresh</button>
+            <button id="perfReqClear" type="button">Clear</button>
+            <span id="perfReqStats" class="pill"></span>
+          </div>
+          <div id="perfReqList" class="list"></div>
+          <pre id="perfReqDetail" class="log small"></pre>
+        </section>
+
+        <section class="card">
           <h2>Recent Traces</h2>
           <div class="row">
             <button id="perfTraceRefresh">Refresh</button>
+            <label class="pill"><input id="perfTraceAuto" type="checkbox" /> auto</label>
+            <select id="perfTraceAutoSec">
+              <option value="2">2s</option>
+              <option value="5" selected>5s</option>
+              <option value="10">10s</option>
+              <option value="30">30s</option>
+            </select>
+            <button id="perfTraceClear" type="button">Clear</button>
             <button id="perfTraceDownload" disabled>Download JSON</button>
+            <span id="perfTraceCapture" class="pill"></span>
             <span id="perfTraceSelected" class="pill"></span>
             <span id="perfTraceCritical" class="pill"></span>
+          </div>
+          <div class="row">
+            <input id="perfTraceListFilter" placeholder="Filter traces (id/root)..." />
+            <input id="perfTraceListMinMs" placeholder="min ms" />
+            <label class="pill"><input id="perfTraceListErrorsOnly" type="checkbox" /> errors only</label>
+            <select id="perfTraceListSort">
+              <option value="start_desc" selected>sort: newest</option>
+              <option value="duration_desc">sort: duration</option>
+              <option value="errors_desc">sort: errors</option>
+            </select>
           </div>
           <div class="row">
             <input id="perfTraceFilter" placeholder="Filter spans (name/tag/value)..." />

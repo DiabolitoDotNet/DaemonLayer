@@ -71,6 +71,18 @@ internal sealed class DocumentationGenerator
         sb.AppendLine("- `GET /api/events?minutes=60` – recent events");
         sb.AppendLine("- `GET /api/perf/snapshot` – runtime snapshot");
         sb.AppendLine("- `GET /api/perf/histograms` – latency histograms snapshot");
+        sb.AppendLine("- `GET /api/perf/http` – per-route HTTP latency (top p95)");
+        sb.AppendLine("- `GET /api/perf/spans` – span latency summaries (top p95)");
+        sb.AppendLine("- `GET /api/perf/traces?limit=50` – recent traces");
+        sb.AppendLine("- `GET /api/perf/traces/{traceId}` – trace detail");
+        sb.AppendLine("- `GET /api/perf/traces/{traceId}/tree` – trace span tree (timing offsets)");
+        sb.AppendLine("- `GET /api/perf/traces/{traceId}/download` – trace JSON download");
+        sb.AppendLine("- `GET /api/perf/trace-capture` – trace capture status + store stats");
+        sb.AppendLine("- `GET /api/perf/request-profiling` – request profiling status + store stats");
+        sb.AppendLine("- `GET /api/perf/requests?limit=50` – recent request profiles");
+        sb.AppendLine("- `GET /api/perf/requests/{id}` – request profile detail");
+        sb.AppendLine("- `POST /api/perf/requests/clear` – clear request profiles");
+        sb.AppendLine("- `POST /api/perf/traces/clear` – clear captured traces");
         sb.AppendLine("- `GET /api/personas` – list persona files");
         sb.AppendLine("- `GET /api/personas/{name}` – load persona JSON");
         sb.AppendLine("- `PUT /api/personas/{name}` – save persona JSON");

@@ -9,6 +9,7 @@ internal static class HostAddOptions
         AddToolOptions(builder);
         AddUiAndInterfaceOptions(builder);
         AddVectorMemoryOptions(builder);
+        AddOperatorApiOptions(builder);
     }
 
     private static void AddAgentAndCoreOptions(WebApplicationBuilder builder)
@@ -88,6 +89,13 @@ internal static class HostAddOptions
             .ValidateOnStart();
         builder.Services.AddOptions<OnnxEmbeddingOptions>()
             .Bind(builder.Configuration.GetSection("OnnxEmbeddingOptions"))
+            .ValidateOnStart();
+    }
+
+    private static void AddOperatorApiOptions(WebApplicationBuilder builder)
+    {
+        builder.Services.AddOptions<OperatorApiOptions>()
+            .Bind(builder.Configuration.GetSection("OperatorApi"))
             .ValidateOnStart();
     }
 }

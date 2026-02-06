@@ -17,11 +17,7 @@
 
 ## 🔴 NOW - Next Sprint
 
-- [ ] **Operationalize vector search end-to-end**
-  - Validate the `docker-compose.yml` stack (Qdrant + Host) performs end-to-end semantic memory queries.
-  - Enable ONNX embeddings and verify local model assets are present and loaded correctly.
-  - Run the opt-in live integration test (`INFERNAL_LIVE_QDRANT=1`) to validate Qdrant roundtrip.
-  - Produce a short operator runbook section in `README.md` or `NEXT_STEPS.md` (how to run + what “good” looks like).
+_No items currently tracked for this section._
 
 
 ## 🔧 Active Gaps / Known Limitations
@@ -32,10 +28,6 @@
 
 - [ ] **Increase test coverage outside Telegram**
   - Prioritize: `InfernalHierarchy.Messaging` (non-ChannelMessageBus paths), `InfernalHierarchy.Agents` (Saga/CQRS), and `InfernalHierarchy.Core.CQRS`.
-
-- [ ] **ReActAgent SRP refactor (SOLID)**
-  - Remaining scope: continue shrinking `ReActAgent` into a thin orchestrator (move more logic behind `IReAct*` services) while preserving behavior.
-  - Add/extend unit tests around parsing/tool-execution edge cases.
 
 ---
 
@@ -49,9 +41,6 @@ _No additional operational runbooks currently tracked here._
 
 - [ ] **Automated backup for LiteDB** - Scheduled backups + rotation strategy
 - [ ] **Agent quota system** - Per-tenant/per-user agent creation quotas (global/rank caps already exist via `ResourceLimitService`)
-- [ ] **Performance profiling (advanced)** - MiniProfiler/tracing viewer (built-in perf UI now includes charts + per-route HTTP latency)
-  - Already implemented: perf UI charts, per-route HTTP latency, histogram stats, span summaries, basic trace capture + trace list/detail/download.
-  - Remaining scope: optionally add MiniProfiler and/or richer trace viewer UX beyond the current waterfall + span selection.
 
 - [ ] **Embedded UI maintainability (DRY)**
   - Remaining scope: split `DashboardAssets.cs` (CSS/JS) into per-page/per-asset modules (partial classes or embedded resources) to reduce churn and improve readability.

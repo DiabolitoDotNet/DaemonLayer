@@ -2,12 +2,32 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.Configuration;
 using Xunit;
 
 namespace InfernalHierarchy.Host.Tests.E2E;
 
 public sealed class PerfPersonaDocsE2ETests
 {
+    private sealed class RequestProfilingEnabledFactory : InfernalHierarchyTestWebAppFactory
+    {
+        protected override void ConfigureWebHost(IWebHostBuilder builder)
+        {
+            base.ConfigureWebHost(builder);
+
+            builder.ConfigureAppConfiguration((_, config) =>
+            {
+                config.AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["Perf:RequestProfiling:Enabled"] = "true",
+                    ["Perf:RequestProfiling:MaxRecords"] = "200",
+                    ["Perf:RequestProfiling:RetentionMinutes"] = "5",
+                });
+            });
+        }
+    }
+
     [Theory]
     [InlineData("/ui/perf")]
     [InlineData("/ui/personas")]
@@ -122,6 +142,58 @@ public sealed class PerfPersonaDocsE2ETests
         roots.ValueKind.Should().Be(JsonValueKind.Array);
         roots.GetArrayLength().Should().BeGreaterThan(0);
         roots[0].TryGetProperty("spanId", out _).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Perf_TraceCapture_Status_And_Clear_Work()
+    {
+        using var factory = new InfernalHierarchyTestWebAppFactory();
+        var client = factory.CreateClient();
+
+        // Generate at least one server Activity/trace.
+        (await client.GetAsync(new Uri("/api/agents", UriKind.Relative))).EnsureSuccessStatusCode();
+
+        var statusRes = await client.GetAsync(new Uri("/api/perf/trace-capture", UriKind.Relative));
+        statusRes.EnsureSuccessStatusCode();
+        var statusJson = await statusRes.Content.ReadAsStringAsync();
+        statusJson.Should().Contain("tracesStored");
+
+        var clearRes = await client.PostAsync(new Uri("/api/perf/traces/clear", UriKind.Relative), content: null);
+        clearRes.EnsureSuccessStatusCode();
+        var clearJson = await clearRes.Content.ReadAsStringAsync();
+        clearJson.Should().Contain("cleared");
+    }
+
+    [Fact]
+    public async Task Perf_RequestProfiling_WhenEnabled_AddsProfilingHeader_And_IsQueryable()
+    {
+        using var factory = new RequestProfilingEnabledFactory();
+        var client = factory.CreateClient();
+
+        var res = await client.GetAsync(new Uri("/api/agents", UriKind.Relative));
+        res.EnsureSuccessStatusCode();
+
+        res.Headers.TryGetValues("X-Request-Profile-Id", out var values).Should().BeTrue();
+        values.Should().NotBeNull();
+        var id = values!.FirstOrDefault();
+        id.Should().NotBeNullOrWhiteSpace();
+
+        // Ensure it appears in the recent list.
+        string? listJson = null;
+        for (var i = 0; i < 10; i++)
+        {
+            var listRes = await client.GetAsync(new Uri("/api/perf/requests?limit=25", UriKind.Relative));
+            listRes.EnsureSuccessStatusCode();
+            listJson = await listRes.Content.ReadAsStringAsync();
+            if (!string.IsNullOrWhiteSpace(id) && listJson.Contains(id, StringComparison.OrdinalIgnoreCase))
+            {
+                break;
+            }
+            await Task.Delay(30);
+        }
+
+        listJson.Should().NotBeNull();
+        listJson!.Should().Contain(id!);
     }
 
     [Fact]

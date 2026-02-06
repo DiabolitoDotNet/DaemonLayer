@@ -7,6 +7,20 @@ InfernalHierarchy implements enterprise-grade security and configuration managem
 - **Secret Rotation**: Hot-reload secrets without application restart
 - **Dynamic Configuration**: Real-time configuration updates for non-sensitive settings
 
+## Operator API (Operator-Only Endpoints)
+
+Some operational endpoints are **disabled by default** and gated by a shared secret header.
+
+- **Config**: `OperatorApi:Enabled=true` and `OperatorApi:ApiKey=<secret>`
+- **Header**: `X-Infernal-Operator-Key: <secret>`
+
+Recommended: set the API key via user-secrets (or environment variables) and keep `OperatorApi:Enabled=false` in committed config.
+
+```bash
+dotnet user-secrets set "OperatorApi:Enabled" "true" --project src/InfernalHierarchy.Host
+dotnet user-secrets set "OperatorApi:ApiKey" "<random-long-secret>" --project src/InfernalHierarchy.Host
+```
+
 ## Tool Authorization
 
 ### Overview

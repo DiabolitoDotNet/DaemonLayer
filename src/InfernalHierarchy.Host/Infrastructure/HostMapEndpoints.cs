@@ -27,6 +27,8 @@ internal static class HostMapEndpoints
         PersonasApi.Map(app, uiOptions);
         DocsApi.Map(app, uiOptions);
 
+        OperatorVectorApi.Map(app);
+
         app.MapGet("/", () => Results.Text("InfernalHierarchy is running"));
 
         ChatApi.Map(app);

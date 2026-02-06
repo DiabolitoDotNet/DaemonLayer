@@ -42,5 +42,6 @@ internal static class HostConfigure
     {
         builder.Services.Configure<OpenTelemetryExportOptions>(builder.Configuration.GetSection("OpenTelemetry:Exporters"));
         builder.Services.Configure<TraceCaptureOptions>(builder.Configuration.GetSection("Perf:TraceCapture"));
+        builder.Services.Configure<PerfRequestProfilingOptions>(builder.Configuration.GetSection("Perf:RequestProfiling"));
     }
 }

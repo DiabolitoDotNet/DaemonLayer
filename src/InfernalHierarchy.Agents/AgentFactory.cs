@@ -39,6 +39,7 @@ public class AgentFactory : IAgentFactory
     private readonly IReportGenerator? _reportGenerator;
     private readonly IReActPromptBuilder? _promptBuilder;
     private readonly IReActLoopRunner? _loopRunner;
+    private readonly IReActTaskProcessor? _taskProcessor;
 
     public AgentFactory(
         IPersonaLoader personaLoader,
@@ -61,7 +62,8 @@ public class AgentFactory : IAgentFactory
         IReActLoopRunner? loopRunner = null,
         TokenUsageTracker? tokenUsageTracker = null,
         MultiModelLlmClient? multiModelLlmClient = null,
-        IAgentCollaborationService? collaborationService = null)
+        IAgentCollaborationService? collaborationService = null,
+        IReActTaskProcessor? taskProcessor = null)
         : this(
             personaLoader,
             messageBus,
@@ -80,7 +82,8 @@ public class AgentFactory : IAgentFactory
             loopRunner,
             tokenUsageTracker,
             multiModelLlmClient,
-            collaborationService)
+            collaborationService,
+            taskProcessor)
     {
         _vectorMemory = vectorMemory;
         _ragOptions = ragOptions.Value;
@@ -141,6 +144,7 @@ public class AgentFactory : IAgentFactory
         _reportGenerator = null;
         _promptBuilder = null;
         _loopRunner = null;
+        _taskProcessor = null;
     }
 
     public AgentFactory(
@@ -161,7 +165,8 @@ public class AgentFactory : IAgentFactory
         IReActLoopRunner? loopRunner,
         TokenUsageTracker? tokenUsageTracker,
         MultiModelLlmClient? multiModelLlmClient,
-        IAgentCollaborationService? collaborationService)
+        IAgentCollaborationService? collaborationService,
+        IReActTaskProcessor? taskProcessor)
         : this(
             personaLoader,
             messageBus,
@@ -182,6 +187,7 @@ public class AgentFactory : IAgentFactory
         _tokenUsageTracker = tokenUsageTracker;
         _multiModelLlmClient = multiModelLlmClient;
         _collaborationService = collaborationService;
+        _taskProcessor = taskProcessor;
     }
 
     public async Task<IAgent> CreateAgentAsync(string personaName, AgentRank rank, string? parentId = null, CancellationToken ct = default)
@@ -229,7 +235,8 @@ public class AgentFactory : IAgentFactory
             _actionExecutor,
             _reportGenerator,
             _promptBuilder,
-            _loopRunner);
+            _loopRunner,
+            _taskProcessor);
 
         TryAppendAgentEvent(
             agentEntity.Id,

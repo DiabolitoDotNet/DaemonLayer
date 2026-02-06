@@ -3,8 +3,8 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Microsoft.ML.OnnxRuntime;
 using Microsoft.ML.OnnxRuntime.Tensors;
-using Microsoft.ML.Tokenizers;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 
 namespace InfernalHierarchy.Memory.Embeddings;
 
@@ -104,11 +104,12 @@ public sealed class OnnxEmbeddingService : IDisposable
             try
             {
                 _tokenizer = _runtimeFactory.CreateTokenizer(_options.TokenizerPath);
+                _logger.LogInformation("✅ Loaded tokenizer from {Path}", _options.TokenizerPath);
             }
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, "⚠️ Failed to load tokenizer - ONNX embeddings disabled");
-                _logger.LogInformation("📘 Fallback to deterministic embeddings until tokenizer API is updated");
+                _logger.LogInformation("📘 Falling back to deterministic embeddings (tokenizer failed to initialize)");
                 _initialized = true;
                 return;
             }
@@ -173,6 +174,25 @@ public sealed class OnnxEmbeddingService : IDisposable
             _logger.LogError(ex, "Failed to generate ONNX embedding, using fallback");
             return GenerateFallbackEmbedding(text);
         }
+    }
+
+    public async Task<OnnxEmbeddingProbeResult> ProbeAsync(CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        await EnsureInitializedAsync();
+
+        var modelLoaded = _session != null;
+        var tokenizerLoaded = _tokenizer != null;
+
+        return new OnnxEmbeddingProbeResult(
+            Enabled: _options.Enabled,
+            ModelPath: _options.ModelPath,
+            TokenizerPath: _options.TokenizerPath,
+            ModelLoaded: modelLoaded,
+            TokenizerLoaded: tokenizerLoaded,
+            UsingFallback: !(modelLoaded && tokenizerLoaded),
+            EmbeddingDimension: _options.EmbeddingDimension,
+            MaxSequenceLength: _options.MaxSequenceLength);
     }
 
     /// <summary>
@@ -258,6 +278,16 @@ public sealed class OnnxEmbeddingService : IDisposable
         return Normalize(embedding);
     }
 
+    public sealed record OnnxEmbeddingProbeResult(
+        bool Enabled,
+        string ModelPath,
+        string TokenizerPath,
+        bool ModelLoaded,
+        bool TokenizerLoaded,
+        bool UsingFallback,
+        int EmbeddingDimension,
+        int MaxSequenceLength);
+
     public void Dispose()
     {
         _session?.Dispose();
@@ -304,8 +334,30 @@ internal sealed class DefaultOnnxRuntimeFactory : IOnnxRuntimeFactory
     }
 
     public ITokenizerAdapter CreateTokenizer(string tokenizerPath)
-        => throw new NotSupportedException(
-            "Microsoft.ML.Tokenizers 1.0.0 tokenizer loading is not yet supported by this service.");
+    {
+        if (string.IsNullOrWhiteSpace(tokenizerPath))
+        {
+            throw new ArgumentException("Tokenizer path must be provided.", nameof(tokenizerPath));
+        }
+
+        if (!File.Exists(tokenizerPath))
+        {
+            throw new FileNotFoundException("Tokenizer file not found.", tokenizerPath);
+        }
+
+        var extension = Path.GetExtension(tokenizerPath);
+        if (string.Equals(extension, ".json", StringComparison.OrdinalIgnoreCase))
+        {
+            return HfWordPieceTokenizerAdapter.FromTokenizerJson(tokenizerPath);
+        }
+
+        if (string.Equals(extension, ".txt", StringComparison.OrdinalIgnoreCase))
+        {
+            return HfWordPieceTokenizerAdapter.FromVocabTxt(tokenizerPath);
+        }
+
+        throw new NotSupportedException($"Unsupported tokenizer file extension '{extension}'. Use tokenizer.json or vocab.txt.");
+    }
 
     private sealed class InferenceSessionAdapter : IInferenceSession
     {
@@ -318,16 +370,303 @@ internal sealed class DefaultOnnxRuntimeFactory : IOnnxRuntimeFactory
 
         public float[] Run(DenseTensor<long> inputIds, DenseTensor<long> attentionMask)
         {
-            var inputs = new List<NamedOnnxValue>
+            var inputs = new List<NamedOnnxValue>();
+
+            if (_inner.InputMetadata.ContainsKey("input_ids"))
             {
-                NamedOnnxValue.CreateFromTensor("input_ids", inputIds),
-                NamedOnnxValue.CreateFromTensor("attention_mask", attentionMask)
-            };
+                inputs.Add(NamedOnnxValue.CreateFromTensor("input_ids", inputIds));
+            }
+
+            if (_inner.InputMetadata.ContainsKey("attention_mask"))
+            {
+                inputs.Add(NamedOnnxValue.CreateFromTensor("attention_mask", attentionMask));
+            }
+
+            if (_inner.InputMetadata.ContainsKey("token_type_ids"))
+            {
+                // Many BERT-family models accept token_type_ids; sentence-transformers typically uses a single segment.
+                var seqLen = checked((int)attentionMask.Length);
+                var tokenTypeIds = new DenseTensor<long>(
+                    new long[seqLen],
+                    new[] { 1, seqLen });
+                inputs.Add(NamedOnnxValue.CreateFromTensor("token_type_ids", tokenTypeIds));
+            }
 
             using var results = _inner.Run(inputs);
-            return results.First().AsEnumerable<float>().ToArray();
+
+            // Prefer the canonical transformer output name when present.
+            var preferred = results.FirstOrDefault(r =>
+                string.Equals(r.Name, "last_hidden_state", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(r.Name, "output_0", StringComparison.OrdinalIgnoreCase));
+
+            return (preferred ?? results.First()).AsEnumerable<float>().ToArray();
         }
 
         public void Dispose() => _inner.Dispose();
+    }
+}
+
+internal sealed class HfWordPieceTokenizerAdapter : ITokenizerAdapter
+{
+    private static readonly Regex _whitespaceRegex = new(@"\s+", RegexOptions.Compiled);
+
+    private readonly IReadOnlyDictionary<string, int> _vocab;
+    private readonly string _unkToken;
+    private readonly string _continuingSubwordPrefix;
+    private readonly bool _lowercase;
+    private readonly int _unkId;
+    private readonly int? _clsId;
+    private readonly int? _sepId;
+
+    private HfWordPieceTokenizerAdapter(
+        IReadOnlyDictionary<string, int> vocab,
+        string unkToken,
+        string continuingSubwordPrefix,
+        bool lowercase)
+    {
+        _vocab = vocab;
+        _unkToken = unkToken;
+        _continuingSubwordPrefix = continuingSubwordPrefix;
+        _lowercase = lowercase;
+
+        if (!_vocab.TryGetValue(_unkToken, out _unkId))
+        {
+            // If the vocab is malformed, fall back to 0 to avoid crashing.
+            _unkId = 0;
+        }
+
+        _clsId = _vocab.TryGetValue("[CLS]", out var cls) ? cls : null;
+        _sepId = _vocab.TryGetValue("[SEP]", out var sep) ? sep : null;
+    }
+
+    public static HfWordPieceTokenizerAdapter FromVocabTxt(string vocabPath)
+    {
+        var vocab = new Dictionary<string, int>(StringComparer.Ordinal);
+        var lines = File.ReadAllLines(vocabPath);
+        for (var i = 0; i < lines.Length; i++)
+        {
+            var token = lines[i].TrimEnd('\r', '\n');
+            if (token.Length == 0)
+            {
+                continue;
+            }
+
+            // Keep first occurrence.
+            if (!vocab.ContainsKey(token))
+            {
+                vocab[token] = i;
+            }
+        }
+
+        return new HfWordPieceTokenizerAdapter(
+            vocab,
+            unkToken: "[UNK]",
+            continuingSubwordPrefix: "##",
+            lowercase: true);
+    }
+
+    public static HfWordPieceTokenizerAdapter FromTokenizerJson(string tokenizerPath)
+    {
+        using var stream = File.OpenRead(tokenizerPath);
+        using var doc = JsonDocument.Parse(stream);
+
+        // Defaults that match most BERT-family tokenizers.
+        var unkToken = "[UNK]";
+        var continuingSubwordPrefix = "##";
+        var lowercase = true;
+
+        if (doc.RootElement.TryGetProperty("normalizer", out var normalizer) &&
+            normalizer.ValueKind == JsonValueKind.Object &&
+            normalizer.TryGetProperty("lowercase", out var lc) &&
+            (lc.ValueKind == JsonValueKind.True || lc.ValueKind == JsonValueKind.False))
+        {
+            lowercase = lc.GetBoolean();
+        }
+
+        if (!doc.RootElement.TryGetProperty("model", out var model) || model.ValueKind != JsonValueKind.Object)
+        {
+            throw new InvalidOperationException("Tokenizer JSON missing 'model' section.");
+        }
+
+        if (model.TryGetProperty("unk_token", out var unk) && unk.ValueKind == JsonValueKind.String)
+        {
+            unkToken = unk.GetString() ?? unkToken;
+        }
+
+        if (model.TryGetProperty("continuing_subword_prefix", out var prefix) && prefix.ValueKind == JsonValueKind.String)
+        {
+            continuingSubwordPrefix = prefix.GetString() ?? continuingSubwordPrefix;
+        }
+
+        if (!model.TryGetProperty("vocab", out var vocabElement) || vocabElement.ValueKind != JsonValueKind.Object)
+        {
+            throw new InvalidOperationException("Tokenizer JSON missing 'model.vocab' object.");
+        }
+
+        var vocab = new Dictionary<string, int>(StringComparer.Ordinal);
+        foreach (var entry in vocabElement.EnumerateObject())
+        {
+            if (entry.Value.ValueKind == JsonValueKind.Number && entry.Value.TryGetInt32(out var id))
+            {
+                vocab[entry.Name] = id;
+            }
+        }
+
+        if (vocab.Count == 0)
+        {
+            throw new InvalidOperationException("Tokenizer JSON contained an empty vocab.");
+        }
+
+        return new HfWordPieceTokenizerAdapter(vocab, unkToken, continuingSubwordPrefix, lowercase);
+    }
+
+    public int[] EncodeToIds(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return Array.Empty<int>();
+        }
+
+        var normalized = _whitespaceRegex.Replace(text, " ").Trim();
+        if (_lowercase)
+        {
+            normalized = normalized.ToLowerInvariant();
+        }
+
+        var tokens = BasicTokenize(normalized);
+        var wordPieces = new List<string>(capacity: tokens.Count * 2);
+
+        if (_clsId.HasValue)
+        {
+            wordPieces.Add("[CLS]");
+        }
+
+        foreach (var token in tokens)
+        {
+            foreach (var piece in WordPieceTokenize(token))
+            {
+                wordPieces.Add(piece);
+            }
+        }
+
+        if (_sepId.HasValue)
+        {
+            wordPieces.Add("[SEP]");
+        }
+
+        var ids = new int[wordPieces.Count];
+        for (var i = 0; i < wordPieces.Count; i++)
+        {
+            if (_vocab.TryGetValue(wordPieces[i], out var id))
+            {
+                ids[i] = id;
+            }
+            else
+            {
+                ids[i] = _unkId;
+            }
+        }
+
+        return ids;
+    }
+
+    private List<string> BasicTokenize(string text)
+    {
+        var tokens = new List<string>();
+        var buffer = new char[text.Length];
+        var bufferLen = 0;
+
+        for (var i = 0; i < text.Length; i++)
+        {
+            var ch = text[i];
+            if (char.IsWhiteSpace(ch))
+            {
+                Flush();
+                continue;
+            }
+
+            if (char.IsLetterOrDigit(ch))
+            {
+                buffer[bufferLen++] = ch;
+                continue;
+            }
+
+            // Punctuation becomes its own token.
+            Flush();
+            tokens.Add(ch.ToString());
+        }
+
+        Flush();
+        return tokens;
+
+        void Flush()
+        {
+            if (bufferLen <= 0)
+            {
+                return;
+            }
+
+            tokens.Add(new string(buffer, 0, bufferLen));
+            bufferLen = 0;
+        }
+    }
+
+    private IEnumerable<string> WordPieceTokenize(string token)
+    {
+        if (string.IsNullOrEmpty(token))
+        {
+            yield break;
+        }
+
+        const int maxInputCharsPerWord = 100;
+        if (token.Length > maxInputCharsPerWord)
+        {
+            yield return _unkToken;
+            yield break;
+        }
+
+        var start = 0;
+        var isBad = false;
+        var subTokens = new List<string>();
+
+        while (start < token.Length)
+        {
+            var end = token.Length;
+            string? curSubstr = null;
+
+            while (start < end)
+            {
+                var substr = token.Substring(start, end - start);
+                var candidate = start > 0 ? _continuingSubwordPrefix + substr : substr;
+
+                if (_vocab.ContainsKey(candidate))
+                {
+                    curSubstr = candidate;
+                    break;
+                }
+
+                end -= 1;
+            }
+
+            if (curSubstr == null)
+            {
+                isBad = true;
+                break;
+            }
+
+            subTokens.Add(curSubstr);
+            start = end;
+        }
+
+        if (isBad)
+        {
+            yield return _unkToken;
+            yield break;
+        }
+
+        foreach (var st in subTokens)
+        {
+            yield return st;
+        }
     }
 }
