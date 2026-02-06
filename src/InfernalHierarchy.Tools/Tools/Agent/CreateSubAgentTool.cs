@@ -1,6 +1,7 @@
 using InfernalHierarchy.Core.Entities;
 using InfernalHierarchy.Core.Interfaces;
 using Microsoft.Extensions.Logging;
+using System.Text.Json;
 
 namespace InfernalHierarchy.Tools.Tools.Agent;
 
@@ -23,7 +24,7 @@ public class CreateSubAgentTool : ITool
 
     public async Task<ToolResult> ExecuteAsync(Dictionary<string, object> parameters, CancellationToken ct = default)
     {
-        if (!parameters.TryGetValue("persona_name", out var nameObj) || nameObj is not string personaName)
+        if (!TryGetString(parameters, "persona_name", out var personaName))
         {
             return new ToolResult
             {
@@ -32,7 +33,7 @@ public class CreateSubAgentTool : ITool
             };
         }
 
-        if (!parameters.TryGetValue("rank", out var rankObj) || rankObj is not string rankStr)
+        if (!TryGetString(parameters, "rank", out var rankStr))
         {
             return new ToolResult
             {
@@ -50,8 +51,9 @@ public class CreateSubAgentTool : ITool
             };
         }
 
-        parameters.TryGetValue("parent_id", out var parentIdObj);
-        var parentId = parentIdObj as string;
+        var parentId = TryGetString(parameters, "parent_id", out var parsedParentId)
+            ? parsedParentId
+            : null;
 
         try
         {
@@ -83,5 +85,39 @@ public class CreateSubAgentTool : ITool
                 Error = $"Failed to create agent: {ex.Message}"
             };
         }
+    }
+
+    private static bool TryGetString(Dictionary<string, object> parameters, string key, out string value)
+    {
+        value = string.Empty;
+
+        if (!parameters.TryGetValue(key, out var obj) || obj is null)
+        {
+            return false;
+        }
+
+        if (obj is string s)
+        {
+            value = s;
+            return !string.IsNullOrWhiteSpace(value);
+        }
+
+        if (obj is JsonElement el)
+        {
+            value = el.ValueKind switch
+            {
+                JsonValueKind.String => el.GetString() ?? string.Empty,
+                JsonValueKind.Number => el.GetRawText(),
+                JsonValueKind.True => "true",
+                JsonValueKind.False => "false",
+                JsonValueKind.Null => string.Empty,
+                _ => el.GetRawText()
+            };
+
+            return !string.IsNullOrWhiteSpace(value);
+        }
+
+        value = obj.ToString() ?? string.Empty;
+        return !string.IsNullOrWhiteSpace(value);
     }
 }

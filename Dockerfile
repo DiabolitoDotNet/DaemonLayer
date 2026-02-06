@@ -22,12 +22,13 @@ WORKDIR /source/src/InfernalHierarchy.Host
 RUN dotnet publish -c Release -o /app --no-restore
 
 # Stage 2: Runtime
-FROM mcr.microsoft.com/dotnet/runtime:10.0
+# Host is an ASP.NET Core app (health/metrics endpoints), so we need Microsoft.AspNetCore.App
+FROM mcr.microsoft.com/dotnet/aspnet:10.0
 WORKDIR /app
 
 # Copy build output
 COPY --from=build /app ./
-COPY --from=build /source/souls /app/souls
+COPY --from=build /source/souls /souls
 
 # Create data directory for LiteDB
 RUN mkdir -p /app/data && \

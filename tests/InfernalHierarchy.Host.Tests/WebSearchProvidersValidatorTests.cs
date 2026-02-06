@@ -1,7 +1,7 @@
 using InfernalHierarchy.Host.Configuration.Validation;
 using InfernalHierarchy.Tools.Options;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 using Xunit;
 
 namespace InfernalHierarchy.Host.Tests;
@@ -38,11 +38,16 @@ public sealed class WebSearchProvidersValidatorTests
     [Fact]
     public void Validate_SearXng_WhenBothProvidersDisabled_LogsWarningAndReturnsSuccess()
     {
-        var searx = new TestOptionsMonitor<SearXNGOptions>(new SearXNGOptions { Enabled = false });
-        var brave = new TestOptionsMonitor<BraveSearchOptions>(new BraveSearchOptions { Enabled = false });
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["SearXNG:Enabled"] = "false",
+                ["BraveSearch:Enabled"] = "false"
+            })
+            .Build();
         var logger = new ListLogger<WebSearchProvidersValidator>();
 
-        var validator = new WebSearchProvidersValidator(searx, brave, logger);
+        var validator = new WebSearchProvidersValidator(configuration, logger);
 
         var result = validator.Validate(name: null, new SearXNGOptions { Enabled = false });
 
@@ -53,11 +58,16 @@ public sealed class WebSearchProvidersValidatorTests
     [Fact]
     public void Validate_Brave_WhenAtLeastOneProviderEnabled_DoesNotLogWarningAndReturnsSuccess()
     {
-        var searx = new TestOptionsMonitor<SearXNGOptions>(new SearXNGOptions { Enabled = true });
-        var brave = new TestOptionsMonitor<BraveSearchOptions>(new BraveSearchOptions { Enabled = false });
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["SearXNG:Enabled"] = "true",
+                ["BraveSearch:Enabled"] = "false"
+            })
+            .Build();
         var logger = new ListLogger<WebSearchProvidersValidator>();
 
-        var validator = new WebSearchProvidersValidator(searx, brave, logger);
+        var validator = new WebSearchProvidersValidator(configuration, logger);
 
         var result = validator.Validate(name: null, new BraveSearchOptions { Enabled = false });
 

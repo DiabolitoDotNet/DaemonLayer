@@ -1,20 +1,21 @@
-using Azure.AI.OpenAI;
-using Azure.Core;
 using InfernalHierarchy.Core.Interfaces;
 using InfernalHierarchy.Tools.Options;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using OpenAI.Chat;
-using System.ClientModel;
+using System.Net.Http;
+using System.Text;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace InfernalHierarchy.Tools.Clients;
 
 /// <summary>
-/// Client for Ollama LLM via Azure.AI.OpenAI (OpenAI-compatible endpoint)
+/// Client for Ollama LLM via its OpenAI-compatible HTTP API.
 /// </summary>
 public class OllamaClient : ILlmClient
 {
-    private readonly ChatClient _chatClient;
+    private readonly HttpClient _http;
+    private readonly JsonSerializerOptions _json;
     private readonly ILogger<OllamaClient> _logger;
     private readonly OllamaOptions _options;
 
@@ -23,19 +24,27 @@ public class OllamaClient : ILlmClient
         _options = options.Value;
         _logger = logger;
 
-        // Use Azure.AI.OpenAI with custom endpoint
-        var clientOptions = new AzureOpenAIClientOptions();
+        // IMPORTANT: Ollama exposes an OpenAI-compatible API at:
+        //   {BaseUrl}/chat/completions
+        // BaseUrl should typically be http://localhost:11434/v1 (or host.docker.internal:11434/v1 in Docker).
+        _http = new HttpClient
+        {
+            BaseAddress = NormalizeBaseUrl(_options.BaseUrl),
+            Timeout = TimeSpan.FromSeconds(120)
+        };
 
-        // Create a fake API key credential (Ollama doesn't need it but the client requires it)
-        var apiKey = new ApiKeyCredential("ollama-local");
+        // Ollama does not require auth by default, but some reverse proxies might.
+        // We intentionally do not set Authorization headers here.
 
-        var endpoint = _options.BaseUrl;
-        var azureClient = new AzureOpenAIClient(endpoint, apiKey, clientOptions);
-
-        _chatClient = azureClient.GetChatClient(_options.DefaultModel);
+        _json = new JsonSerializerOptions
+        {
+            PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+            DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+        };
 
         _logger.LogInformation("🧠 Ollama client initialized: {BaseUrl} with model {Model}",
-            _options.BaseUrl.ToString(), _options.DefaultModel);
+            _http.BaseAddress?.ToString() ?? _options.BaseUrl.ToString(),
+            _options.DefaultModel);
     }
 
     /// <summary>
@@ -46,26 +55,57 @@ public class OllamaClient : ILlmClient
         string userMessage,
         CancellationToken ct = default)
     {
-        var messages = new List<ChatMessage>
-        {
-            new SystemChatMessage(systemPrompt),
-            new UserChatMessage(userMessage)
-        };
-
-        var options = new ChatCompletionOptions
-        {
-            Temperature = (float)_options.Temperature,
-            MaxOutputTokenCount = _options.MaxTokens
-        };
-
         try
         {
-            var response = await _chatClient.CompleteChatAsync(messages, options, ct);
-            var content = response.Value.Content[0].Text;
+            var request = new ChatCompletionRequest
+            {
+                Model = _options.DefaultModel,
+                Temperature = _options.Temperature,
+                MaxTokens = _options.MaxTokens,
+                Stream = false,
+                Messages = new()
+                {
+                    new ChatCompletionMessage { Role = "system", Content = systemPrompt },
+                    new ChatCompletionMessage { Role = "user", Content = userMessage }
+                }
+            };
 
-            _logger.LogDebug("LLM Response length: {Length} chars", content.Length);
+            var json = JsonSerializer.Serialize(request, _json);
+            using var content = new StringContent(json, Encoding.UTF8, "application/json");
 
-            return content;
+            using var response = await _http.PostAsync("chat/completions", content, ct).ConfigureAwait(false);
+            var responseText = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogError(
+                    "LLM request failed: {StatusCode} | Body: {Body}",
+                    (int)response.StatusCode,
+                    Truncate(responseText, 2000));
+
+                throw new HttpRequestException(
+                    $"Ollama completion failed with status {(int)response.StatusCode} ({response.StatusCode})");
+            }
+
+            var parsed = JsonSerializer.Deserialize<ChatCompletionResponse>(responseText, _json);
+            var message = parsed?.Choices?.FirstOrDefault()?.Message;
+            var output = message?.Content;
+
+            // Some "reasoning" models (e.g., deepseek-r1) may return the main text in a separate
+            // `reasoning` field and keep `content` empty for part of the completion.
+            if (string.IsNullOrWhiteSpace(output) && !string.IsNullOrWhiteSpace(message?.Reasoning))
+            {
+                output = message!.Reasoning;
+            }
+
+            if (string.IsNullOrWhiteSpace(output))
+            {
+                _logger.LogWarning("LLM response missing content. Raw: {Body}", Truncate(responseText, 2000));
+                return string.Empty;
+            }
+
+            _logger.LogDebug("LLM Response length: {Length} chars", output.Length);
+            return output;
         }
         catch (Exception ex)
         {
@@ -80,5 +120,71 @@ public class OllamaClient : ILlmClient
     public Task<string> GetSimpleCompletionAsync(string prompt, CancellationToken ct = default)
     {
         return GetCompletionAsync("You are a helpful AI assistant.", prompt, ct);
+    }
+
+    private static Uri NormalizeBaseUrl(Uri baseUrl)
+    {
+        // Ensure trailing slash so relative URIs compose correctly.
+        var raw = baseUrl.ToString();
+        if (!raw.EndsWith('/'))
+        {
+            raw += "/";
+        }
+
+        return new Uri(raw);
+    }
+
+    private static string Truncate(string value, int maxLen)
+    {
+        if (string.IsNullOrEmpty(value) || value.Length <= maxLen) return value;
+        return value.Substring(0, maxLen) + "…";
+    }
+
+    private sealed class ChatCompletionRequest
+    {
+        [JsonPropertyName("model")]
+        public string Model { get; set; } = string.Empty;
+
+        [JsonPropertyName("messages")]
+        public List<ChatCompletionMessage> Messages { get; set; } = new();
+
+        [JsonPropertyName("temperature")]
+        public double? Temperature { get; set; }
+
+        [JsonPropertyName("max_tokens")]
+        public int? MaxTokens { get; set; }
+
+        [JsonPropertyName("stream")]
+        public bool? Stream { get; set; }
+    }
+
+    private sealed class ChatCompletionMessage
+    {
+        [JsonPropertyName("role")]
+        public string Role { get; set; } = string.Empty;
+
+        [JsonPropertyName("content")]
+        public string Content { get; set; } = string.Empty;
+    }
+
+    private sealed class ChatCompletionResponse
+    {
+        [JsonPropertyName("choices")]
+        public List<ChatCompletionChoice>? Choices { get; set; }
+    }
+
+    private sealed class ChatCompletionChoice
+    {
+        [JsonPropertyName("message")]
+        public ChatCompletionResponseMessage? Message { get; set; }
+    }
+
+    private sealed class ChatCompletionResponseMessage
+    {
+        [JsonPropertyName("content")]
+        public string? Content { get; set; }
+
+        [JsonPropertyName("reasoning")]
+        public string? Reasoning { get; set; }
     }
 }

@@ -1,4 +1,5 @@
 using InfernalHierarchy.Tools.Options;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -6,37 +7,31 @@ namespace InfernalHierarchy.Host.Configuration.Validation;
 
 public sealed class WebSearchProvidersValidator : IValidateOptions<SearXNGOptions>, IValidateOptions<BraveSearchOptions>
 {
-    private readonly IOptionsMonitor<SearXNGOptions> _searx;
-    private readonly IOptionsMonitor<BraveSearchOptions> _brave;
+    private readonly IConfiguration _configuration;
     private readonly ILogger<WebSearchProvidersValidator> _logger;
 
     public WebSearchProvidersValidator(
-        IOptionsMonitor<SearXNGOptions> searx,
-        IOptionsMonitor<BraveSearchOptions> brave,
+        IConfiguration configuration,
         ILogger<WebSearchProvidersValidator> logger)
     {
-        _searx = searx;
-        _brave = brave;
+        _configuration = configuration;
         _logger = logger;
     }
 
     public ValidateOptionsResult Validate(string? name, SearXNGOptions options)
     {
-        WarnIfAllDisabled();
+        WarnIfAllDisabled(searxEnabled: options.Enabled, braveEnabled: _configuration.GetValue<bool>("BraveSearch:Enabled"));
         return ValidateOptionsResult.Success;
     }
 
     public ValidateOptionsResult Validate(string? name, BraveSearchOptions options)
     {
-        WarnIfAllDisabled();
+        WarnIfAllDisabled(searxEnabled: _configuration.GetValue<bool>("SearXNG:Enabled"), braveEnabled: options.Enabled);
         return ValidateOptionsResult.Success;
     }
 
-    private void WarnIfAllDisabled()
+    private void WarnIfAllDisabled(bool searxEnabled, bool braveEnabled)
     {
-        var searxEnabled = _searx.CurrentValue.Enabled;
-        var braveEnabled = _brave.CurrentValue.Enabled;
-
         if (!searxEnabled && !braveEnabled)
         {
             _logger.LogWarning(

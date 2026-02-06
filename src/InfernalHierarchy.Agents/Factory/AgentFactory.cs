@@ -159,9 +159,17 @@ public class AgentFactory : IAgentFactory
         }
 
         // Create agent entity
+        // NOTE: Telegram routes messages to the main agent using a stable id ("lucifer").
+        // If we generate a random GUID for Lucifer, messages will be published to an unconsumed channel.
+        // For the Supreme/main agent we use a stable id derived from the persona name.
+        var agentId = (rank == AgentRank.Supreme && parentId == null &&
+                       string.Equals(personaName, "Lucifer", StringComparison.OrdinalIgnoreCase))
+            ? personaName.ToLowerInvariant()
+            : Guid.NewGuid().ToString();
+
         var agentEntity = new Agent
         {
-            Id = Guid.NewGuid().ToString(),
+            Id = agentId,
             Name = personaName,
             Rank = rank,
             ParentAgentId = parentId,

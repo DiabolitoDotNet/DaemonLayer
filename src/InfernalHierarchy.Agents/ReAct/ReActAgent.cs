@@ -202,18 +202,19 @@ public class ReActAgent : BaseAgent
 
             Status = AgentStatus.Idle;
 
+            var basePayload = task.Payload ?? new Dictionary<string, object>();
+            var responsePayload = new Dictionary<string, object>(basePayload);
+            responsePayload["reasoning"] = result.Reasoning;
+            responsePayload["iterations"] = result.Iterations;
+            responsePayload["tool_calls"] = result.ToolCalls;
+
             return new AgentMessage
             {
                 FromAgentId = Id,
                 ToAgentId = task.FromAgentId,
                 Type = MessageType.Report,
                 Content = result.FinalAnswer,
-                Payload = new Dictionary<string, object>
-                {
-                    ["reasoning"] = result.Reasoning,
-                    ["iterations"] = result.Iterations,
-                    ["tool_calls"] = result.ToolCalls
-                }
+                Payload = responsePayload
             };
         }
         catch (Exception ex)
@@ -236,7 +237,8 @@ public class ReActAgent : BaseAgent
                 FromAgentId = Id,
                 ToAgentId = task.FromAgentId,
                 Type = MessageType.Report,
-                Content = $"❌ Error: {ex.Message}"
+                Content = $"❌ Error: {ex.Message}",
+                Payload = new Dictionary<string, object>(task.Payload ?? new Dictionary<string, object>())
             };
         }
     }

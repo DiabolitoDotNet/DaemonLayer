@@ -32,6 +32,7 @@ services:
     secrets:
       - telegram_bot_token
       - telegram_user_ids
+      - email_smtp_json
 
   # SearXNG - Local web search engine
   searxng:
@@ -72,6 +73,8 @@ secrets:
     file: ./secrets/telegram_bot_token.txt
   telegram_user_ids:
     file: ./secrets/telegram_user_ids.txt
+  email_smtp_json:
+    file: ./secrets/email_smtp.json
 
 # Usage:
 # docker-compose up -d

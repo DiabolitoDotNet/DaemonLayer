@@ -17,6 +17,7 @@ public sealed class EventStore : IAgentEventSink, IDisposable
     private readonly SemaphoreSlim _writeSemaphore = new(1, 1);
     private readonly PeriodicTimer _flushTimer;
     private readonly CancellationTokenSource _cts = new();
+    private bool _disposed;
 
     public EventStore(string storePath, ILogger<EventStore> logger)
     {
@@ -217,14 +218,58 @@ public sealed class EventStore : IAgentEventSink, IDisposable
 
     public void Dispose()
     {
-        _cts.Cancel();
-        _flushTimer.Dispose();
+        if (_disposed)
+        {
+            return;
+        }
 
-        // Final flush
-        FlushEventsAsync().Wait(TimeSpan.FromSeconds(5));
+        _disposed = true;
 
-        _writeSemaphore.Dispose();
-        _cts.Dispose();
+        try
+        {
+            _cts.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+            // already disposed
+        }
+
+        try
+        {
+            _flushTimer.Dispose();
+        }
+        catch (ObjectDisposedException)
+        {
+            // already disposed
+        }
+
+        // Final flush (best effort)
+        try
+        {
+            FlushEventsAsync().Wait(TimeSpan.FromSeconds(5));
+        }
+        catch
+        {
+            // best-effort
+        }
+
+        try
+        {
+            _writeSemaphore.Dispose();
+        }
+        catch (ObjectDisposedException)
+        {
+            // already disposed
+        }
+
+        try
+        {
+            _cts.Dispose();
+        }
+        catch (ObjectDisposedException)
+        {
+            // already disposed
+        }
     }
 }
 

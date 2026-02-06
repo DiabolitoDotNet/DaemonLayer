@@ -14,7 +14,8 @@
     "read_memory",
     "write_memory",
     "send_telegram",
-    "prompt_ab_test"
+    "prompt_ab_test",
+    "email_send"
   ],
   "personality": {
     "tone": "Authoritative and strategic",

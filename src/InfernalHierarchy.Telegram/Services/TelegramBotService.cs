@@ -13,6 +13,7 @@ using Telegram.Bot.Polling;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;
 using CoreMessageType = InfernalHierarchy.Core.Entities.MessageType;
+using System.Text.RegularExpressions;
 
 namespace InfernalHierarchy.Telegram.Services;
 
@@ -21,6 +22,7 @@ namespace InfernalHierarchy.Telegram.Services;
 /// </summary>
 public class TelegramBotService : BackgroundService
 {
+    private const string TelegramAgentId = "telegram";
     private readonly ILogger<TelegramBotService> _logger;
     private readonly IMessageBus _messageBus;
     private readonly TelegramOptions _options;
@@ -61,6 +63,12 @@ public class TelegramBotService : BackgroundService
             var me = await _botClient.GetMe(stoppingToken);
             _logger.LogInformation("🤖 Telegram bot started: @{Username}", me.Username);
 
+            // Start a background listener that forwards agent reports back to Telegram.
+            // Agents reply to the sender via message bus (ToAgentId = task.FromAgentId).
+            // We publish tasks with FromAgentId = "telegram", so listening as "telegram" lets us
+            // receive the final Report (and forward it to the originating chat).
+            var forwarderTask = Task.Run(() => ForwardAgentMessagesToTelegramAsync(stoppingToken), stoppingToken);
+
             var receiverOptions = new ReceiverOptions
             {
                 AllowedUpdates = Array.Empty<UpdateType>() // Receive all update types
@@ -71,10 +79,169 @@ public class TelegramBotService : BackgroundService
                 errorHandler: HandlePollingErrorAsync,
                 receiverOptions: receiverOptions,
                 cancellationToken: stoppingToken);
+
+            // ReceiveAsync completes on cancellation/error; ensure forwarder is also awaited.
+            await forwarderTask;
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "💀 Telegram bot failed to start");
+        }
+    }
+
+    private async Task ForwardAgentMessagesToTelegramAsync(CancellationToken ct)
+    {
+        if (_botClient is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await foreach (var message in _messageBus.SubscribeAsync(TelegramAgentId, ct))
+            {
+                if (message.Type is not (CoreMessageType.Report or CoreMessageType.Notification or CoreMessageType.ToolResult))
+                {
+                    continue;
+                }
+
+                if (!TryGetTelegramChatId(message, out var chatId))
+                {
+                    _logger.LogDebug(
+                        "Skipping agent message {MessageId} from {From}: missing telegram_chat_id payload",
+                        message.Id,
+                        message.FromAgentId);
+                    continue;
+                }
+
+                var text = string.IsNullOrWhiteSpace(message.Content)
+                    ? $"(empty {message.Type} from {message.FromAgentId})"
+                    : FormatForTelegram(message);
+
+                // Keep Telegram messages within reasonable size.
+                if (text.Length > 3800)
+                {
+                    text = text[..3800] + "…";
+                }
+
+                try
+                {
+                    await _botClient.SendMessage(chatId, text, cancellationToken: ct);
+                }
+                catch (OperationCanceledException) when (ct.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex,
+                        "Failed to forward agent message {MessageId} from {From} to Telegram chat {ChatId}",
+                        message.Id,
+                        message.FromAgentId,
+                        chatId);
+                }
+            }
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            // Normal shutdown.
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Telegram forwarder loop failed");
+        }
+    }
+
+    private static string FormatForTelegram(AgentMessage message)
+    {
+        var text = message.Content ?? string.Empty;
+
+        // Special-case: common success path for email tool.
+        // Example: "Task E2E-EMAIL-3 completed: Email successfully sent to ... Telegram→Lucifer→SMTP workflow is operational."
+        if (text.Contains("Email successfully sent", StringComparison.OrdinalIgnoreCase) ||
+            text.Contains("Email sent", StringComparison.OrdinalIgnoreCase))
+        {
+            var email = TryExtractEmail(text);
+            var masked = MaskEmail(email);
+            var summary = string.IsNullOrWhiteSpace(email)
+                ? "✅ Email sent"
+                : $"✅ Email sent to {masked}";
+
+            return summary;
+        }
+
+        // Generic: strip noisy prefix "Task X completed:" if present.
+        var idx = text.IndexOf(" completed:", StringComparison.OrdinalIgnoreCase);
+        if (text.StartsWith("Task ", StringComparison.OrdinalIgnoreCase) && idx > 0)
+        {
+            var after = text[(idx + " completed:".Length)..].Trim();
+            if (!string.IsNullOrWhiteSpace(after))
+            {
+                text = after;
+            }
+        }
+
+        // Generic: keep it short (first sentence) for readability.
+        var firstSentenceEnd = text.IndexOf('.', StringComparison.Ordinal);
+        if (firstSentenceEnd > 0 && firstSentenceEnd < 240)
+        {
+            text = text[..(firstSentenceEnd + 1)];
+        }
+
+        return text.Trim();
+    }
+
+    private static string? TryExtractEmail(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return null;
+
+        // Simple, pragmatic email extractor.
+        var m = Regex.Match(text, @"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}");
+        return m.Success ? m.Value : null;
+    }
+
+    private static string MaskEmail(string? email)
+    {
+        if (string.IsNullOrWhiteSpace(email)) return string.Empty;
+
+        var at = email.IndexOf('@');
+        if (at <= 0 || at == email.Length - 1) return email;
+
+        var local = email[..at];
+        var domain = email[(at + 1)..];
+
+        var visible = Math.Min(2, local.Length);
+        var maskedLocal = visible == local.Length
+            ? local
+            : local[..visible] + new string('*', Math.Max(3, local.Length - visible));
+
+        return $"{maskedLocal}@{domain}";
+    }
+
+    private static bool TryGetTelegramChatId(AgentMessage message, out long chatId)
+    {
+        chatId = default;
+
+        if (!message.Payload.TryGetValue("telegram_chat_id", out var raw) || raw is null)
+        {
+            return false;
+        }
+
+        try
+        {
+            chatId = raw switch
+            {
+                long l => l,
+                int i => i,
+                string s when long.TryParse(s, out var parsed) => parsed,
+                _ => Convert.ToInt64(raw)
+            };
+
+            return chatId != 0;
+        }
+        catch
+        {
+            return false;
         }
     }
 
@@ -105,7 +272,7 @@ public class TelegramBotService : BackgroundService
             {
                 var agentMessage = new AgentMessage
                 {
-                    FromAgentId = "telegram",
+                    FromAgentId = TelegramAgentId,
                     ToAgentId = "lucifer",
                     Type = CoreMessageType.Task,
                     Content = messageText,
@@ -117,7 +284,7 @@ public class TelegramBotService : BackgroundService
                 };
 
                 await _messageBus.PublishAsync(agentMessage, ct);
-                await botClient.SendMessage(chatId, "✅ Task received by Lucifer...", cancellationToken: ct);
+                await botClient.SendMessage(chatId, "✅ Task queued for Lucifer (processing soon)...", cancellationToken: ct);
             }
         }
         catch (Exception ex)

@@ -89,7 +89,12 @@ Action Input: done
             FromAgentId = "sender",
             ToAgentId = "agent-1",
             Type = MessageType.Task,
-            Content = "say hi"
+            Content = "say hi",
+            Payload = new Dictionary<string, object>
+            {
+                ["telegram_chat_id"] = 123456789L,
+                ["telegram_user_id"] = 987654321L
+            }
         };
 
         // Act
@@ -97,6 +102,8 @@ Action Input: done
 
         // Assert
         response.Content.Should().Contain("done");
+        response.Payload.Should().ContainKey("telegram_chat_id");
+        response.Payload.Should().ContainKey("telegram_user_id");
         _mockEventSink.Verify(x => x.AppendEvent(It.Is<AgentEvent>(e => e.AgentId == "agent-1" && e.Type == EventType.TaskReceived)), Times.Once);
         _mockEventSink.Verify(x => x.AppendEvent(It.Is<AgentEvent>(e => e.AgentId == "agent-1" && e.Type == EventType.TaskStarted)), Times.Once);
         _mockEventSink.Verify(x => x.AppendEvent(It.Is<AgentEvent>(e => e.AgentId == "agent-1" && e.Type == EventType.DecisionMade)), Times.Once);
