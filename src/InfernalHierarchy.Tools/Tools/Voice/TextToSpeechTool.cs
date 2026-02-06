@@ -8,11 +8,14 @@ using Microsoft.Extensions.Options;
 
 namespace InfernalHierarchy.Tools.Tools.Voice;
 
-public sealed class TextToSpeechTool : ITool
+public sealed class TextToSpeechTool : ITool, IAsyncDisposable
 {
     private readonly TextToSpeechToolOptions _options;
     private readonly IProcessRunner _runner;
     private readonly ILogger<TextToSpeechTool> _logger;
+
+    private readonly SemaphoreSlim _piperInitLock = new(1, 1);
+    private ISynthesizerModel? _piperModel;
 
     public TextToSpeechTool(
         IOptions<TextToSpeechToolOptions> options,
@@ -73,13 +76,7 @@ public sealed class TextToSpeechTool : ITool
 
             try
             {
-                var modelOptions = new SynthesizerOptions
-                {
-                    Provider = ExecutionProvider.Cpu,
-                    ThreadCount = threadCount == 0 ? Environment.ProcessorCount : threadCount
-                };
-
-                await using var synthesizer = await LocalSynthesizer.LoadAsync(_options.PiperVoicePath, modelOptions);
+                var synthesizer = await GetOrCreatePiperSynthesizerAsync(threadCount, warmup: _options.PiperWarmupOnLoad, ct).ConfigureAwait(false);
 
                 var synthOptions = new SynthesizeOptions
                 {
@@ -220,5 +217,117 @@ public sealed class TextToSpeechTool : ITool
             string s => s,
             _ => value.ToString()
         };
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        try
+        {
+            await DisposePiperModelAsync().ConfigureAwait(false);
+        }
+        finally
+        {
+            _piperInitLock.Dispose();
+        }
+    }
+
+    private async Task<ISynthesizerModel> GetOrCreatePiperSynthesizerAsync(int threadCount, CancellationToken ct)
+    {
+        return await GetOrCreatePiperSynthesizerAsync(threadCount, warmup: true, ct).ConfigureAwait(false);
+    }
+
+    public async Task<bool> WarmupAsync(CancellationToken ct = default)
+    {
+        if (!_options.Enabled || !_options.UsePiperNet)
+        {
+            return false;
+        }
+
+        if (string.IsNullOrWhiteSpace(_options.PiperVoicePath))
+        {
+            return false;
+        }
+
+        var threadCount = _options.PiperThreadCount;
+        if (threadCount < 0) threadCount = 0;
+
+        await GetOrCreatePiperSynthesizerAsync(threadCount, warmup: true, ct).ConfigureAwait(false);
+        return true;
+    }
+
+    private async Task<ISynthesizerModel> GetOrCreatePiperSynthesizerAsync(int threadCount, bool warmup, CancellationToken ct)
+    {
+        if (_piperModel is not null)
+        {
+            return _piperModel;
+        }
+
+        await _piperInitLock.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            if (_piperModel is not null)
+            {
+                return _piperModel;
+            }
+
+            var modelOptions = new SynthesizerOptions
+            {
+                Provider = ExecutionProvider.Cpu,
+                ThreadCount = threadCount == 0 ? Environment.ProcessorCount : threadCount
+            };
+
+            _logger.LogInformation("🔊 Loading Piper.Net voice model: {VoicePath}", _options.PiperVoicePath);
+            _piperModel = await LocalSynthesizer.LoadAsync(_options.PiperVoicePath, modelOptions).ConfigureAwait(false);
+
+            if (warmup)
+            {
+                try
+                {
+                    await _piperModel.WarmupAsync(ct).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (ct.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Piper.Net warmup failed; continuing without warmup");
+                }
+            }
+
+            return _piperModel;
+        }
+        finally
+        {
+            _piperInitLock.Release();
+        }
+    }
+
+    private async Task DisposePiperModelAsync()
+    {
+        var model = _piperModel;
+        _piperModel = null;
+        if (model is null)
+        {
+            return;
+        }
+
+        try
+        {
+            if (model is IAsyncDisposable asyncDisposable)
+            {
+                await asyncDisposable.DisposeAsync().ConfigureAwait(false);
+                return;
+            }
+
+            if (model is IDisposable disposable)
+            {
+                disposable.Dispose();
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to dispose Piper.Net model");
+        }
     }
 }

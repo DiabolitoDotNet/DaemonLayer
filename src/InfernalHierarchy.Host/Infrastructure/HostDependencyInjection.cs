@@ -1,0 +1,332 @@
+using System;
+using System.IO;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using OpenTelemetry.Resources;
+using OpenTelemetry.Trace;
+using Serilog;
+using InfernalHierarchy.Host.Docs;
+using InfernalHierarchy.Host.Migration;
+using InfernalHierarchy.Host.Personas;
+using InfernalHierarchy.Host.Telegram;
+
+namespace InfernalHierarchy.Host.Infrastructure;
+
+internal static class HostDependencyInjection
+{
+    public static void AddSerilogLogging(WebApplicationBuilder builder)
+    {
+        var agentContextEnricher = new AgentContextEnricher();
+        var messageContextEnricher = new MessageContextEnricher();
+        var toolContextEnricher = new ToolContextEnricher();
+
+        Log.Logger = new LoggerConfiguration()
+            .ReadFrom.Configuration(builder.Configuration)
+            .Enrich.With(new LoggingEnricher())
+            .Enrich.With(agentContextEnricher)
+            .Enrich.With(messageContextEnricher)
+            .Enrich.With(toolContextEnricher)
+            .CreateLogger();
+
+        builder.Services.AddSerilog();
+
+        builder.Services.AddSingleton(agentContextEnricher);
+        builder.Services.AddSingleton(messageContextEnricher);
+        builder.Services.AddSingleton(toolContextEnricher);
+    }
+
+    public static void AddValidatorsAndPostConfigure(WebApplicationBuilder builder)
+    {
+        builder.Services.AddSingleton<IValidateOptions<OllamaOptions>, OllamaOptionsValidator>();
+        builder.Services.AddSingleton<IValidateOptions<TelegramOptions>, TelegramOptionsValidator>();
+        builder.Services.AddSingleton<IPostConfigureOptions<TelegramOptions>, TelegramDockerSecretsPostConfigureOptions>();
+        builder.Services.AddSingleton<IPostConfigureOptions<EmailNotificationOptions>, EmailDockerSecretsPostConfigureOptions>();
+        builder.Services.AddSingleton<IValidateOptions<MemoryOptions>, MemoryOptionsValidator>();
+        builder.Services.AddSingleton<IValidateOptions<HierarchyOptions>, HierarchyOptionsValidator>();
+        builder.Services.AddSingleton<IValidateOptions<SearXNGOptions>, SearXngOptionsValidator>();
+        builder.Services.AddSingleton<IValidateOptions<BraveSearchOptions>, BraveSearchOptionsValidator>();
+        builder.Services.AddSingleton<IValidateOptions<SearXNGOptions>, WebSearchProvidersValidator>();
+        builder.Services.AddSingleton<IValidateOptions<BraveSearchOptions>, WebSearchProvidersValidator>();
+        builder.Services.AddSingleton<IValidateOptions<EmailNotificationOptions>, EmailNotificationOptionsValidator>();
+        builder.Services.AddSingleton<IValidateOptions<ToolRateLimitingOptions>, ToolRateLimitingOptionsValidator>();
+        builder.Services.AddSingleton<IValidateOptions<VectorMemoryOptions>, VectorMemoryOptionsValidator>();
+        builder.Services.AddSingleton<IValidateOptions<OnnxEmbeddingOptions>, OnnxEmbeddingOptionsValidator>();
+        builder.Services.AddSingleton<IValidateOptions<FileSystemToolOptions>, FileSystemToolOptionsValidator>();
+        builder.Services.AddSingleton<IValidateOptions<HttpRequestToolOptions>, HttpRequestToolOptionsValidator>();
+        builder.Services.AddSingleton<IValidateOptions<CodeExecutionToolOptions>, CodeExecutionToolOptionsValidator>();
+        builder.Services.AddSingleton<IValidateOptions<ToolMarketplaceOptions>, ToolMarketplaceOptionsValidator>();
+        builder.Services.AddSingleton<IValidateOptions<UiInterfaceOptions>, UiInterfaceOptionsValidator>();
+        builder.Services.AddSingleton<IValidateOptions<WebSocketInterfaceOptions>, WebSocketInterfaceOptionsValidator>();
+        builder.Services.AddSingleton<IValidateOptions<VoiceInterfaceOptions>, VoiceInterfaceOptionsValidator>();
+        builder.Services.AddSingleton<IValidateOptions<VoiceTranscriptionToolOptions>, VoiceTranscriptionToolOptionsValidator>();
+        builder.Services.AddSingleton<IValidateOptions<TextToSpeechToolOptions>, TextToSpeechToolOptionsValidator>();
+    }
+
+    public static void AddResourceLimits(WebApplicationBuilder builder)
+    {
+        var resourceLimits = new ResourceLimits();
+        builder.Configuration.GetSection("ResourceLimits").Bind(resourceLimits);
+        builder.Services.AddSingleton(resourceLimits);
+        builder.Services.AddSingleton<ResourceLimitService>();
+    }
+
+    public static void AddSecurityAndReliability(WebApplicationBuilder builder)
+    {
+        builder.Services.AddSingleton<ToolAuthorizationService>();
+        builder.Services.AddSingleton<IToolAuthorizationService>(sp => sp.GetRequiredService<ToolAuthorizationService>());
+        builder.Services.AddSingleton<TelegramBotClientFactory>();
+        builder.Services.AddSingleton<ITelegramBotClientFactory>(sp => sp.GetRequiredService<TelegramBotClientFactory>());
+
+        builder.Services.AddSingleton<ResiliencePolicies>();
+        builder.Services.AddSingleton<IResiliencePolicyProvider, ResiliencePolicyProvider>();
+        builder.Services.AddSingleton<GlobalExceptionHandler>();
+    }
+
+    public static void AddHealthChecks(WebApplicationBuilder builder)
+    {
+        builder.Services.AddHealthChecks()
+            .AddCheck<OllamaHealthCheck>("ollama", HealthStatus.Degraded, tags: new[] { "llm", "external" })
+            .AddCheck<QdrantHealthCheck>("qdrant", HealthStatus.Degraded, tags: new[] { "vector", "external" })
+            .AddCheck<OnnxEmbeddingsHealthCheck>("onnx_embeddings", HealthStatus.Degraded, tags: new[] { "embeddings", "local" })
+            .AddCheck<TelegramHealthCheck>("telegram", HealthStatus.Degraded, tags: new[] { "bot", "external" })
+            .AddCheck<LiteDbHealthCheck>("litedb", HealthStatus.Unhealthy, tags: new[] { "database", "storage" })
+            .AddCheck<AgentHierarchyHealthCheck>("agents", HealthStatus.Degraded, tags: new[] { "agents", "system" });
+
+        builder.Services.AddHttpClient();
+    }
+
+    public static void AddObservability(WebApplicationBuilder builder)
+    {
+        builder.Services.AddSingleton<MetricsCollector>();
+        builder.Services.AddSingleton<MetricsService>();
+        builder.Services.AddSingleton<PerformanceMonitor>();
+        builder.Services.AddSingleton<DistributedTracing>();
+        builder.Services.AddHostedService<ActivitySpanProfilingService>();
+
+        builder.Services.AddSingleton<InMemoryTraceCaptureStore>();
+        builder.Services.AddSingleton<ITraceCaptureStore>(sp => sp.GetRequiredService<InMemoryTraceCaptureStore>());
+        builder.Services.AddHostedService<ActivityTraceCaptureService>();
+
+        var otelExporterOptions = builder.Configuration.GetSection("OpenTelemetry:Exporters").Get<OpenTelemetryExportOptions>() ?? new OpenTelemetryExportOptions();
+
+        builder.Services.AddOpenTelemetry()
+            .ConfigureResource(resource => resource
+                .AddService(serviceName: "InfernalHierarchy", serviceVersion: "1.0.0"))
+            .WithTracing(tracing =>
+            {
+                tracing
+                    .AddSource("InfernalHierarchy")
+                    .AddHttpClientInstrumentation();
+
+                if (otelExporterOptions.Console.Enabled)
+                {
+                    tracing.AddConsoleExporter();
+                }
+
+                if (otelExporterOptions.Otlp.Enabled &&
+                    Uri.TryCreate(otelExporterOptions.Otlp.Endpoint, UriKind.Absolute, out var endpoint))
+                {
+                    tracing.AddOtlpExporter(options => options.Endpoint = endpoint);
+                }
+            });
+    }
+
+    public static void AddCoreServices(WebApplicationBuilder builder)
+    {
+        AddMessagingAndMemory(builder);
+        AddPersonaAndDocsServices(builder);
+        AddAgentSystem(builder);
+        AddToolExecutionPipeline(builder);
+        AddLlmAndLearning(builder);
+        AddNotifications(builder);
+        AddAdvancedMemory(builder);
+        AddCollaboration(builder);
+        AddTemplates(builder);
+        AddEventSourcing(builder);
+    }
+
+    private static void AddMessagingAndMemory(WebApplicationBuilder builder)
+    {
+        builder.Services.AddSingleton<IMessageBus, ChannelMessageBus>();
+        builder.Services.AddSingleton<ISharedMemory, LiteDbSharedMemory>();
+    }
+
+    private static void AddPersonaAndDocsServices(WebApplicationBuilder builder)
+    {
+        builder.Services.AddSingleton<IPersonaLoader, JsonPersonaLoader>();
+        builder.Services.AddSingleton<PersonaFileStore>();
+        builder.Services.AddSingleton<DocumentationGenerator>();
+        builder.Services.AddSingleton<AgentMigrationService>();
+    }
+
+    private static void AddAgentSystem(WebApplicationBuilder builder)
+    {
+        builder.Services.AddSingleton<AgentRegistry>();
+        builder.Services.AddSingleton<IAgentRegistry>(sp => sp.GetRequiredService<AgentRegistry>());
+        // ReAct SRP services
+        builder.Services.AddSingleton<IActionParser, DefaultActionParser>();
+        builder.Services.AddSingleton<IActionInputParser>(sp =>
+            new DefaultActionInputParser(sp.GetRequiredService<ILoggerFactory>().CreateLogger("ReAct.ActionInputParser")));
+        builder.Services.AddSingleton<IActionExecutor, DefaultActionExecutor>();
+        builder.Services.AddSingleton<IReActPromptBuilder, DefaultReActPromptBuilder>();
+        builder.Services.AddSingleton<IReActLoopRunner, DefaultReActLoopRunner>();
+        builder.Services.AddSingleton<IReportGenerator>(sp =>
+            new DefaultReportGenerator(sp.GetService<TokenUsageTracker>(), sp.GetService<MultiModelLlmClient>()));
+        builder.Services.AddSingleton<IAgentFactory, AgentFactory>();
+    }
+
+    private static void AddToolExecutionPipeline(WebApplicationBuilder builder)
+    {
+        builder.Services.AddSingleton<IToolExecutionPipeline, DefaultToolExecutionPipeline>();
+        builder.Services.AddSingleton<IToolRateLimiter, FixedWindowToolRateLimiter>();
+        builder.Services.AddSingleton<IProcessRunner, DefaultProcessRunner>();
+        builder.Services.AddSingleton<IToolPluginLoader, DefaultToolPluginLoader>();
+
+        builder.Services.AddSingleton<IToolRegistry>(sp =>
+        {
+            var logger = sp.GetRequiredService<ILogger<ToolRegistry>>();
+            var learningService = sp.GetRequiredService<AgentLearningService>();
+            var eventSink = sp.GetService<IAgentEventSink>();
+            var pipeline = sp.GetRequiredService<IToolExecutionPipeline>();
+            return new ToolRegistry(logger, learningService, sp, eventSink, pipeline);
+        });
+    }
+
+    private static void AddLlmAndLearning(WebApplicationBuilder builder)
+    {
+        builder.Services.AddSingleton<ILlmClient, OllamaClient>();
+
+        builder.Services.AddSingleton<MultiModelLlmClient>();
+        builder.Services.AddSingleton<TokenUsageTracker>();
+        builder.Services.AddSingleton<AgentLearningService>();
+    }
+
+    private static void AddNotifications(WebApplicationBuilder builder)
+    {
+        builder.Services.AddSingleton<IEmailSender, SmtpEmailSender>();
+    }
+
+    private static void AddAdvancedMemory(WebApplicationBuilder builder)
+    {
+        builder.Services.AddSingleton<OnnxEmbeddingService>();
+        builder.Services.AddHttpClient<IVectorMemory, VectorMemoryService>();
+        builder.Services.AddHostedService<VectorMemoryInitializationService>();
+        builder.Services.AddSingleton<ISkillTreeService, SkillTreeService>();
+        builder.Services.AddHostedService<MemoryPruningService>();
+        builder.Services.AddHostedService<MemoryLearningService>();
+    }
+
+    private static void AddCollaboration(WebApplicationBuilder builder)
+    {
+        builder.Services.AddSingleton<IAgentCollaborationService, AgentCollaborationService>();
+        builder.Services.AddSingleton<IAggregationStrategy, VotingAggregationStrategy>();
+        builder.Services.AddSingleton<IAggregationStrategy, WeightedVotingAggregationStrategy>();
+        builder.Services.AddSingleton<IAggregationStrategy, ConsensusAggregationStrategy>();
+        builder.Services.AddSingleton<IAggregationStrategy, HighestConfidenceAggregationStrategy>();
+        builder.Services.AddSingleton<IAggregationStrategy, HierarchicalAggregationStrategy>();
+    }
+
+    private static void AddTemplates(WebApplicationBuilder builder)
+    {
+        builder.Services.AddSingleton<ITemplateService>(sp =>
+        {
+            var logger = sp.GetRequiredService<ILogger<TemplateService>>();
+            var agentFactory = sp.GetRequiredService<IAgentFactory>();
+            var skillTreeService = sp.GetRequiredService<ISkillTreeService>();
+            var templatesDirectory = Path.Combine(AppContext.BaseDirectory, "../../../../../../templates");
+            return new TemplateService(logger, agentFactory, skillTreeService, templatesDirectory);
+        });
+    }
+
+    private static void AddEventSourcing(WebApplicationBuilder builder)
+    {
+        builder.Services.AddSingleton<EventStore>(sp =>
+        {
+            var configuredPath = builder.Configuration.GetValue<string>("EventStore:Path");
+            var storePath = string.IsNullOrWhiteSpace(configuredPath)
+                ? Path.Combine(builder.Environment.ContentRootPath, "events")
+                : (Path.IsPathRooted(configuredPath)
+                    ? configuredPath
+                    : Path.Combine(builder.Environment.ContentRootPath, configuredPath));
+
+            var logger = sp.GetRequiredService<ILogger<EventStore>>();
+            return new EventStore(storePath, logger);
+        });
+        builder.Services.AddSingleton<IAgentEventSink>(sp => sp.GetRequiredService<EventStore>());
+    }
+
+    public static void AddTools(WebApplicationBuilder builder)
+    {
+        AddSearchToolClients(builder);
+        AddWebSearchTools(builder);
+        AddToolHttpClients(builder);
+        AddToolImplementations(builder);
+        AddToolHostedServices(builder);
+    }
+
+    private static void AddSearchToolClients(WebApplicationBuilder builder)
+    {
+        builder.Services.AddHttpClient<ISearXngClient, SearXngClient>();
+        builder.Services.AddHttpClient<IBraveSearchClient, BraveSearchClient>();
+    }
+
+    private static void AddWebSearchTools(WebApplicationBuilder builder)
+    {
+        builder.Services.AddSingleton<SearXNGSearchTool>();
+        builder.Services.AddSingleton<BraveSearchTool>();
+        builder.Services.AddSingleton<WebSearchTool>();
+
+        builder.Services.AddSingleton<IWebSearchTool>(sp => sp.GetRequiredService<WebSearchTool>());
+        builder.Services.AddSingleton<ITool>(sp => sp.GetRequiredService<WebSearchTool>());
+    }
+
+    private static void AddToolHttpClients(WebApplicationBuilder builder)
+    {
+        builder.Services.AddHttpClient(nameof(HttpRequestTool));
+    }
+
+    private static void AddToolImplementations(WebApplicationBuilder builder)
+    {
+        builder.Services.AddSingleton<ITool, CreateSubAgentTool>();
+        builder.Services.AddSingleton<ITool, MemoryReadTool>();
+        builder.Services.AddSingleton<ITool, MemoryWriteTool>();
+        builder.Services.AddSingleton<ITool, RequestCollaborationTool>();
+        builder.Services.AddSingleton<ITool, TelegramSendTool>();
+        builder.Services.AddSingleton<ITool, CreateAgentFromTemplateTool>();
+        builder.Services.AddSingleton<ITool, ListTemplatesTool>();
+        builder.Services.AddSingleton<ITool, PromptAbTestTool>();
+        builder.Services.AddSingleton<ITool, EmailNotificationTool>();
+        builder.Services.AddSingleton<ITool, FileReadTool>();
+        builder.Services.AddSingleton<ITool, FileWriteTool>();
+        builder.Services.AddSingleton<ITool, FileSearchTool>();
+        builder.Services.AddSingleton<ITool, HttpRequestTool>();
+        builder.Services.AddSingleton<ITool, PythonExecTool>();
+        builder.Services.AddSingleton<ITool, NodeExecTool>();
+        builder.Services.AddSingleton<ITool, AudioTranscribeTool>();
+        builder.Services.AddSingleton<ITool, TextToSpeechTool>();
+    }
+
+    private static void AddToolHostedServices(WebApplicationBuilder builder)
+    {
+        builder.Services.AddHostedService<TextToSpeechWarmupService>();
+        builder.Services.AddHostedService<ToolRegistrationService>();
+        builder.Services.AddHostedService<ToolMarketplaceHostedService>();
+    }
+
+    public static void AddConfigurationHostedServices(WebApplicationBuilder builder)
+    {
+        builder.Services.AddHostedService<ConfigurationReloadService>();
+        builder.Services.AddHostedService<SecretRotationService>();
+    }
+
+    public static void AddHostedServices(WebApplicationBuilder builder)
+    {
+        builder.Services.AddInfernalTelegramCommandHandlers();
+        builder.Services.AddHostedService<TelegramBotService>();
+        builder.Services.AddHostedService<AgentOrchestrator>();
+    }
+}

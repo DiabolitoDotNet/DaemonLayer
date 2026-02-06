@@ -24,6 +24,7 @@ public class MemoryPruningServiceTests
         _options = new MemoryPruningOptions
         {
             Enabled = true,
+            DryRun = false,
             PruningIntervalHours = 24,
             RetentionDays = 30,
             MinConfidenceThreshold = 0.3,
@@ -247,6 +248,61 @@ public class MemoryPruningServiceTests
 
         // Assert
         exception.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task PruneMemoryAsync_WhenDryRunEnabled_ShouldNotDeleteButShouldLogWouldPrune()
+    {
+        // Arrange
+        _options.DryRun = true;
+        _options.EnableArchival = true;
+        _options.ArchivePath = "./test_archive";
+
+        var oldDate = DateTime.UtcNow.AddDays(-40);
+
+        _mockSharedMemory
+            .Setup(x => x.SearchFactsAsync("", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<Fact>
+            {
+                new() { Id = "fact_1", Content = "Old low confidence", Confidence = 0.1f, CreatedAt = oldDate, CreatedBy = "agent", Category = "Test", Source = "test" }
+            });
+
+        _mockSharedMemory
+            .Setup(x => x.GetTasksByStatusAsync(InfernalHierarchy.Core.Entities.TaskStatus.Completed, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<TaskEntry>
+            {
+                new() { Id = "task_1", Description = "Completed", Status = InfernalHierarchy.Core.Entities.TaskStatus.Completed, AssignedTo = "agent", CreatedAt = oldDate, CompletedAt = oldDate }
+            });
+
+        _mockSharedMemory
+            .Setup(x => x.GetRecentDecisionsAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<Decision>
+            {
+                new() { Id = "dec_1", Context = "Old", Action = "Archive", Outcome = "Success", CreatedBy = "agent", CreatedAt = oldDate }
+            });
+
+        var service = new TestableMemoryPruningService(
+            _mockSharedMemory.Object,
+            Options.Create(_options),
+            _mockLogger.Object);
+
+        // Act
+        await service.PublicPruneMemoryAsync(CancellationToken.None);
+
+        // Assert - No deletes in dry-run
+        _mockSharedMemory.Verify(x => x.DeleteFactAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+        _mockSharedMemory.Verify(x => x.DeleteTaskAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+        _mockSharedMemory.Verify(x => x.DeleteDecisionAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+
+        // Assert - Logs should indicate dry-run completion
+        _mockLogger.Verify(
+            x => x.Log(
+                LogLevel.Information,
+                It.IsAny<EventId>(),
+                It.Is<It.IsAnyType>((v, _) => v.ToString()!.Contains("dry-run", StringComparison.OrdinalIgnoreCase)),
+                It.IsAny<Exception>(),
+                It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
+            Times.AtLeastOnce);
     }
 
     [Fact]

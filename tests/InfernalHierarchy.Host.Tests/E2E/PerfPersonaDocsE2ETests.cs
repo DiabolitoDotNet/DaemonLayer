@@ -111,6 +111,17 @@ public sealed class PerfPersonaDocsE2ETests
         dlRes.EnsureSuccessStatusCode();
         var dlText = await dlRes.Content.ReadAsStringAsync();
         dlText.Should().Contain(traceId);
+
+        // tree
+        var treeRes = await client.GetAsync(new Uri($"/api/perf/traces/{traceId}/tree", UriKind.Relative));
+        treeRes.EnsureSuccessStatusCode();
+        var treeText = await treeRes.Content.ReadAsStringAsync();
+
+        using var treeDoc = JsonDocument.Parse(treeText);
+        treeDoc.RootElement.TryGetProperty("roots", out var roots).Should().BeTrue();
+        roots.ValueKind.Should().Be(JsonValueKind.Array);
+        roots.GetArrayLength().Should().BeGreaterThan(0);
+        roots[0].TryGetProperty("spanId", out _).Should().BeTrue();
     }
 
     [Fact]

@@ -14,6 +14,9 @@ TestResults/
 *.coverage
 *.cobertura.xml
 
+# Secrets (local-only)
+secrets/
+
 # Event store (generated at runtime)
 src/InfernalHierarchy.Host/events/
 src/InfernalHierarchy.Host/events/*.jsonl

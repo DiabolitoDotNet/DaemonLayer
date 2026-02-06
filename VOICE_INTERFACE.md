@@ -41,6 +41,8 @@ TTS is implemented in-process using `LMSupply.Synthesizer` (Piper/VITS ONNX).
 - `TextToSpeech:PiperVoicePath` = the voice directory (or alias supported by the synthesizer)
 - Optional: `TextToSpeech:PiperSpeakerId` for multi-speaker voices
 - Optional: `TextToSpeech:PiperThreadCount` (0 = auto)
+- Optional: `TextToSpeech:PiperWarmupOnLoad` (default true) to reduce first-call latency
+- Optional: `TextToSpeech:PiperWarmupAtStartup` (default false) to pre-load + warm the model when the Host starts
 
 Example:
 
@@ -54,6 +56,8 @@ Example:
     "PiperSpeakerId": 0,
     "PiperSpeed": 1.0,
     "PiperThreadCount": 0,
+    "PiperWarmupOnLoad": true,
+    "PiperWarmupAtStartup": false,
     "RootDirectory": "data/voice",
     "OutputExtension": ".wav"
   }

@@ -30,6 +30,8 @@ public class ReActAgent : BaseAgent
     private readonly IActionParser _actionParser;
     private readonly IActionExecutor _actionExecutor;
     private readonly IReportGenerator _reportGenerator;
+    private readonly IReActPromptBuilder _promptBuilder;
+    private readonly IReActLoopRunner _loopRunner;
     private const int MaxIterations = 5;
 
     public ReActAgent(
@@ -71,8 +73,11 @@ public class ReActAgent : BaseAgent
         MultiModelLlmClient? multiModelLlmClient = null,
         IAgentCollaborationService? collaborationService = null,
         IActionParser? actionParser = null,
+        IActionInputParser? actionInputParser = null,
         IActionExecutor? actionExecutor = null,
-        IReportGenerator? reportGenerator = null)
+        IReportGenerator? reportGenerator = null,
+        IReActPromptBuilder? promptBuilder = null,
+        IReActLoopRunner? loopRunner = null)
         : base(agent, persona, messageBus, sharedMemory, toolRegistry, logger)
     {
         _agentFactory = agentFactory;
@@ -86,9 +91,12 @@ public class ReActAgent : BaseAgent
         _collaborationService = collaborationService;
 
         _actionParser = actionParser ?? new DefaultActionParser();
-        var inputParser = new DefaultActionInputParser(_logger);
-        _actionExecutor = actionExecutor ?? new DefaultActionExecutor(inputParser);
+        var effectiveInputParser = actionInputParser ?? new DefaultActionInputParser(_logger);
+        _actionExecutor = actionExecutor ?? new DefaultActionExecutor(effectiveInputParser);
         _reportGenerator = reportGenerator ?? new DefaultReportGenerator(_tokenUsageTracker, _multiModelLlmClient);
+
+        _promptBuilder = promptBuilder ?? new DefaultReActPromptBuilder();
+        _loopRunner = loopRunner ?? new DefaultReActLoopRunner();
     }
 
     protected override async Task<string> BuildContextAsync(AgentMessage task, CancellationToken ct)
@@ -317,197 +325,30 @@ public class ReActAgent : BaseAgent
 
     private async Task<ReActResult> RunReActLoopAsync(string systemContext, string task, CancellationToken ct)
     {
-        var history = new StringBuilder();
-        var toolCalls = new List<string>();
-        var iterations = 0;
-        var consecutiveParseFailures = 0;
-        const int maxParseFailures = 3;
+        var loopContext = new ReActLoopContext(
+            SystemContext: systemContext,
+            Task: task,
+            Persona: Persona,
+            LlmClient: _ollamaClient,
+            ToolRegistry: _toolRegistry,
+            ActionParser: _actionParser,
+            ActionExecutor: _actionExecutor,
+            Logger: _logger,
+            SetStatus: s => Status = s,
+            AgentId: Id,
+            AgentName: Name,
+            AgentRank: Rank,
+            ReActOptions: _reActOptions,
+            PromptBuilder: _promptBuilder);
 
-        history.AppendLine($"Task: {task}\n");
+        var result = await _loopRunner.RunAsync(loopContext, ct).ConfigureAwait(false);
 
-        while (iterations < MaxIterations)
-        {
-            iterations++;
-            Status = AgentStatus.Thinking;
-
-            try
-            {
-                // Build prompt with history
-                var prompt = _reActOptions.UseJsonResponse
-                    ? $$"""
-                        {{systemContext}}
-
-                        # Conversation History
-                        {{history}}
-
-                        # Instructions
-                        Follow the ReAct pattern:
-                        1. Think about what you need to do next
-                        2. Choose a tool to use (or FINAL_ANSWER if done)
-
-                        Respond with a SINGLE JSON object and nothing else (no Markdown, no code fences).
-                        Required properties:
-                        - thought: string
-                        - action: string (tool name or FINAL_ANSWER)
-                        - actionInput: object (tool parameters) OR string (final answer)
-
-                        Example tool call:
-                        {\"thought\":\"I should search memory\",\"action\":\"memory_search\",\"actionInput\":{\"query\":\"...\"} }
-
-                        Example final answer:
-                        {\"thought\":\"I am done\",\"action\":\"FINAL_ANSWER\",\"actionInput\":\"<final answer text>\"}
-
-                        Available tools: {{string.Join(", ", Persona.AvailableTools)}}
-                        """
-                    : $"""
-                        {systemContext}
-
-                        # Conversation History
-                        {history}
-
-                        # Instructions
-                        Follow the ReAct pattern:
-                        1. Thought: Analyze what you need to do next
-                        2. Action: Choose a tool to use (or FINAL_ANSWER if done)
-                        3. Provide your response in this exact format:
-
-                        Thought: <your reasoning>
-                        Action: <tool_name or FINAL_ANSWER>
-                        Action Input: <tool parameters as JSON or final answer text>
-
-                        Available tools: {string.Join(", ", Persona.AvailableTools)}
-                        """;
-
-                _logger.LogDebug("Iteration {Iteration}: Calling LLM", iterations);
-
-                var response = _ollamaClient is IModelOverrideLlmClient modelOverrideClient
-                    && !string.IsNullOrWhiteSpace(Persona.ModelOverride)
-                        ? await modelOverrideClient.GetCompletionWithModelAsync(
-                            Persona.SystemPrompt,
-                            prompt,
-                            Persona.ModelOverride!,
-                            ct)
-                        : await _ollamaClient.GetCompletionAsync(
-                            Persona.SystemPrompt,
-                            prompt,
-                            ct);
-
-                if (string.IsNullOrWhiteSpace(response))
-                {
-                    _logger.LogWarning("LLM returned empty response");
-                    history.AppendLine("Observation: LLM returned empty response. Retrying...");
-                    continue;
-                }
-
-                history.AppendLine($"\n--- Iteration {iterations} ---");
-                history.AppendLine(response);
-
-                if (!_actionParser.TryParse(response, _reActOptions.UseJsonResponse, out var parsed))
-                {
-                    consecutiveParseFailures++;
-                    _logger.LogWarning("Failed to parse action from response (failure {Count}/{Max})",
-                        consecutiveParseFailures, maxParseFailures);
-
-                    if (consecutiveParseFailures >= maxParseFailures)
-                    {
-                        return new ReActResult
-                        {
-                            FinalAnswer = "Unable to complete task due to repeated parsing failures.",
-                            Reasoning = "LLM responses did not follow expected format",
-                            Iterations = iterations,
-                            ToolCalls = toolCalls
-                        };
-                    }
-
-                    history.AppendLine("Observation: Response format incorrect. Please follow the Thought/Action/Action Input format exactly.");
-                    continue;
-                }
-
-                var thought = parsed.Thought;
-                var action = parsed.Action;
-                var actionInput = parsed.ActionInputText;
-                var actionInputObject = parsed.ActionInputObject;
-
-                _logger.LogInformation("💭 Thought: {Thought}", thought);
-                _logger.LogInformation("⚡ Action: {Action}", action);
-
-                // Reset parse failure counter on successful parse
-                consecutiveParseFailures = 0;
-
-                // Check if done
-                if (action.Contains("FINAL_ANSWER", StringComparison.OrdinalIgnoreCase))
-                {
-                    return new ReActResult
-                    {
-                        FinalAnswer = actionInput,
-                        Reasoning = thought,
-                        Iterations = iterations,
-                        ToolCalls = toolCalls
-                    };
-                }
-
-                try
-                {
-                    Status = AgentStatus.ActingWithTool;
-
-                    var exec = await _actionExecutor.ExecuteAsync(new ActionExecutionContext(
-                        ToolRegistry: _toolRegistry,
-                        ToolName: action,
-                        ActionInputText: actionInput,
-                        ActionInputObject: actionInputObject,
-                        AgentId: Id,
-                        AgentName: Name,
-                        AgentRank: Rank.ToString(),
-                        AvailableTools: Persona.AvailableTools,
-                        CancellationToken: ct)).ConfigureAwait(false);
-
-                    if (!exec.ToolFound)
-                    {
-                        history.AppendLine(exec.Observation);
-                        _logger.LogWarning("Tool '{Tool}' not found. Available: {Available}", action, string.Join(", ", Persona.AvailableTools));
-                        continue;
-                    }
-
-                    if (!string.IsNullOrWhiteSpace(exec.ToolCall))
-                    {
-                        toolCalls.Add(exec.ToolCall);
-                    }
-
-                    history.AppendLine(exec.Observation);
-                    _logger.LogInformation("👁️ {Observation}", exec.Observation);
-
-                    if (!exec.Success && exec.Error?.Contains("required", StringComparison.OrdinalIgnoreCase) == true)
-                    {
-                        history.AppendLine("Hint: Check the tool's required parameters and try again.");
-                    }
-                }
-                catch (Exception ex)
-                {
-                    history.AppendLine($"Observation: Tool execution threw exception - {ex.Message}");
-                    _logger.LogError(ex, "Tool {Tool} execution threw exception", action);
-                }
-            }
-            catch (OperationCanceledException)
-            {
-                throw; // Propagate cancellation
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error in ReAct loop iteration {Iteration}", iterations);
-                history.AppendLine($"Observation: System error occurred - {ex.Message}. Attempting to continue...");
-            }
-
-            Status = AgentStatus.Thinking;
-        }
-
-        // Max iterations reached
-        _logger.LogWarning("{AgentName} reached max iterations ({Max}) without completing task", Name, MaxIterations);
         return new ReActResult
         {
-            FinalAnswer = $"Task incomplete after {MaxIterations} iterations. Partial progress:\n{history}",
-            Reasoning = "Reached maximum iteration limit",
-            Iterations = iterations,
-            ToolCalls = toolCalls
+            FinalAnswer = result.FinalAnswer,
+            Reasoning = result.Reasoning,
+            Iterations = result.Iterations,
+            ToolCalls = result.ToolCalls.ToList()
         };
     }
 
@@ -585,6 +426,16 @@ public class ReActAgent : BaseAgent
             var requestId = match.Groups[1].Value;
             var task = match.Groups[2].Value;
 
+            var round = 1;
+            if (message.Payload != null && message.Payload.TryGetValue("Round", out var roundObj) && roundObj != null)
+            {
+                _ = int.TryParse(roundObj.ToString(), out round);
+                if (round <= 0)
+                {
+                    round = 1;
+                }
+            }
+
             _logger.LogInformation(
                 "🤝 {AgentName} processing collaboration request {RequestId}: {Task}",
                 Name,
@@ -613,7 +464,8 @@ public class ReActAgent : BaseAgent
                     Confidence = confidence,
                     Reasoning = result.Reasoning,
                     Timestamp = DateTime.UtcNow,
-                    ProcessingTimeMs = result.Iterations * 1000 // Rough estimate
+                    ProcessingTimeMs = result.Iterations * 1000, // Rough estimate
+                    Round = round
                 };
 
                 await _collaborationService.SubmitResponseAsync(requestId, response, ct);

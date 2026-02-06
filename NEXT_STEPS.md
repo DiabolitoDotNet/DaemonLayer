@@ -65,6 +65,8 @@ curl http://localhost:6333/collections
 
 **Disk Space**: Minimal (~100MB for Docker image)
 
+**Tip**: The repo also ships a full-stack compose including the Host + Qdrant + SearXNG in `docker-compose.yml`.
+
 ---
 
 ### 4️⃣ **Enable Advanced Features** (OPTIONAL)
@@ -108,6 +110,47 @@ For higher-quality semantic search, enable ONNX embeddings and ensure model asse
   }
 }
 ```
+
+**Docker (recommended)**: keep the base compose safe-by-default, and enable ONNX via the provided override:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.onnx.yml up -d
+```
+
+---
+
+### 4️⃣c **(Optional) Enable Voice (STT/TTS) via Docker**
+
+The embedded UI includes a Voice panel that calls:
+
+- `POST /api/voice/transcribe` (STT)
+- `POST /api/voice/speak` (TTS)
+
+For interactive/local usage, the recommended “optimized enough” setup is:
+
+- **TTS**: Piper.Net (in-process) with the model cached after first use
+- **STT**: whisper.cpp CLI invoked per request (low volume)
+
+1) Put models on disk:
+
+- Whisper model under `./models/whisper` (example: `ggml-base.en.bin`)
+- Piper ONNX voice under `./models/piper` (example: `voice.onnx`)
+
+2) Start the stack using the voice override:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.voice.yml up -d --build
+```
+
+3) Open the UI:
+
+- `http://localhost:5080/ui`
+
+Edit `docker-compose.voice.yml` if your model filenames differ:
+
+- `VoiceTranscription__Arguments__1` → Whisper model path
+- `TextToSpeech__PiperVoicePath` → Piper voice path
+- `TextToSpeech__PiperWarmupAtStartup` → pre-load + warm the model at container startup (recommended)
 
 ---
 
@@ -153,9 +196,19 @@ dotnet run --project src/InfernalHierarchy.Host
 2. Start Qdrant: `docker-compose up -d qdrant`
 3. Run the app
 4. Use Telegram or memory tools to store facts
-5. Query similar facts using `SearchSimilarAsync`
+5. Query similar facts using the tool `read_memory` with a `query` (it will prefer semantic/vector search when vector memory is enabled).
+  - Force keyword mode: pass `mode=keyword`
+  - Force semantic mode: pass `mode=semantic`
 
 **Verification**: Check `http://localhost:6333/collections` - you should see `infernal_facts` collection.
+
+**Opt-in live integration test (Qdrant roundtrip)**:
+
+```bash
+# Start Qdrant first (docker compose up -d qdrant)
+$env:INFERNAL_LIVE_QDRANT=1
+dotnet test .\tests\InfernalHierarchy.Memory.Tests\InfernalHierarchy.Memory.Tests.csproj -c Release --filter FullyQualifiedName~VectorMemoryServiceLiveQdrantTests
+```
 
 ### Test Multi-Model LLM
 
@@ -177,15 +230,40 @@ dotnet run --project src/InfernalHierarchy.Host
 
 **Verification**: Each agent action creates an event record.
 
-### Test Memory Pruning
+### Runbook: Memory Pruning (Safe Defaults + Rollback)
 
-1. Enable `MemoryPruningOptions.Enabled = true`
-2. Create old facts with low confidence
-3. Wait 24 hours OR temporarily change `PruningIntervalHours: 0.016` (1 minute)
-4. Check logs for pruning activity
-5. Verify `./archives/` directory for archived decisions
+**What it does** (when enabled):
+- Deletes **Facts** older than `RetentionDays` *and* with confidence `< MinConfidenceThreshold`.
+- Deletes **Completed Tasks** older than `RetentionDays`.
+- Optionally **archives Decisions** older than `RetentionDays` into JSON files in `ArchivePath`, then deletes them from LiteDB.
 
-**Verification**: Old data is removed from LiteDB, saved to archives.
+**Safety defaults (recommended)**:
+- Keep `MemoryPruningOptions.Enabled = false` until you’re ready.
+- When you first enable it, keep `MemoryPruningOptions.DryRun = true` (no deletes/archives, logs only).
+- Use `MaxDeletesPerRun` as a safety cap for production rollouts.
+
+**Enable (dry-run first)**:
+1. Stop the Host.
+2. Backup LiteDB: copy `data/infernal.db` to a safe location.
+3. Set:
+  - `MemoryPruningOptions.Enabled = true`
+  - `MemoryPruningOptions.DryRun = true`
+  - Optional for testing: `PruningIntervalHours = 0.016` (≈ 1 minute)
+  - Optional safety: set `MaxDeletesPerRun = 50`
+4. Start the Host and watch logs for: `Memory pruning dry-run complete - would remove ...`.
+
+**Apply changes (actual prune)**:
+1. Keep your backup in place.
+2. Set `MemoryPruningOptions.DryRun = false`.
+3. (Optional) Enable archival: `EnableArchival = true` and confirm `ArchivePath` (default `./archive/memory`).
+4. Start the Host and verify:
+  - Logs: `Memory pruning complete - removed ...`
+  - If archival enabled: JSON files are created under `ArchivePath`.
+
+**Rollback**:
+1. Stop the Host.
+2. Restore the backed-up `data/infernal.db`.
+3. Set `MemoryPruningOptions.Enabled = false` (and keep `DryRun = true` for next time).
 
 ---
 

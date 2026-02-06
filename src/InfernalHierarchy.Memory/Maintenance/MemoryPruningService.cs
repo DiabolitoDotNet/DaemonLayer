@@ -25,7 +25,13 @@ public class MemoryPruningService : BackgroundService
         _sharedMemory = sharedMemory;
         _options = options.Value;
         _logger = logger;
-        _timer = new PeriodicTimer(TimeSpan.FromHours(_options.PruningIntervalHours));
+        var period = TimeSpan.FromHours(_options.PruningIntervalHours);
+        if (period <= TimeSpan.Zero)
+        {
+            period = TimeSpan.FromHours(24);
+        }
+
+        _timer = new PeriodicTimer(period);
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -36,7 +42,14 @@ public class MemoryPruningService : BackgroundService
             return;
         }
 
-        _logger.LogInformation("🗑️ Memory pruning service started - running every {Hours}h", _options.PruningIntervalHours);
+        _logger.LogInformation(
+            "🗑️ Memory pruning service started - every {Hours}h (retention={RetentionDays}d, minConfidence<{MinConfidence}, archival={Archival}, dryRun={DryRun}, maxDeletesPerRun={MaxDeletesPerRun})",
+            _options.PruningIntervalHours,
+            _options.RetentionDays,
+            _options.MinConfidenceThreshold,
+            _options.EnableArchival,
+            _options.DryRun,
+            _options.MaxDeletesPerRun);
 
         while (!stoppingToken.IsCancellationRequested)
         {
@@ -62,26 +75,47 @@ public class MemoryPruningService : BackgroundService
         _logger.LogInformation("🧹 Starting memory pruning...");
 
         var prunedCount = 0;
+        var wouldPruneCount = 0;
+        var remainingBudget = _options.MaxDeletesPerRun <= 0 ? int.MaxValue : _options.MaxDeletesPerRun;
         var cutoffDate = DateTime.UtcNow.AddDays(-_options.RetentionDays);
 
         // Prune old facts with low confidence
-        prunedCount += await PruneOldFactsWithLowConfidenceAsync(cutoffDate, ct);
+        var (factsPruned, factsWould) = await PruneOldFactsWithLowConfidenceAsync(cutoffDate, remainingBudget, ct);
+        prunedCount += factsPruned;
+        wouldPruneCount += factsWould;
+        remainingBudget -= factsPruned;
 
         // Prune completed tasks
-        prunedCount += await PruneCompletedTasksAsync(cutoffDate, ct);
-
-        // Archive old decisions (if archival is enabled)
-        if (_options.EnableArchival)
+        if (remainingBudget > 0)
         {
-            prunedCount += await ArchiveOldDecisionsAsync(cutoffDate, ct);
+            var (tasksPruned, tasksWould) = await PruneCompletedTasksAsync(cutoffDate, remainingBudget, ct);
+            prunedCount += tasksPruned;
+            wouldPruneCount += tasksWould;
+            remainingBudget -= tasksPruned;
         }
 
-        _logger.LogInformation("✅ Memory pruning complete - removed {Count} entries", prunedCount);
+        // Archive old decisions (if archival is enabled)
+        if (remainingBudget > 0 && _options.EnableArchival)
+        {
+            var (decisionsPruned, decisionsWould) = await ArchiveOldDecisionsAsync(cutoffDate, remainingBudget, ct);
+            prunedCount += decisionsPruned;
+            wouldPruneCount += decisionsWould;
+        }
+
+        if (_options.DryRun)
+        {
+            _logger.LogInformation("✅ Memory pruning dry-run complete - would remove {Count} entries", wouldPruneCount);
+        }
+        else
+        {
+            _logger.LogInformation("✅ Memory pruning complete - removed {Count} entries", prunedCount);
+        }
     }
 
-    private async Task<int> PruneOldFactsWithLowConfidenceAsync(DateTime cutoffDate, CancellationToken ct)
+    private async Task<(int pruned, int wouldPrune)> PruneOldFactsWithLowConfidenceAsync(DateTime cutoffDate, int budget, CancellationToken ct)
     {
         var pruned = 0;
+        var wouldPrune = 0;
         try
         {
             // Search all facts
@@ -89,14 +123,26 @@ public class MemoryPruningService : BackgroundService
 
             foreach (var fact in allFacts)
             {
+                if (pruned >= budget)
+                {
+                    break;
+                }
+
                 // Prune if old AND low confidence
                 if (fact.CreatedAt < cutoffDate && fact.Confidence < _options.MinConfidenceThreshold)
                 {
                     _logger.LogDebug("Pruning low-confidence fact: {FactId} (confidence: {Confidence})",
                         fact.Id, fact.Confidence);
 
-                    await _sharedMemory.DeleteFactAsync(fact.Id, ct);
-                    pruned++;
+                    if (_options.DryRun)
+                    {
+                        wouldPrune++;
+                    }
+                    else
+                    {
+                        await _sharedMemory.DeleteFactAsync(fact.Id, ct);
+                        pruned++;
+                    }
                 }
             }
         }
@@ -105,23 +151,37 @@ public class MemoryPruningService : BackgroundService
             _logger.LogError(ex, "Error pruning old facts");
         }
 
-        return pruned;
+        return (pruned, wouldPrune);
     }
 
-    private async Task<int> PruneCompletedTasksAsync(DateTime cutoffDate, CancellationToken ct)
+    private async Task<(int pruned, int wouldPrune)> PruneCompletedTasksAsync(DateTime cutoffDate, int budget, CancellationToken ct)
     {
         var pruned = 0;
+        var wouldPrune = 0;
         try
         {
             var completedTasks = await _sharedMemory.GetTasksByStatusAsync(InfernalHierarchy.Core.Entities.TaskStatus.Completed, ct);
 
             foreach (var task in completedTasks)
             {
+                if (pruned >= budget)
+                {
+                    break;
+                }
+
                 if (task.CompletedAt.HasValue && task.CompletedAt.Value < cutoffDate)
                 {
                     _logger.LogDebug("Pruning old completed task: {TaskId}", task.Id);
-                    await _sharedMemory.DeleteTaskAsync(task.Id, ct);
-                    pruned++;
+
+                    if (_options.DryRun)
+                    {
+                        wouldPrune++;
+                    }
+                    else
+                    {
+                        await _sharedMemory.DeleteTaskAsync(task.Id, ct);
+                        pruned++;
+                    }
                 }
             }
         }
@@ -130,20 +190,33 @@ public class MemoryPruningService : BackgroundService
             _logger.LogError(ex, "Error pruning completed tasks");
         }
 
-        return pruned;
+        return (pruned, wouldPrune);
     }
 
-    private async Task<int> ArchiveOldDecisionsAsync(DateTime cutoffDate, CancellationToken ct)
+    private async Task<(int pruned, int wouldPrune)> ArchiveOldDecisionsAsync(DateTime cutoffDate, int budget, CancellationToken ct)
     {
         var pruned = 0;
+        var wouldPrune = 0;
         try
         {
-            Directory.CreateDirectory(_options.ArchivePath);
-            var oldDecisions = await _sharedMemory.GetRecentDecisionsAsync(1000, ct);
+            var oldDecisions = await _sharedMemory.GetRecentDecisionsAsync(_options.DecisionsToScan, ct);
 
             foreach (var decision in oldDecisions.Where(d => d.CreatedAt < cutoffDate))
             {
+                if (pruned >= budget)
+                {
+                    break;
+                }
+
                 _logger.LogDebug("Archiving old decision: {DecisionId}", decision.Id);
+
+                if (_options.DryRun)
+                {
+                    wouldPrune++;
+                    continue;
+                }
+
+                Directory.CreateDirectory(_options.ArchivePath);
 
                 // Archive to file or external storage
                 var archivePath = Path.Combine(_options.ArchivePath, $"decision_{decision.Id}.json");
@@ -164,7 +237,7 @@ public class MemoryPruningService : BackgroundService
             _logger.LogError(ex, "Error archiving old decisions");
         }
 
-        return pruned;
+        return (pruned, wouldPrune);
     }
 
     public override void Dispose()

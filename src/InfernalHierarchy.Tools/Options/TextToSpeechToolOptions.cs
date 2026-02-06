@@ -34,6 +34,18 @@ public sealed class TextToSpeechToolOptions
     public int PiperThreadCount { get; set; } = 0;
 
     /// <summary>
+    /// If true, warm up the Piper model when it is first loaded (best-effort).
+    /// This reduces latency for the first synthesis call at the cost of a longer initial load.
+    /// </summary>
+    public bool PiperWarmupOnLoad { get; set; } = true;
+
+    /// <summary>
+    /// If true, attempt to load and warm up the Piper model during host startup.
+    /// Requires a host-side warmup service to be registered.
+    /// </summary>
+    public bool PiperWarmupAtStartup { get; set; } = false;
+
+    /// <summary>
     /// Path to a local TTS executable.
     /// </summary>
     public string ExecutablePath { get; set; } = string.Empty;

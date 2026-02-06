@@ -1,4 +1,6 @@
 using System.Collections.Concurrent;
+using System.Threading;
+using System.Threading.Channels;
 using InfernalHierarchy.Core.Entities;
 using InfernalHierarchy.Core.Interfaces;
 using InfernalHierarchy.Agents.Collaboration.Strategies;
@@ -20,6 +22,7 @@ public class AgentCollaborationService : IAgentCollaborationService
     private readonly ConcurrentDictionary<string, List<AgentResponse>> _responses;
     private readonly ConcurrentDictionary<string, int> _collaborationRounds;
     private readonly ConcurrentDictionary<string, DateTime> _roundStartTimes;
+    private readonly ConcurrentDictionary<string, Channel<AgentResponse>> _responseChannels;
     private readonly IReadOnlyDictionary<CollaborationStrategy, IAggregationStrategy> _aggregationStrategies;
 
     /// <summary>
@@ -49,10 +52,57 @@ public class AgentCollaborationService : IAgentCollaborationService
         _responses = new ConcurrentDictionary<string, List<AgentResponse>>();
         _collaborationRounds = new ConcurrentDictionary<string, int>();
         _roundStartTimes = new ConcurrentDictionary<string, DateTime>();
+        _responseChannels = new ConcurrentDictionary<string, Channel<AgentResponse>>();
 
         _aggregationStrategies = (aggregationStrategies ?? CreateDefaultStrategies())
             .GroupBy(s => s.Strategy)
             .ToDictionary(g => g.Key, g => g.First());
+    }
+
+    private Channel<AgentResponse> GetOrCreateResponseChannel(string requestId)
+        => _responseChannels.GetOrAdd(
+            requestId,
+            _ => Channel.CreateUnbounded<AgentResponse>(new UnboundedChannelOptions
+            {
+                SingleReader = true,
+                SingleWriter = false,
+                AllowSynchronousContinuations = true
+            }));
+
+    private void CleanupResponseChannel(string requestId)
+    {
+        if (_responseChannels.TryRemove(requestId, out var channel))
+        {
+            channel.Writer.TryComplete();
+        }
+    }
+
+    private async Task WaitForResponseAsync(string requestId, TimeSpan timeout, CancellationToken ct)
+    {
+        if (timeout <= TimeSpan.Zero)
+        {
+            return;
+        }
+
+        var channel = GetOrCreateResponseChannel(requestId);
+
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        timeoutCts.CancelAfter(timeout);
+
+        try
+        {
+            if (await channel.Reader.WaitToReadAsync(timeoutCts.Token).ConfigureAwait(false))
+            {
+                // Drain signals; responses are already stored in _responses.
+                while (channel.Reader.TryRead(out _))
+                {
+                }
+            }
+        }
+        catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested && !ct.IsCancellationRequested)
+        {
+            // timeout
+        }
     }
 
     private static IEnumerable<IAggregationStrategy> CreateDefaultStrategies()
@@ -98,6 +148,7 @@ public class AgentCollaborationService : IAgentCollaborationService
         // Register active collaboration
         _activeCollaborations[request.Id] = request;
         _responses[request.Id] = new List<AgentResponse>();
+        _ = GetOrCreateResponseChannel(request.Id);
         request.Status = CollaborationStatus.InProgress;
 
         // If the caller left the default strategy, try selecting a better one based on participants/task.
@@ -120,7 +171,7 @@ public class AgentCollaborationService : IAgentCollaborationService
             var deadline = DateTime.UtcNow.Add(request.Timeout);
             while (DateTime.UtcNow < deadline && !ct.IsCancellationRequested)
             {
-                var validResponses = GetValidResponses(request.Id);
+                var validResponses = GetValidResponses(request.Id, round);
                 if (validResponses.Count >= request.MinimumParticipants)
                 {
                     var result = await AggregateResponsesAsync(request, validResponses, ct).ConfigureAwait(false);
@@ -131,6 +182,7 @@ public class AgentCollaborationService : IAgentCollaborationService
                         request.CompletedAt = DateTime.UtcNow;
                         request.Result = result;
                         AnalyzeCollaborationHistory(request, result);
+                        CleanupResponseChannel(request.Id);
                         return result;
                     }
 
@@ -144,6 +196,7 @@ public class AgentCollaborationService : IAgentCollaborationService
                         request.CompletedAt = DateTime.UtcNow;
                         request.Result = resolved;
                         AnalyzeCollaborationHistory(request, resolved);
+                        CleanupResponseChannel(request.Id);
                         return resolved;
                     }
 
@@ -169,10 +222,18 @@ public class AgentCollaborationService : IAgentCollaborationService
                     request.CompletedAt = DateTime.UtcNow;
                     request.Result = result;
                     AnalyzeCollaborationHistory(request, result);
+                    CleanupResponseChannel(request.Id);
                     return result;
                 }
 
-                await Task.Delay(100, ct).ConfigureAwait(false);
+                var remaining = deadline - DateTime.UtcNow;
+                if (remaining <= TimeSpan.Zero)
+                {
+                    break;
+                }
+
+                // Wait for a response signal (or until this round times out).
+                await WaitForResponseAsync(request.Id, remaining, ct).ConfigureAwait(false);
             }
 
             if (proceedToNextRound)
@@ -185,10 +246,11 @@ public class AgentCollaborationService : IAgentCollaborationService
             {
                 request.Status = CollaborationStatus.Cancelled;
                 request.CompletedAt = DateTime.UtcNow;
+                CleanupResponseChannel(request.Id);
                 break;
             }
 
-            var partial = GetValidResponses(request.Id);
+            var partial = GetValidResponses(request.Id, round);
             request.Status = CollaborationStatus.TimedOut;
             request.CompletedAt = DateTime.UtcNow;
 
@@ -197,9 +259,11 @@ public class AgentCollaborationService : IAgentCollaborationService
                 var partialResult = await AggregateResponsesAsync(request, partial, ct).ConfigureAwait(false);
                 request.Result = partialResult;
                 AnalyzeCollaborationHistory(request, partialResult);
+                CleanupResponseChannel(request.Id);
                 return partialResult;
             }
 
+            CleanupResponseChannel(request.Id);
             return new CollaborationResult
             {
                 Decision = "TIMEOUT",
@@ -209,6 +273,7 @@ public class AgentCollaborationService : IAgentCollaborationService
             };
         }
 
+        CleanupResponseChannel(request.Id);
         return new CollaborationResult
         {
             Decision = request.Status == CollaborationStatus.Cancelled ? "CANCELLED" : "FAILED",
@@ -237,6 +302,26 @@ public class AgentCollaborationService : IAgentCollaborationService
             response.Timestamp = DateTime.UtcNow;
         }
 
+        var currentRound = _collaborationRounds.TryGetValue(requestId, out var round)
+            ? round
+            : 1;
+
+        if (response.Round <= 0)
+        {
+            response.Round = currentRound;
+        }
+
+        if (response.Round != currentRound)
+        {
+            _logger.LogDebug(
+                "Ignoring response for collaboration {RequestId} from agent {AgentId} due to round mismatch (got {ResponseRound}, current {CurrentRound})",
+                requestId,
+                response.AgentId,
+                response.Round,
+                currentRound);
+            return Task.CompletedTask;
+        }
+
         if (_roundStartTimes.TryGetValue(requestId, out var roundStart) && response.Timestamp < roundStart)
         {
             _logger.LogDebug(
@@ -255,6 +340,9 @@ public class AgentCollaborationService : IAgentCollaborationService
         _logger.LogDebug(
             "Received collaboration response from agent {AgentId} for request {RequestId} (confidence: {Confidence:F2})",
             response.AgentId, requestId, response.Confidence);
+
+        // Signal any waiter that new responses arrived.
+        _ = GetOrCreateResponseChannel(requestId).Writer.TryWrite(response);
 
         return Task.CompletedTask;
     }
@@ -291,7 +379,7 @@ public class AgentCollaborationService : IAgentCollaborationService
         await Task.WhenAll(tasks).ConfigureAwait(false);
     }
 
-    private List<AgentResponse> GetValidResponses(string requestId)
+    private List<AgentResponse> GetValidResponses(string requestId, int round)
     {
         if (!_responses.TryGetValue(requestId, out var responses))
         {
@@ -304,7 +392,9 @@ public class AgentCollaborationService : IAgentCollaborationService
 
         lock (responses)
         {
-            return responses.Where(r => r.Timestamp >= roundStart).ToList();
+            return responses
+                .Where(r => r.Round == round && r.Timestamp >= roundStart)
+                .ToList();
         }
     }
 
@@ -355,6 +445,8 @@ Instruction: If you change your decision, explain why. If you keep it, explain w
         {
             request.Status = CollaborationStatus.Cancelled;
             request.CompletedAt = DateTime.UtcNow;
+
+            CleanupResponseChannel(requestId);
 
             _logger.LogInformation("Cancelled collaboration {RequestId}", requestId);
         }

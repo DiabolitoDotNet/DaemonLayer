@@ -174,17 +174,20 @@ The AgentLearningService stores performance metrics in shared memory:
 - **Privacy**: No user input or LLM response content is stored
 - **Retention**: Subject to MemoryPruningService cleanup policies (default 30 days)
 - **Recommendations**:
-  1. Set appropriate `MemoryOptions.FactRetentionDays` for metric archival
+  1. Set appropriate `MemoryPruningOptions.RetentionDays` based on your data sensitivity needs
   2. Ensure LiteDB file permissions restrict read access to application user
   3. Implement backup encryption if metrics contain sensitive operation patterns
 
 **Example Learning Metrics Configuration:**
 ```json
 {
-  "MemoryOptions": {
-    "FactRetentionDays": 30,
-    "LowConfidenceThreshold": 0.3,
-    "PruningIntervalHours": 24
+  "MemoryPruningOptions": {
+    "Enabled": false,
+    "DryRun": true,
+    "RetentionDays": 30,
+    "MinConfidenceThreshold": 0.3,
+    "PruningIntervalHours": 24,
+    "MaxDeletesPerRun": 500
   }
 }
 ```

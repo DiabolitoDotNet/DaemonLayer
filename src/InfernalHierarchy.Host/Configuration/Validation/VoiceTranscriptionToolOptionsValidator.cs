@@ -20,6 +20,14 @@ public sealed class VoiceTranscriptionToolOptionsValidator : IValidateOptions<Vo
         if (options.MaxInputBytes <= 0) failures.Add("VoiceTranscription:MaxInputBytes must be > 0");
         if (options.AllowedExtensions is null || options.AllowedExtensions.Count == 0) failures.Add("VoiceTranscription:AllowedExtensions must not be empty when enabled");
 
+        if (!string.IsNullOrWhiteSpace(options.DecoderExecutablePath)
+            && (options.DecoderArguments is null || options.DecoderArguments.Count == 0))
+        {
+            // Not strictly required because the tool provides a default ffmpeg-like argument list,
+            // but if users set a decoder they typically intend to customize args.
+            // Keep this lenient to avoid breaking existing configs.
+        }
+
         return failures.Count == 0 ? ValidateOptionsResult.Success : ValidateOptionsResult.Fail(failures);
     }
 }

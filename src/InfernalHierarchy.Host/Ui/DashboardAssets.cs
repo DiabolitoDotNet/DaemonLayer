@@ -1,231 +1,18 @@
 namespace InfernalHierarchy.Host.Ui;
 
-internal static class DashboardAssets
+internal static partial class DashboardAssets
 {
-    public const string IndexHtml = """
-<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>InfernalHierarchy UI</title>
-  <link rel="stylesheet" href="/ui/styles.css" />
-</head>
-<body>
-  <header>
-    <h1>InfernalHierarchy</h1>
-    <div class="sub">Local dashboard + WebSocket stream</div>
+    private static readonly Lazy<string> _indexHtml = new(
+        () => LayoutPrefix
+            + PageHome
+            + PagePerf
+            + PagePersonas
+            + PageDocs
+            + PageMigrate
+            + LayoutSuffix,
+        isThreadSafe: true);
 
-    <nav class="nav">
-      <a class="navLink" href="/ui">Dashboard</a>
-      <a class="navLink" href="/ui/perf">Performance</a>
-      <a class="navLink" href="/ui/personas">Personas</a>
-      <a class="navLink" href="/ui/docs">Docs</a>
-      <a class="navLink" href="/ui/migrate">Migrate</a>
-    </nav>
-  </header>
-
-  <main>
-    <div id="page-home" class="page">
-      <div class="grid">
-        <section class="card">
-          <h2>Chat</h2>
-          <div class="row">
-            <input id="toAgentId" placeholder="to_agent_id (default: lucifer)" />
-            <button id="connect">Connect WS</button>
-            <button id="disconnect">Disconnect</button>
-          </div>
-          <textarea id="message" rows="3" placeholder="Type a task/message..."></textarea>
-          <div class="row">
-            <button id="sendTask">Send task (WS)</button>
-            <button id="sendHttp">Send task (HTTP)</button>
-          </div>
-          <pre id="chatLog" class="log"></pre>
-        </section>
-
-        <section class="card">
-          <h2>Voice</h2>
-          <div class="row">
-            <input id="audioFile" type="file" accept="audio/*" />
-            <button id="transcribe">Transcribe</button>
-          </div>
-          <textarea id="transcript" rows="3" placeholder="Transcript will appear here..." readonly></textarea>
-          <div class="row">
-            <input id="ttsText" placeholder="Text to speak..." />
-            <button id="speak">Speak</button>
-          </div>
-          <audio id="ttsAudio" controls></audio>
-          <pre id="voiceLog" class="log"></pre>
-        </section>
-
-        <section class="card">
-          <h2>Live Stream</h2>
-          <div class="row">
-            <button id="clear">Clear</button>
-          </div>
-          <pre id="wsLog" class="log"></pre>
-        </section>
-
-        <section class="card">
-          <h2>System</h2>
-          <div class="row">
-            <button id="refresh">Refresh</button>
-          </div>
-          <pre id="sys" class="log"></pre>
-        </section>
-      </div>
-    </div>
-
-    <div id="page-perf" class="page">
-      <div class="grid">
-        <section class="card">
-          <h2>Runtime Snapshot</h2>
-          <div class="row">
-            <button id="perfRefresh">Refresh</button>
-            <span id="perfUpdated" class="pill"></span>
-          </div>
-          <div class="charts">
-            <div class="chart">
-              <div class="chartTitle">Working Set (MB)</div>
-              <canvas id="perfChartMem" width="760" height="120"></canvas>
-            </div>
-            <div class="chart">
-              <div class="chartTitle">CPU Usage (%)</div>
-              <canvas id="perfChartCpu" width="760" height="120"></canvas>
-            </div>
-          </div>
-          <pre id="perfSnapshot" class="log"></pre>
-        </section>
-
-        <section class="card">
-          <h2>Latency Histograms</h2>
-          <div class="row">
-            <span class="pill">Click a metric to pin</span>
-            <span id="perfPinned" class="pill"></span>
-          </div>
-          <div id="perfHistTable" class="table"></div>
-          <pre id="perfHist" class="log"></pre>
-        </section>
-
-        <section class="card">
-          <h2>HTTP Latency (Top p95)</h2>
-          <div class="row">
-            <span class="pill">By route template</span>
-          </div>
-          <div id="perfHttpTable" class="table"></div>
-        </section>
-
-        <section class="card">
-          <h2>Spans (Top p95)</h2>
-          <div class="row">
-            <span class="pill">Activity-based summaries</span>
-          </div>
-          <div id="perfSpanTable" class="table"></div>
-        </section>
-
-        <section class="card">
-          <h2>Recent Traces</h2>
-          <div class="row">
-            <button id="perfTraceRefresh">Refresh</button>
-            <button id="perfTraceDownload" disabled>Download JSON</button>
-            <span id="perfTraceSelected" class="pill"></span>
-          </div>
-          <div id="perfTraceList" class="list"></div>
-          <pre id="perfTraceDetail" class="log"></pre>
-        </section>
-      </div>
-    </div>
-
-    <div id="page-personas" class="page">
-      <div class="split">
-        <section class="card">
-          <h2>Persona Files</h2>
-          <div class="row">
-            <button id="personaRefresh">Refresh</button>
-            <input id="personaName" placeholder="name (letters/numbers/_/-)" />
-          </div>
-          <div id="personaList" class="list"></div>
-        </section>
-
-        <section class="card">
-          <h2>Editor</h2>
-          <div class="row">
-            <button id="personaLoad">Load</button>
-            <button id="personaValidate">Validate</button>
-            <button id="personaSave">Save</button>
-          </div>
-          <textarea id="personaJson" rows="18" spellcheck="false" placeholder="Persona JSON..."></textarea>
-          <pre id="personaLog" class="log"></pre>
-        </section>
-      </div>
-    </div>
-
-    <div id="page-docs" class="page">
-      <div class="grid">
-        <section class="card">
-          <h2>Documentation Generator</h2>
-          <div class="row">
-            <button id="docsGenerate">Generate</button>
-            <button id="docsDownload">Download .md</button>
-          </div>
-          <pre id="docsOut" class="log"></pre>
-        </section>
-      </div>
-    </div>
-
-    <div id="page-migrate" class="page">
-      <div class="grid">
-        <section class="card">
-          <h2>Agent Migration</h2>
-          <div class="row">
-            <button id="migRefreshAgents">Refresh agents</button>
-            <span class="pill">Export/import bundle JSON</span>
-          </div>
-
-          <h3 style="margin:10px 0 6px 0;">Export</h3>
-          <div class="row">
-            <select id="migAgentSelect"></select>
-            <button id="migExport">Download bundle</button>
-          </div>
-          <pre id="migExportLog" class="log"></pre>
-
-          <h3 style="margin:10px 0 6px 0;">Import</h3>
-          <div class="row">
-            <input id="migFile" type="file" accept="application/json,.json" />
-          </div>
-          <div class="row">
-            <input id="migPersonaName" placeholder="persona name override (optional)" />
-          </div>
-          <div class="row">
-            <select id="migRank">
-              <option value="">rank override (optional)</option>
-              <option>Supreme</option>
-              <option>Prince</option>
-              <option>Duke</option>
-              <option>Worker</option>
-            </select>
-            <input id="migParent" placeholder="parent agent id (optional)" />
-          </div>
-          <div class="row">
-            <label class="pill"><input id="migStart" type="checkbox" checked /> start agent</label>
-            <label class="pill"><input id="migFacts" type="checkbox" checked /> facts</label>
-            <label class="pill"><input id="migTasks" type="checkbox" checked /> tasks</label>
-            <label class="pill"><input id="migDecisions" type="checkbox" /> decisions</label>
-            <label class="pill"><input id="migOverwrite" type="checkbox" /> overwrite persona</label>
-          </div>
-          <div class="row">
-            <button id="migImport">Import bundle</button>
-          </div>
-          <pre id="migImportLog" class="log"></pre>
-        </section>
-      </div>
-    </div>
-  </main>
-
-  <script src="/ui/app.js"></script>
-</body>
-</html>
-""";
+    public static string IndexHtml => _indexHtml.Value;
 
     public const string StylesCss = """
 :root { --bg:#0b0f14; --card:#121826; --text:#e7eefc; --muted:#a9b4c7; --accent:#7aa2ff; --border:#253046; }
@@ -251,6 +38,7 @@ input, textarea, select { width:100%; padding:10px; border-radius:10px; border:1
 button { padding:10px 12px; border-radius:10px; border:1px solid var(--border); background:#0f1420; color:var(--text); cursor:pointer; }
 button:hover { border-color: var(--accent); }
 .log { height:320px; overflow:auto; background:#0a0e16; border:1px solid var(--border); border-radius:10px; padding:10px; white-space:pre-wrap; }
+.log.small { height: 180px; }
 audio { width: 100%; margin-top: 8px; }
   .pill { font-size: 12px; color: var(--muted); align-self: center; }
   .list { display:flex; flex-direction: column; gap: 6px; max-height: 520px; overflow:auto; }
@@ -267,6 +55,19 @@ audio { width: 100%; margin-top: 8px; }
   .tableRow.clickable { cursor: pointer; }
   .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; }
   .right { text-align: right; }
+
+  .traceTree { max-height: 360px; overflow:auto; background:#0a0e16; border:1px solid var(--border); border-radius:10px; padding:10px; }
+  .traceNode { display:flex; align-items:center; gap:8px; padding:4px 6px; border-radius:8px; cursor:pointer; user-select: none; }
+  .traceNode:hover { background:#0f1420; }
+  .traceNode.selected { outline: 1px solid rgba(122,162,255,.35); background: rgba(122,162,255,.08); }
+  .traceNode .twisty { width:16px; text-align:center; color: var(--muted); }
+  .traceNode .name { flex:1; font-size:12px; }
+  .traceNode .meta { font-size:12px; color: var(--muted); white-space:nowrap; }
+  .traceNode.error .name { color: #ff7a7a; }
+  .traceNode.critical { outline: 1px solid rgba(255, 211, 122, .35); background: rgba(255, 211, 122, .06); }
+  .traceNode.critical .name { color: #ffd37a; }
+  .traceIndent { margin-left: 14px; border-left: 1px dashed rgba(122,162,255,.25); padding-left: 10px; }
+  .tagLine { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 11px; color: var(--muted); margin: 4px 0 6px 32px; white-space: pre-wrap; }
 """;
 
     public const string AppJs = """
@@ -444,13 +245,29 @@ const perfChartCpu = qs('perfChartCpu');
 const perfTraceRefresh = qs('perfTraceRefresh');
 const perfTraceDownload = qs('perfTraceDownload');
 const perfTraceSelected = qs('perfTraceSelected');
+const perfTraceCritical = qs('perfTraceCritical');
 const perfTraceList = qs('perfTraceList');
 const perfTraceDetail = qs('perfTraceDetail');
+const perfTraceSummary = qs('perfTraceSummary');
+const perfSpanDetail = qs('perfSpanDetail');
+const perfTraceTree = qs('perfTraceTree');
+const perfTraceWaterfall = qs('perfTraceWaterfall');
+const perfTraceFilter = qs('perfTraceFilter');
+const perfTraceErrorsOnly = qs('perfTraceErrorsOnly');
+const perfTraceHighlightCritical = qs('perfTraceHighlightCritical');
+const perfTraceCollapseAll = qs('perfTraceCollapseAll');
+const perfTraceExpandAll = qs('perfTraceExpandAll');
 
 let perfPinnedMetric = '';
 const perfSeries = []; // { t, ws, cpu }
 let perfTracesInitialized = false;
 let perfSelectedTraceId = '';
+let perfSelectedSpanId = '';
+let perfTraceTreeJson = null;
+let perfTraceCollapsed = new Set();
+let perfTraceCriticalIds = new Set();
+let perfSpanById = new Map();
+let perfWaterfallScroll = 0;
 
 function formatNum(n) {
   if (n === null || n === undefined || Number.isNaN(n)) return '-';
@@ -644,13 +461,28 @@ async function refreshPerf() {
 if (perfRefresh) perfRefresh.onclick = refreshPerf;
 if (perfTraceRefresh) perfTraceRefresh.onclick = () => refreshPerfTraces();
 if (perfTraceDownload) perfTraceDownload.onclick = () => downloadSelectedTrace();
+if (perfTraceFilter) perfTraceFilter.oninput = () => renderPerfTraceViews();
+if (perfTraceErrorsOnly) perfTraceErrorsOnly.onchange = () => renderPerfTraceViews();
+if (perfTraceHighlightCritical) perfTraceHighlightCritical.onchange = () => renderPerfTraceViews();
+if (perfTraceCollapseAll) perfTraceCollapseAll.onclick = () => collapseAllTraceNodes();
+if (perfTraceExpandAll) perfTraceExpandAll.onclick = () => expandAllTraceNodes();
 
 async function refreshPerfTraces() {
   if (!perfTraceList) return;
   perfTraceList.textContent = '';
   if (perfTraceDetail) perfTraceDetail.textContent = '';
+  if (perfTraceSummary) perfTraceSummary.textContent = '';
+  if (perfSpanDetail) perfSpanDetail.textContent = '';
+  if (perfTraceTree) perfTraceTree.textContent = '';
   if (perfTraceSelected) perfTraceSelected.textContent = '';
+  if (perfTraceCritical) perfTraceCritical.textContent = '';
   perfSelectedTraceId = '';
+  perfSelectedSpanId = '';
+  perfTraceTreeJson = null;
+  perfTraceCollapsed = new Set();
+  perfTraceCriticalIds = new Set();
+  perfSpanById = new Map();
+  perfWaterfallScroll = 0;
   if (perfTraceDownload) perfTraceDownload.disabled = true;
 
   try {
@@ -673,6 +505,7 @@ async function refreshPerfTraces() {
         if (perfTraceSelected) perfTraceSelected.textContent = `selected: ${t.traceId}`;
         if (perfTraceDownload) perfTraceDownload.disabled = false;
         await loadPerfTraceDetail(t.traceId);
+        await loadPerfTraceTree(t.traceId);
       };
       perfTraceList.appendChild(div);
     }
@@ -693,6 +526,458 @@ async function loadPerfTraceDetail(traceId) {
   } catch (e) {
     perfTraceDetail.textContent = String(e);
   }
+}
+
+function collapseAllTraceNodes() {
+  if (!perfTraceTreeJson || !perfTraceTreeJson.roots) return;
+  const ids = new Set();
+  const stack = [].concat(perfTraceTreeJson.roots);
+  while (stack.length) {
+    const n = stack.pop();
+    if (!n) continue;
+    const kids = n.children || [];
+    if (kids.length > 0) {
+      ids.add(n.spanId);
+      for (const c of kids) stack.push(c);
+    }
+  }
+  perfTraceCollapsed = ids;
+  renderPerfTraceViews();
+}
+
+function expandAllTraceNodes() {
+  perfTraceCollapsed = new Set();
+  renderPerfTraceViews();
+}
+
+function initDefaultCollapse(roots) {
+  // Expand the first level; collapse deeper nodes for readability.
+  const ids = new Set();
+  const stack = roots.map(r => ({ node: r, depth: 0 }));
+  while (stack.length) {
+    const cur = stack.pop();
+    if (!cur || !cur.node) continue;
+    const kids = cur.node.children || [];
+    if (kids.length > 0 && cur.depth >= 1) {
+      ids.add(cur.node.spanId);
+    }
+    for (const c of kids) stack.push({ node: c, depth: cur.depth + 1 });
+  }
+  perfTraceCollapsed = ids;
+}
+
+function spanEndOffsetMs(node) {
+  const eo = (node && typeof node.endOffsetMs === 'number') ? node.endOffsetMs : null;
+  if (eo !== null && !Number.isNaN(eo)) return eo;
+  const so = (node && typeof node.startOffsetMs === 'number') ? node.startOffsetMs : 0;
+  const d = (node && typeof node.durationMs === 'number') ? node.durationMs : 0;
+  return so + d;
+}
+
+function buildSpanIndex(roots) {
+  const map = new Map();
+  const stack = [].concat(roots || []);
+  while (stack.length) {
+    const n = stack.pop();
+    if (!n || !n.spanId) continue;
+    map.set(n.spanId, n);
+    const kids = n.children || [];
+    for (const c of kids) stack.push(c);
+  }
+  return map;
+}
+
+function tryRenderSelectedSpanDetails() {
+  if (!perfSpanDetail) return;
+  if (!perfSelectedSpanId) { perfSpanDetail.textContent = pretty({ hint: 'Click a span in the tree/waterfall to see details.' }); return; }
+  const n = perfSpanById.get(perfSelectedSpanId);
+  if (!n) { perfSpanDetail.textContent = pretty({ spanId: perfSelectedSpanId, hint: 'Span not found in current trace.' }); return; }
+  perfSpanDetail.textContent = pretty({
+    spanId: n.spanId,
+    name: n.name,
+    kind: n.kind,
+    status: n.status,
+    durationMs: n.durationMs,
+    startOffsetMs: n.startOffsetMs,
+    endOffsetMs: spanEndOffsetMs(n),
+    tags: n.tags || {},
+  });
+}
+
+function nodeText(node) {
+  let s = `${node.name || ''} ${node.kind || ''} ${node.status || ''} ${node.spanId || ''}`;
+  const tags = node.tags || {};
+  for (const k of Object.keys(tags)) {
+    s += ` ${k} ${tags[k]}`;
+  }
+  return s.toLowerCase();
+}
+
+function filterNode(node, q, errorsOnly) {
+  const kids = node.children || [];
+  const filteredKids = [];
+  for (const c of kids) {
+    const f = filterNode(c, q, errorsOnly);
+    if (f) filteredKids.push(f);
+  }
+
+  const matchesQ = !q || nodeText(node).includes(q);
+  const isError = String(node.status || '').toLowerCase() === 'error';
+  const matchesError = !errorsOnly || isError;
+  const include = (matchesQ && matchesError) || filteredKids.length > 0;
+  if (!include) return null;
+
+  // Shallow clone with filtered children.
+  return Object.assign({}, node, { children: filteredKids });
+}
+
+function renderPerfTraceViews() {
+  renderPerfTraceTree();
+  renderPerfTraceWaterfall();
+  renderPerfTraceSummary();
+  tryRenderSelectedSpanDetails();
+}
+
+function renderPerfTraceTree() {
+  if (!perfTraceTree) return;
+  perfTraceTree.textContent = '';
+
+  if (!perfTraceTreeJson || !perfTraceTreeJson.roots) {
+    const hint = document.createElement('div');
+    hint.className = 'pill';
+    hint.textContent = 'Select a trace to view span tree.';
+    perfTraceTree.appendChild(hint);
+    return;
+  }
+
+  const q = ((perfTraceFilter && perfTraceFilter.value) || '').trim().toLowerCase();
+  const errorsOnly = !!(perfTraceErrorsOnly && perfTraceErrorsOnly.checked);
+  const highlightCritical = !!(perfTraceHighlightCritical && perfTraceHighlightCritical.checked);
+  const collapseEnabled = !(q || errorsOnly);
+
+  const roots = perfTraceTreeJson.roots || [];
+  const filteredRoots = roots
+    .map(r => filterNode(r, q, errorsOnly))
+    .filter(x => !!x);
+
+  if (filteredRoots.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'pill';
+    empty.textContent = 'No spans match the current filter.';
+    perfTraceTree.appendChild(empty);
+    return;
+  }
+
+  function renderNode(node, container) {
+    const kids = node.children || [];
+    const hasKids = kids.length > 0;
+    const isError = String(node.status || '').toLowerCase() === 'error';
+    const isCritical = highlightCritical && perfTraceCriticalIds && perfTraceCriticalIds.has(node.spanId);
+    const collapsed = collapseEnabled && hasKids && perfTraceCollapsed.has(node.spanId);
+
+    const row = document.createElement('div');
+    const isSelected = !!(perfSelectedSpanId && node.spanId === perfSelectedSpanId);
+    row.className = `traceNode${isError ? ' error' : ''}${isCritical ? ' critical' : ''}${isSelected ? ' selected' : ''}`;
+
+    const twisty = document.createElement('span');
+    twisty.className = 'twisty mono';
+    twisty.textContent = hasKids ? (collapsed ? '▸' : '▾') : '·';
+
+    const name = document.createElement('span');
+    name.className = 'name mono';
+    name.textContent = node.name || '(span)';
+
+    const meta = document.createElement('span');
+    meta.className = 'meta mono';
+    meta.textContent = `${formatNum(node.durationMs)}ms @+${formatNum(node.startOffsetMs)}ms`;
+
+    row.appendChild(twisty);
+    row.appendChild(name);
+    row.appendChild(meta);
+
+    // Click row to select span; click twisty to collapse/expand.
+    row.onclick = () => {
+      perfSelectedSpanId = node.spanId;
+      renderPerfTraceViews();
+    };
+    if (hasKids && collapseEnabled) {
+      twisty.style.cursor = 'pointer';
+      twisty.onclick = (evt) => {
+        evt.stopPropagation();
+        if (perfTraceCollapsed.has(node.spanId)) perfTraceCollapsed.delete(node.spanId);
+        else perfTraceCollapsed.add(node.spanId);
+        renderPerfTraceViews();
+      };
+    }
+
+    container.appendChild(row);
+
+    if (hasKids && !collapsed) {
+      const indent = document.createElement('div');
+      indent.className = 'traceIndent';
+      container.appendChild(indent);
+      for (const c of kids) {
+        renderNode(c, indent);
+      }
+    }
+  }
+
+  for (const r of filteredRoots) {
+    renderNode(r, perfTraceTree);
+  }
+}
+
+async function loadPerfTraceTree(traceId) {
+  if (!perfTraceTree) return;
+  perfTraceTree.textContent = 'Loading tree...';
+
+  try {
+    const json = await fetch(`/api/perf/traces/${encodeURIComponent(traceId)}/tree`).then(r => r.json());
+    perfTraceTreeJson = json;
+    const roots = (json && json.roots) ? json.roots : [];
+    initDefaultCollapse(roots);
+    perfTraceCriticalIds = computeCriticalPathIds(roots);
+    perfSpanById = buildSpanIndex(roots);
+    if (perfTraceCritical) perfTraceCritical.textContent = perfTraceCriticalIds.size > 0 ? `critical: ${perfTraceCriticalIds.size} spans` : '';
+    renderPerfTraceViews();
+  } catch (e) {
+    perfTraceTreeJson = null;
+    perfTraceCollapsed = new Set();
+    perfTraceCriticalIds = new Set();
+    perfSpanById = new Map();
+    if (perfTraceCritical) perfTraceCritical.textContent = '';
+    perfTraceTree.textContent = `Error loading tree: ${String(e)}`;
+  }
+}
+
+function computeCriticalPathIds(roots) {
+  const set = new Set();
+  if (!roots || roots.length === 0) return set;
+
+  const bestEndById = new Map();
+  const bestChildById = new Map();
+
+  function compute(node) {
+    let bestEnd = spanEndOffsetMs(node);
+    let bestChild = null;
+
+    const kids = (node && node.children) ? node.children : [];
+    for (const c of kids) {
+      const childEnd = compute(c);
+      if (childEnd > bestEnd) {
+        bestEnd = childEnd;
+        bestChild = c;
+      }
+    }
+
+    bestEndById.set(node.spanId, bestEnd);
+    if (bestChild && bestChild.spanId) {
+      bestChildById.set(node.spanId, bestChild.spanId);
+    }
+
+    return bestEnd;
+  }
+
+  let bestRoot = roots[0];
+  let bestRootEnd = -1;
+  for (const r of roots) {
+    const e = compute(r);
+    if (e > bestRootEnd) {
+      bestRootEnd = e;
+      bestRoot = r;
+    }
+  }
+
+  let cur = bestRoot && bestRoot.spanId ? bestRoot.spanId : null;
+  while (cur) {
+    set.add(cur);
+    cur = bestChildById.get(cur) || null;
+  }
+
+  return set;
+}
+
+function getFilteredRootsForWaterfall() {
+  if (!perfTraceTreeJson || !perfTraceTreeJson.roots) return [];
+  const roots = perfTraceTreeJson.roots || [];
+  const q = ((perfTraceFilter && perfTraceFilter.value) || '').trim().toLowerCase();
+  const errorsOnly = !!(perfTraceErrorsOnly && perfTraceErrorsOnly.checked);
+  return roots
+    .map(r => filterNode(r, q, errorsOnly))
+    .filter(x => !!x);
+}
+
+function flattenForWaterfall(roots) {
+  // Pre-order; honor collapse state (when not actively filtering).
+  const q = ((perfTraceFilter && perfTraceFilter.value) || '').trim().toLowerCase();
+  const errorsOnly = !!(perfTraceErrorsOnly && perfTraceErrorsOnly.checked);
+  const collapseEnabled = !(q || errorsOnly);
+
+  const rows = [];
+  const stack = (roots || []).slice().reverse().map(r => ({ node: r, depth: 0 }));
+  while (stack.length) {
+    const cur = stack.pop();
+    if (!cur || !cur.node) continue;
+    const n = cur.node;
+    rows.push({ node: n, depth: cur.depth });
+    const kids = n.children || [];
+    const hasKids = kids.length > 0;
+    const collapsed = collapseEnabled && hasKids && perfTraceCollapsed.has(n.spanId);
+    if (!collapsed) {
+      for (let i = kids.length - 1; i >= 0; i--) {
+        stack.push({ node: kids[i], depth: cur.depth + 1 });
+      }
+    }
+  }
+  return rows;
+}
+
+function renderPerfTraceSummary() {
+  if (!perfTraceSummary) return;
+  if (!perfTraceTreeJson || !perfTraceTreeJson.roots) {
+    perfTraceSummary.textContent = pretty({ hint: 'Select a trace to see summary.' });
+    return;
+  }
+
+  const roots = perfTraceTreeJson.roots || [];
+  const index = buildSpanIndex(roots);
+  let maxEnd = 0;
+  for (const n of index.values()) {
+    maxEnd = Math.max(maxEnd, spanEndOffsetMs(n));
+  }
+  const spans = Array.from(index.values()).map(n => ({
+    spanId: n.spanId,
+    name: n.name,
+    durationMs: n.durationMs,
+    startOffsetMs: n.startOffsetMs,
+    status: n.status,
+  }));
+  spans.sort((a, b) => (b.durationMs || 0) - (a.durationMs || 0));
+  const top = spans.slice(0, 10);
+  const errors = spans.filter(s => String(s.status || '').toLowerCase() === 'error').length;
+
+  perfTraceSummary.textContent = pretty({
+    traceId: perfSelectedTraceId,
+    spanCount: index.size,
+    traceDurationMs: maxEnd,
+    errors,
+    topSpansByDuration: top,
+  });
+}
+
+function renderPerfTraceWaterfall() {
+  if (!perfTraceWaterfall) return;
+  const ctx = perfTraceWaterfall.getContext('2d');
+  if (!ctx) return;
+
+  const w = perfTraceWaterfall.width;
+  const h = perfTraceWaterfall.height;
+  ctx.clearRect(0, 0, w, h);
+  ctx.fillStyle = '#0a0e16';
+  ctx.fillRect(0, 0, w, h);
+
+  const roots = getFilteredRootsForWaterfall();
+  if (!roots || roots.length === 0) {
+    ctx.fillStyle = '#8b93a7';
+    ctx.font = '12px ui-monospace, Menlo, Consolas, monospace';
+    ctx.fillText('Select a trace (or adjust filters)…', 10, 18);
+    return;
+  }
+
+  const rows = flattenForWaterfall(roots);
+  const index = buildSpanIndex(roots);
+  let maxEnd = 0;
+  for (const n of index.values()) {
+    maxEnd = Math.max(maxEnd, spanEndOffsetMs(n));
+  }
+  if (maxEnd <= 0) maxEnd = 1;
+
+  const leftPad = 170;
+  const topPad = 18;
+  const rowH = 14;
+  const visibleRows = Math.max(1, Math.floor((h - topPad - 6) / rowH));
+  const maxScroll = Math.max(0, rows.length - visibleRows);
+  if (perfWaterfallScroll > maxScroll) perfWaterfallScroll = maxScroll;
+  if (perfWaterfallScroll < 0) perfWaterfallScroll = 0;
+
+  // axis
+  ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(leftPad, topPad - 8);
+  ctx.lineTo(w - 8, topPad - 8);
+  ctx.stroke();
+  ctx.fillStyle = '#8b93a7';
+  ctx.font = '11px ui-monospace, Menlo, Consolas, monospace';
+  ctx.fillText('0ms', leftPad, 12);
+  ctx.fillText(`${Math.round(maxEnd)}ms`, w - 90, 12);
+
+  const barW = (w - leftPad - 12);
+  const slice = rows.slice(perfWaterfallScroll, perfWaterfallScroll + visibleRows);
+  for (let i = 0; i < slice.length; i++) {
+    const r = slice[i];
+    const n = r.node;
+    const y = topPad + i * rowH;
+    const start = (typeof n.startOffsetMs === 'number') ? n.startOffsetMs : 0;
+    const dur = (typeof n.durationMs === 'number') ? n.durationMs : 0;
+    const x1 = leftPad + (start / maxEnd) * barW;
+    const x2 = leftPad + ((start + dur) / maxEnd) * barW;
+    const bw = Math.max(1, x2 - x1);
+
+    const isError = String(n.status || '').toLowerCase() === 'error';
+    const isCritical = perfTraceCriticalIds && perfTraceCriticalIds.has(n.spanId);
+    const isSelected = !!(perfSelectedSpanId && n.spanId === perfSelectedSpanId);
+
+    // label
+    ctx.fillStyle = isSelected ? '#7aa2ff' : '#c7d2ea';
+    const indent = Math.min(120, r.depth * 10);
+    const label = (n.name || '(span)').slice(0, 22);
+    ctx.fillText(label, 8 + indent, y + 10);
+
+    // bar
+    ctx.fillStyle = isError ? 'rgba(255,122,122,0.85)'
+      : isCritical ? 'rgba(255,211,122,0.85)'
+      : 'rgba(106,167,255,0.75)';
+    ctx.fillRect(x1, y + 2, bw, 10);
+
+    if (isSelected) {
+      ctx.strokeStyle = 'rgba(122,162,255,0.65)';
+      ctx.strokeRect(x1 - 1, y + 1, bw + 2, 12);
+    }
+  }
+
+  // scrolling hint
+  if (rows.length > visibleRows) {
+    ctx.fillStyle = '#8b93a7';
+    ctx.fillText(`scroll: ${perfWaterfallScroll}/${maxScroll}`, w - 140, h - 6);
+  }
+}
+
+if (perfTraceWaterfall) {
+  perfTraceWaterfall.addEventListener('wheel', (evt) => {
+    evt.preventDefault();
+    const delta = evt.deltaY > 0 ? 3 : -3;
+    perfWaterfallScroll += delta;
+    renderPerfTraceViews();
+  }, { passive: false });
+
+  perfTraceWaterfall.addEventListener('click', (evt) => {
+    if (!perfTraceTreeJson || !perfTraceTreeJson.roots) return;
+    const rect = perfTraceWaterfall.getBoundingClientRect();
+    const y = evt.clientY - rect.top;
+    const topPad = 18;
+    const rowH = 14;
+    const idx = Math.floor((y - topPad) / rowH);
+    if (idx < 0) return;
+
+    const roots = getFilteredRootsForWaterfall();
+    const rows = flattenForWaterfall(roots);
+    const visibleRows = Math.max(1, Math.floor((perfTraceWaterfall.height - topPad - 6) / rowH));
+    const row = rows.slice(perfWaterfallScroll, perfWaterfallScroll + visibleRows)[idx];
+    if (!row || !row.node || !row.node.spanId) return;
+    perfSelectedSpanId = row.node.spanId;
+    renderPerfTraceViews();
+  });
 }
 
 async function downloadSelectedTrace() {

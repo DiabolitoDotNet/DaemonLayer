@@ -134,6 +134,67 @@ public class ToolExecutionTests
     }
 
     [Fact]
+    public async Task MemoryReadTool_SearchFacts_WhenVectorMemoryAvailable_UsesSemanticSearch()
+    {
+        // Arrange
+        var mockMemory = new Mock<ISharedMemory>(MockBehavior.Strict);
+        var mockVectorMemory = new Mock<IVectorMemory>(MockBehavior.Strict);
+        var mockLogger = new Mock<ILogger<MemoryReadTool>>();
+
+        var facts = new List<Fact>
+        {
+            new Fact
+            {
+                Id = Guid.NewGuid().ToString(),
+                Category = "test",
+                Content = "Semantic hit 1",
+                Source = "qdrant",
+                CreatedBy = "agent1"
+            }
+        };
+
+        mockVectorMemory.Setup(x => x.SearchSimilarVisibleFactsAsync(
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<AgentRank>(),
+                It.IsAny<int>(),
+                It.IsAny<double>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(facts);
+
+        var tool = new MemoryReadTool(mockMemory.Object, mockVectorMemory.Object, mockLogger.Object);
+
+        var parameters = new Dictionary<string, object>
+        {
+            { "type", "facts" },
+            { "query", "something semantically close" },
+            { "agent_id", "agent1" },
+            { "agent_rank", "Worker" },
+            { "count", 5 },
+            { "mode", "auto" },
+            { "min_score", 0.5 }
+        };
+
+        // Act
+        var result = await tool.ExecuteAsync(parameters, CancellationToken.None);
+
+        // Assert
+        Assert.True(result.Success);
+        Assert.Contains("Semantic results", result.Output, StringComparison.Ordinal);
+        Assert.Contains("Semantic hit 1", result.Output, StringComparison.Ordinal);
+
+        mockVectorMemory.Verify(x => x.SearchSimilarVisibleFactsAsync(
+            It.Is<string>(q => q.Contains("semantically", StringComparison.OrdinalIgnoreCase)),
+            It.Is<string>(id => id == "agent1"),
+            It.Is<AgentRank>(r => r == AgentRank.Worker),
+            It.Is<int>(l => l == 5),
+            It.Is<double>(ms => Math.Abs(ms - 0.5) < 0.0001),
+            It.IsAny<CancellationToken>()), Times.Once);
+
+        mockMemory.VerifyNoOtherCalls();
+    }
+
+    [Fact]
     public async Task CreateSubAgentTool_WithValidParameters_CreatesAgent()
     {
         // Arrange

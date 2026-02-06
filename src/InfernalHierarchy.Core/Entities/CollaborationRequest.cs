@@ -174,6 +174,11 @@ public class AgentResponse
     public double ProcessingTimeMs { get; set; }
 
     /// <summary>
+    /// Gets or sets the collaboration round this response belongs to.
+    /// </summary>
+    public int Round { get; set; }
+
+    /// <summary>
     /// Gets or sets weight for weighted voting (calculated based on rank, confidence, expertise)
     /// </summary>
     public double Weight { get; set; } = 1.0;

@@ -1,0 +1,21 @@
+# Optional override to enable ONNX embeddings inside the container.
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.onnx.yml up -d
+#
+# Prereqs:
+# - Download/prepare a sentence-transformers ONNX model and tokenizer:
+#     ./models/sentence-transformers/model.onnx
+#     ./models/sentence-transformers/tokenizer.json
+# - Keep VectorMemoryOptions__VectorDimensions in sync with EmbeddingDimension.
+
+services:
+  infernal-hierarchy:
+    environment:
+      - OnnxEmbeddingOptions__Enabled=true
+      - OnnxEmbeddingOptions__ModelPath=/app/models/sentence-transformers/model.onnx
+      - OnnxEmbeddingOptions__TokenizerPath=/app/models/sentence-transformers/tokenizer.json
+      - OnnxEmbeddingOptions__EmbeddingDimension=384
+      - OnnxEmbeddingOptions__MaxSequenceLength=128
+    volumes:
+      - ./models/sentence-transformers:/app/models/sentence-transformers:ro

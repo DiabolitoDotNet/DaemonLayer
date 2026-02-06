@@ -1,0 +1,44 @@
+version: '3.8'
+
+# Voice override: enables /api/voice/* and configures STT (whisper.cpp) + TTS (Piper.Net in-process)
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.voice.yml up -d --build
+# Then open:
+#   http://localhost:5080/ui
+#   http://localhost:5080/ui/perf
+
+services:
+  infernal-hierarchy:
+    environment:
+      - Voice__Enabled=true
+      - Voice__LocalOnly=false
+
+      # STT (whisper.cpp)
+      - VoiceTranscription__Enabled=true
+      - VoiceTranscription__ExecutablePath=/usr/local/bin/whisper
+      - VoiceTranscription__RootDirectory=/app/data/voice
+      - VoiceTranscription__DecoderExecutablePath=/usr/bin/ffmpeg
+      # whisper.cpp args: tune model path + language to your needs
+      # NOTE: {input} is replaced with the (possibly ffmpeg-decoded) WAV path.
+      - VoiceTranscription__Arguments__0=-m
+      - VoiceTranscription__Arguments__1=/models/whisper/ggml-base.en.bin
+      - VoiceTranscription__Arguments__2=-f
+      - VoiceTranscription__Arguments__3={input}
+      - VoiceTranscription__Arguments__4=--language
+      - VoiceTranscription__Arguments__5=en
+      - VoiceTranscription__Arguments__6=--no-timestamps
+
+      # TTS (Piper.Net in-process)
+      - TextToSpeech__Enabled=true
+      - TextToSpeech__UsePiperNet=true
+      - TextToSpeech__RootDirectory=/app/data/voice
+      - TextToSpeech__OutputExtension=.wav
+      - TextToSpeech__PiperWarmupAtStartup=true
+      # Point this to a real voice model mounted in ./models/piper
+      - TextToSpeech__PiperVoicePath=/models/piper/voice.onnx
+
+    volumes:
+      - ./models/whisper:/models/whisper:ro
+      - ./models/piper:/models/piper:ro
+      - ./data:/app/data
+

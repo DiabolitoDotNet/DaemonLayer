@@ -480,20 +480,4 @@ public sealed class IntegrationTests : IAsyncLifetime, IDisposable
         Assert.All(agents, agent => Assert.NotNull(agent));
         Assert.All(agents, agent => Assert.NotEmpty(agent.Id));
     }
-
-    [Fact(Skip = "Requires full environment setup including Telegram tokens")]
-    public async Task Host_ShouldBuildSuccessfully()
-    {
-        // This test verifies the host can be built with all dependencies
-        // Skipped by default as it requires configuration
-        await Task.CompletedTask;
-    }
-
-    [Fact(Skip = "Integration test - requires dependencies")]
-    public void ServiceProvider_ShouldResolveAllCoreServices()
-    {
-        // This test would verify that all registered services can be resolved
-        // Requires proper DI container setup
-        Assert.True(true, "Placeholder for service resolution tests");
-    }
 }

@@ -186,7 +186,9 @@ internal sealed class AgentMigrationService
         }
 
         // Overwrite checks
+    #pragma warning disable CA1308 // Normalize strings to uppercase. We intentionally use lowercase filenames for cross-platform consistency.
         var personaPath = Path.Combine(_personaStore.SoulsDirectory, $"{personaName.ToLowerInvariant()}.json");
+    #pragma warning restore CA1308
         if (File.Exists(personaPath) && !request.OverwritePersona)
         {
             return (null, $"Persona '{personaName}' already exists. Set overwritePersona=true to replace it.");

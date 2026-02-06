@@ -97,7 +97,7 @@ internal sealed class InMemoryTraceCaptureStore : ITraceCaptureStore
 
         foreach (var traceId in traceIds)
         {
-            if (!_spansByTrace.TryGetValue(traceId, out var spans) || spans.Count == 0)
+            if (!_spansByTrace.TryGetValue(traceId, out var spans) || spans.IsEmpty)
             {
                 continue;
             }
@@ -136,7 +136,7 @@ internal sealed class InMemoryTraceCaptureStore : ITraceCaptureStore
             return null;
         }
 
-        if (!_spansByTrace.TryGetValue(traceId, out var spans) || spans.Count == 0)
+        if (!_spansByTrace.TryGetValue(traceId, out var spans) || spans.IsEmpty)
         {
             return null;
         }

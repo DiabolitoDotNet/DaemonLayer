@@ -1,3 +1,4 @@
+using InfernalHierarchy.Core.Entities;
 using InfernalHierarchy.Core.Interfaces;
 using Microsoft.Extensions.Logging;
 
@@ -9,14 +10,21 @@ namespace InfernalHierarchy.Tools.Tools.Memory;
 public class MemoryReadTool : ITool
 {
     private readonly ISharedMemory _memory;
+    private readonly IVectorMemory? _vectorMemory;
     private readonly ILogger<MemoryReadTool> _logger;
 
     public string Name => "read_memory";
     public string Description => "Read from shared memory. Types: decisions, facts, tasks. Optional search query parameter.";
 
     public MemoryReadTool(ISharedMemory memory, ILogger<MemoryReadTool> logger)
+        : this(memory, vectorMemory: null, logger)
+    {
+    }
+
+    public MemoryReadTool(ISharedMemory memory, IVectorMemory? vectorMemory, ILogger<MemoryReadTool> logger)
     {
         _memory = memory;
+        _vectorMemory = vectorMemory;
         _logger = logger;
     }
 
@@ -44,6 +52,12 @@ public class MemoryReadTool : ITool
         parameters.TryGetValue("count", out var countObj);
         var count = countObj is int c ? c : 10;
 
+        parameters.TryGetValue("mode", out var modeObj);
+        var mode = (modeObj as string)?.Trim();
+
+        parameters.TryGetValue("min_score", out var minScoreObj);
+        var minScore = minScoreObj is double ms ? ms : 0.70;
+
         if (!type.Equals("decisions", StringComparison.OrdinalIgnoreCase)
             && !type.Equals("facts", StringComparison.OrdinalIgnoreCase)
             && !type.Equals("tasks", StringComparison.OrdinalIgnoreCase))
@@ -60,7 +74,7 @@ public class MemoryReadTool : ITool
             string output = type switch
             {
                 var t when t.Equals("decisions", StringComparison.OrdinalIgnoreCase) => await GetDecisionsAsync(query, count, ct),
-                var t when t.Equals("facts", StringComparison.OrdinalIgnoreCase) => await GetFactsAsync(query, agentId, agentRank, ct),
+                var t when t.Equals("facts", StringComparison.OrdinalIgnoreCase) => await GetFactsAsync(query, agentId, agentRank, count, mode, minScore, ct),
                 var t when t.Equals("tasks", StringComparison.OrdinalIgnoreCase) => await GetTasksAsync(query, ct),
                 _ => ""
             };
@@ -100,16 +114,50 @@ public class MemoryReadTool : ITool
             $"[{d.CreatedAt:yyyy-MM-dd HH:mm}] {d.CreatedBy}: {d.Action}\nReasoning: {d.Reasoning}"));
     }
 
-    private async Task<string> GetFactsAsync(string? query, string agentId, Core.Entities.AgentRank agentRank, CancellationToken ct)
+    private async Task<string> GetFactsAsync(
+        string? query,
+        string agentId,
+        Core.Entities.AgentRank agentRank,
+        int count,
+        string? mode,
+        double minScore,
+        CancellationToken ct)
     {
-        var facts = string.IsNullOrEmpty(query)
-            ? await _memory.GetVisibleFactsAsync(agentId, agentRank, ct)
-            : await _memory.SearchVisibleFactsAsync(query, agentId, agentRank, ct);
+        var normalizedMode = string.IsNullOrWhiteSpace(mode) ? "auto" : mode.Trim().ToLowerInvariant();
+        var useSemantic = !string.IsNullOrEmpty(query)
+                          && _vectorMemory != null
+                          && (normalizedMode == "auto" || normalizedMode == "semantic");
+
+        IEnumerable<Fact> facts;
+        if (useSemantic)
+        {
+            var semanticFacts = await _vectorMemory!.SearchSimilarVisibleFactsAsync(
+                query!,
+                requestingAgentId: agentId,
+                requestingAgentRank: agentRank,
+                limit: Math.Max(1, count),
+                minScore: minScore,
+                ct: ct);
+
+            facts = semanticFacts;
+        }
+        else
+        {
+            facts = string.IsNullOrEmpty(query)
+                ? await _memory.GetVisibleFactsAsync(agentId, agentRank, ct)
+                : await _memory.SearchVisibleFactsAsync(query, agentId, agentRank, ct);
+
+            facts = facts.Take(Math.Max(1, count));
+        }
 
         if (!facts.Any())
             return "No facts found.";
 
-        return string.Join("\n\n", facts.Select(f =>
+        var header = useSemantic
+            ? $"Semantic results (min_score={minScore:0.00}):\n"
+            : string.Empty;
+
+        return header + string.Join("\n\n", facts.Select(f =>
             $"[{f.Category}] {f.Content}\nSource: {f.Source} (Confidence: {f.Confidence:P0})"));
     }
 

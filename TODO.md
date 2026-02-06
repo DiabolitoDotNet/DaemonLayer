@@ -26,19 +26,22 @@
 
 ## 🔧 Active Gaps / Known Limitations
 
-- [ ] **Add an opt-in analyzer gate** (StyleCop/.NET analyzers)
-  - Keep build-time analyzers disabled by default, but add a dedicated CI job (or local script) that runs analyzers explicitly when desired.
+- [ ] **Add an opt-in analyzer gate** (CI job or local script)
+  - Analyzer configuration already exists (off-by-default in `Directory.Build.props`).
+  - Add a dedicated script (and/or CI job when CI is introduced) that runs analyzers explicitly for tightening quality gates.
 
 - [ ] **Increase test coverage outside Telegram**
   - Prioritize: `InfernalHierarchy.Messaging` (non-ChannelMessageBus paths), `InfernalHierarchy.Agents` (Saga/CQRS), and `InfernalHierarchy.Core.CQRS`.
+
+- [ ] **ReActAgent SRP refactor (SOLID)**
+  - Remaining scope: continue shrinking `ReActAgent` into a thin orchestrator (move more logic behind `IReAct*` services) while preserving behavior.
+  - Add/extend unit tests around parsing/tool-execution edge cases.
 
 ---
 
 ## 🧰 Operational Runbooks
 
-- [ ] **Memory pruning runbook + defaults**
-  - Define safe operational defaults (retention windows, dry-run guidance).
-  - Document backup/rollback expectations before enabling pruning.
+_No additional operational runbooks currently tracked here._
 
 ---
 
@@ -48,7 +51,10 @@
 - [ ] **Agent quota system** - Per-tenant/per-user agent creation quotas (global/rank caps already exist via `ResourceLimitService`)
 - [ ] **Performance profiling (advanced)** - MiniProfiler/tracing viewer (built-in perf UI now includes charts + per-route HTTP latency)
   - Already implemented: perf UI charts, per-route HTTP latency, histogram stats, span summaries, basic trace capture + trace list/detail/download.
-  - Remaining scope: richer trace viewer UX (timeline/waterfall, span links/search/filter) and/or MiniProfiler.
+  - Remaining scope: optionally add MiniProfiler and/or richer trace viewer UX beyond the current waterfall + span selection.
+
+- [ ] **Embedded UI maintainability (DRY)**
+  - Remaining scope: split `DashboardAssets.cs` (CSS/JS) into per-page/per-asset modules (partial classes or embedded resources) to reduce churn and improve readability.
 
 ---
 
@@ -73,9 +79,26 @@ _No additional UI & Interfaces backlog items currently tracked here._
 ### Deployment & Operations
 - [ ] **Kubernetes deployment** - Helm charts/operators
 - [ ] **Horizontal scaling** - Multi-host scaling strategy
-- [ ] **A/B testing framework** - Compare agent behaviors
 - [ ] **Blue-green deployments** - Zero-downtime deployments
 - [ ] **Chaos engineering** - Resilience testing tools
+
+- [ ] **Voice sidecar services (later)** - long-lived Whisper.cpp + Piper services
+  - Note: the current **in-container/local** voice path is already implemented (whisper.cpp binary + ffmpeg + Piper.Net in-process) via `Dockerfile` + `docker-compose.voice.yml`.
+  - Goal: keep STT/TTS models hot and isolate CPU/RAM usage from the Host, while still supporting the embedded UI voice endpoints.
+  - Proposed containers:
+    - `voice-stt` (whisper.cpp) running as a long-lived service (model loaded once). Exposes an internal HTTP endpoint like `POST /transcribe` accepting an audio payload (or a shared-volume file path) and returning `{ transcript, segments, timings }`.
+    - `voice-tts` (Piper) running as a long-lived service (voice loaded once). Exposes `POST /speak` returning WAV bytes (or a shared-volume output path).
+    - Optional `voice-preprocess` (ffmpeg) is usually unnecessary as a separate container; either:
+      - run ffmpeg inside `voice-stt`, or
+      - keep ffmpeg in the Host container and upload WAV to `voice-stt`.
+  - Integration approach:
+    - Add alternative tool implementations (or a mode switch) so `audio_transcribe` / `tts_speak` can call the sidecars over HTTP instead of running local processes.
+    - Keep the existing local-first process-runner path as a fallback when sidecars are disabled.
+  - Compose wiring (high level):
+    - Mount model directories read-only: `./models/whisper:/models/whisper:ro`, `./models/piper:/models/piper:ro`.
+    - Use an internal Docker network; expose no public ports for voice services.
+    - Add health checks + resource limits (CPU/memory) for `voice-stt` and `voice-tts`.
+    - Use environment variables in the Host to select backend: `VoiceTranscription:Backend=sidecar|local`, `TextToSpeech:Backend=sidecar|local`, and set sidecar URLs.
 
 ### Developer Experience
 - [ ] **Agent playground** - Interactive testing environment

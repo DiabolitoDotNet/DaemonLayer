@@ -16,7 +16,7 @@ public sealed class UiAndWebSocketE2ETests
         using var factory = new InfernalHierarchyTestWebAppFactory();
         var client = factory.CreateClient();
 
-        var res = await client.GetAsync("/ui");
+        var res = await client.GetAsync(new Uri("/ui", UriKind.Relative));
         res.EnsureSuccessStatusCode();
 
         var html = await res.Content.ReadAsStringAsync();

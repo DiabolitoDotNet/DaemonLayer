@@ -71,56 +71,133 @@ public sealed class AudioTranscribeTool : ITool
 
         Directory.CreateDirectory(root);
 
-        var args = _options.Arguments.Select(a => a.Replace("{input}", fullPath, StringComparison.Ordinal)).ToList();
-        if (args.Count == 0)
+        var inputPath = fullPath;
+        string? convertedPath = null;
+        try
         {
-            // Reasonable default for whisper.cpp-like CLIs.
-            args.Add(fullPath);
-        }
+            // whisper.cpp and many local backends typically expect WAV.
+            // If a decoder (e.g., ffmpeg) is configured, convert non-WAV audio into a temp WAV under RootDirectory.
+            if (!string.Equals(ext, ".wav", StringComparison.OrdinalIgnoreCase)
+                && !string.IsNullOrWhiteSpace(_options.DecoderExecutablePath))
+            {
+                var tmpDir = Path.Combine(root, "tmp");
+                Directory.CreateDirectory(tmpDir);
 
-        var result = await _runner.RunAsync(new ProcessRunRequest(
-            FileName: _options.ExecutablePath,
-            Arguments: args,
-            WorkingDirectory: root,
-            TimeoutMs: _options.TimeoutMs,
-            MaxOutputBytes: _options.MaxOutputBytes), ct).ConfigureAwait(false);
+                convertedPath = Path.Combine(tmpDir, $"stt_{Guid.NewGuid():N}.wav");
 
-        if (result.TimedOut)
-        {
-            return Fail("Transcription timed out");
-        }
+                var decoderArgs = _options.DecoderArguments
+                    .Select(a => a.Replace("{input}", inputPath, StringComparison.Ordinal)
+                                  .Replace("{output}", convertedPath, StringComparison.Ordinal))
+                    .ToList();
 
-        if (result.ExitCode != 0)
-        {
+                if (decoderArgs.Count == 0)
+                {
+                    decoderArgs.AddRange(["-y", "-i", inputPath, "-ar", "16000", "-ac", "1", convertedPath]);
+                }
+
+                var decodeResult = await _runner.RunAsync(new ProcessRunRequest(
+                    FileName: _options.DecoderExecutablePath,
+                    Arguments: decoderArgs,
+                    WorkingDirectory: root,
+                    TimeoutMs: _options.TimeoutMs,
+                    MaxOutputBytes: _options.MaxOutputBytes), ct).ConfigureAwait(false);
+
+                if (decodeResult.TimedOut)
+                {
+                    return Fail("Audio decode timed out");
+                }
+
+                if (decodeResult.ExitCode != 0)
+                {
+                    return new ToolResult
+                    {
+                        Success = false,
+                        Output = decodeResult.StdOut,
+                        Error = string.IsNullOrWhiteSpace(decodeResult.StdErr)
+                            ? $"Audio decode failed (exit {decodeResult.ExitCode})"
+                            : $"Audio decode failed (exit {decodeResult.ExitCode}): {decodeResult.StdErr}",
+                        Metadata = new Dictionary<string, object>
+                        {
+                            ["exit_code"] = decodeResult.ExitCode,
+                            ["duration_ms"] = (long)decodeResult.Duration.TotalMilliseconds,
+                            ["truncated"] = decodeResult.Truncated
+                        }
+                    };
+                }
+
+                if (!File.Exists(convertedPath))
+                {
+                    return Fail("Audio decode completed but no output WAV was produced");
+                }
+
+                inputPath = convertedPath;
+            }
+
+            var args = _options.Arguments.Select(a => a.Replace("{input}", inputPath, StringComparison.Ordinal)).ToList();
+            if (args.Count == 0)
+            {
+                // Reasonable default for whisper.cpp-like CLIs.
+                args.Add(inputPath);
+            }
+
+            var result = await _runner.RunAsync(new ProcessRunRequest(
+                FileName: _options.ExecutablePath,
+                Arguments: args,
+                WorkingDirectory: root,
+                TimeoutMs: _options.TimeoutMs,
+                MaxOutputBytes: _options.MaxOutputBytes), ct).ConfigureAwait(false);
+
+            if (result.TimedOut)
+            {
+                return Fail("Transcription timed out");
+            }
+
+            if (result.ExitCode != 0)
+            {
+                return new ToolResult
+                {
+                    Success = false,
+                    Output = result.StdOut,
+                    Error = string.IsNullOrWhiteSpace(result.StdErr)
+                        ? $"Transcription failed (exit {result.ExitCode})"
+                        : $"Transcription failed (exit {result.ExitCode}): {result.StdErr}",
+                    Metadata = new Dictionary<string, object>
+                    {
+                        ["exit_code"] = result.ExitCode,
+                        ["duration_ms"] = (long)result.Duration.TotalMilliseconds,
+                        ["truncated"] = result.Truncated
+                    }
+                };
+            }
+
+            var transcript = (result.StdOut ?? string.Empty).Trim();
+            _logger.LogInformation("🎙️ audio_transcribe completed ({Ms}ms)", (long)result.Duration.TotalMilliseconds);
+
             return new ToolResult
             {
-                Success = false,
-                Output = result.StdOut,
-                Error = string.IsNullOrWhiteSpace(result.StdErr)
-                    ? $"Transcription failed (exit {result.ExitCode})"
-                    : $"Transcription failed (exit {result.ExitCode}): {result.StdErr}",
+                Success = true,
+                Output = transcript,
                 Metadata = new Dictionary<string, object>
                 {
-                    ["exit_code"] = result.ExitCode,
                     ["duration_ms"] = (long)result.Duration.TotalMilliseconds,
                     ["truncated"] = result.Truncated
                 }
             };
         }
-
-        var transcript = (result.StdOut ?? string.Empty).Trim();
-        _logger.LogInformation("🎙️ audio_transcribe completed ({Ms}ms)", (long)result.Duration.TotalMilliseconds);
-
-        return new ToolResult
+        finally
         {
-            Success = true,
-            Output = transcript,
-            Metadata = new Dictionary<string, object>
+            if (!string.IsNullOrWhiteSpace(convertedPath))
             {
-                ["duration_ms"] = (long)result.Duration.TotalMilliseconds,
-                ["truncated"] = result.Truncated
+                try
+                {
+                    File.Delete(convertedPath);
+                }
+                catch
+                {
+                    // best-effort
+                }
             }
-        };
+        }
     }
 
     private static string ResolveRootDirectory(string rootDirectory)

@@ -39,6 +39,8 @@
   - Prunes low-confidence facts
   - Archives decisions to `./archive/memory`
   - Removes completed tasks beyond retention
+- **Operational runbook (memory pruning)**
+  - Added safe defaults (dry-run + per-run delete cap) and documented backup/rollback procedure
 - **Memory Versioning**
   - `Fact.Version`, `Fact.PreviousVersionId`, `Fact.IsArchived`
   - `UpdateFactAsync` creates an immutable history chain
@@ -63,6 +65,8 @@
 - **Structured outputs (ReAct JSON mode)**
   - JSON-first ReAct responses (tool invocation + FINAL_ANSWER), with legacy text parsing fallback
   - Configurable via `ReActOptions:UseJsonResponse` (enabled by default)
+- **ReAct SRP components wired via DI (phase 1)**
+  - `ReActAgent` can now be composed with injected `IActionParser` / `IActionExecutor` / `IReActPromptBuilder` / `IReActLoopRunner` / reporting services (defaults preserved)
 - **RAG integration**
   - ReAct agents can inject retrieved, visibility-filtered facts into context
   - Uses vector search when available (Qdrant), with safe fallback to LiteDB visibility-aware keyword search
@@ -80,6 +84,8 @@
   - Added end-to-end multi-agent collaboration tests (real `ChannelMessageBus` + `AgentCollaborationService`)
 - **Aggregation strategies extracted**
   - `AgentCollaborationService` aggregation logic decomposed behind `IAggregationStrategy` for independent testability
+- **Signal-based response waiting (no polling)**
+  - Replaced polling/wait loops with Channel-based signaling and round-aware response handling to reduce CPU wakeups and avoid cross-round mixing
 
 ### External Integrations ✅
 - **Typed HTTP clients for web search**
@@ -106,6 +112,8 @@
 - **PerformanceMonitor**: CPU/memory/GC/threads/handles snapshots
 - **In-memory trace capture (ActivityListener)**
   - APIs: `GET /api/perf/traces`, `GET /api/perf/traces/{traceId}`, `GET /api/perf/traces/{traceId}/download`
+- **Embedded perf UI trace viewer upgrades**
+  - Added span selection, trace summary, and a simple waterfall visualization for relative span timing
 - **Health Checks**: Ollama, Telegram, LiteDB, Agent hierarchy, Qdrant (vector memory)
 - **Structured Logging**: Serilog enrichers and sinks
 
@@ -180,6 +188,10 @@
 
 ## ✅ Repo Hygiene
 - Generated coverage reports and build/test logs ignored → **completed** (`.gitignore` updated to exclude `artifacts/`, `coverage-report/`, `TestResults/`, and common log/coverage files)
+
+## ✅ SOLID/DRY Refactors (Feb 6, 2026)
+- Host composition root simplified: extracted Minimal API mappings out of `Program.cs` into dedicated modules (UI, voice, perf, agents, personas, docs, chat, tools, events, metrics), keeping routes/behavior identical.
+- Centralized repeated guards/normalization: added `LoopbackGuard`/`LocalOnlyGuard` for LocalOnly gating and `MetricKeyNormalizer` for low-cardinality route metric keys.
 
 ---
 
