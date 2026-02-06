@@ -40,6 +40,7 @@ using InfernalHierarchy.Tools.Tools.Search;
 using InfernalHierarchy.Tools.Tools.Telegram;
 using InfernalHierarchy.Tools.Tools.Templates;
 using InfernalHierarchy.Tools.Tools.Notifications;
+using InfernalHierarchy.Tools.Tools.Voice;
 using InfernalHierarchy.Host.Configuration;
 using InfernalHierarchy.Host.Configuration.Validation;
 using InfernalHierarchy.Host.Hosting;
@@ -62,6 +63,7 @@ using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
 using System.Text.Json;
 using InfernalHierarchy.Host.Api;
+using InfernalHierarchy.Host.Ui;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -112,12 +114,20 @@ builder.Services.AddSingleton<IValidateOptions<FileSystemToolOptions>, FileSyste
 builder.Services.AddSingleton<IValidateOptions<HttpRequestToolOptions>, HttpRequestToolOptionsValidator>();
 builder.Services.AddSingleton<IValidateOptions<CodeExecutionToolOptions>, CodeExecutionToolOptionsValidator>();
 builder.Services.AddSingleton<IValidateOptions<ToolMarketplaceOptions>, ToolMarketplaceOptionsValidator>();
+builder.Services.AddSingleton<IValidateOptions<UiInterfaceOptions>, UiInterfaceOptionsValidator>();
+builder.Services.AddSingleton<IValidateOptions<WebSocketInterfaceOptions>, WebSocketInterfaceOptionsValidator>();
+builder.Services.AddSingleton<IValidateOptions<VoiceInterfaceOptions>, VoiceInterfaceOptionsValidator>();
+builder.Services.AddSingleton<IValidateOptions<VoiceTranscriptionToolOptions>, VoiceTranscriptionToolOptionsValidator>();
+builder.Services.AddSingleton<IValidateOptions<TextToSpeechToolOptions>, TextToSpeechToolOptionsValidator>();
 
 builder.Services.AddOptions<OllamaOptions>()
     .Bind(builder.Configuration.GetSection("Ollama"))
     .ValidateOnStart();
 builder.Services.AddOptions<TelegramOptions>()
     .Bind(builder.Configuration.GetSection("Telegram"))
+    .ValidateOnStart();
+builder.Services.AddOptions<TelegramVoiceOptions>()
+    .Bind(builder.Configuration.GetSection("TelegramVoice"))
     .ValidateOnStart();
 builder.Services.AddOptions<MemoryOptions>()
     .Bind(builder.Configuration.GetSection("Memory"))
@@ -148,6 +158,21 @@ builder.Services.AddOptions<CodeExecutionToolOptions>()
     .ValidateOnStart();
 builder.Services.AddOptions<ToolMarketplaceOptions>()
     .Bind(builder.Configuration.GetSection("ToolMarketplace"))
+    .ValidateOnStart();
+builder.Services.AddOptions<UiInterfaceOptions>()
+    .Bind(builder.Configuration.GetSection("Ui"))
+    .ValidateOnStart();
+builder.Services.AddOptions<WebSocketInterfaceOptions>()
+    .Bind(builder.Configuration.GetSection("WebSockets"))
+    .ValidateOnStart();
+builder.Services.AddOptions<VoiceInterfaceOptions>()
+    .Bind(builder.Configuration.GetSection("Voice"))
+    .ValidateOnStart();
+builder.Services.AddOptions<VoiceTranscriptionToolOptions>()
+    .Bind(builder.Configuration.GetSection("VoiceTranscription"))
+    .ValidateOnStart();
+builder.Services.AddOptions<TextToSpeechToolOptions>()
+    .Bind(builder.Configuration.GetSection("TextToSpeech"))
     .ValidateOnStart();
 builder.Services.Configure<LlmOptions>(builder.Configuration.GetSection("LlmOptions"));
 builder.Services.AddOptions<VectorMemoryOptions>()
@@ -335,6 +360,8 @@ builder.Services.AddSingleton<ITool, FileSearchTool>();
 builder.Services.AddSingleton<ITool, HttpRequestTool>();
 builder.Services.AddSingleton<ITool, PythonExecTool>();
 builder.Services.AddSingleton<ITool, NodeExecTool>();
+builder.Services.AddSingleton<ITool, AudioTranscribeTool>();
+builder.Services.AddSingleton<ITool, TextToSpeechTool>();
 
 // Register all tools in the registry
 builder.Services.AddHostedService<ToolRegistrationService>();
@@ -355,6 +382,185 @@ var app = builder.Build();
 
 if (httpOptions.Enabled)
 {
+    var uiOptions = app.Services.GetRequiredService<IOptions<UiInterfaceOptions>>().Value;
+    var wsOptions = app.Services.GetRequiredService<IOptions<WebSocketInterfaceOptions>>().Value;
+    var voiceOptions = app.Services.GetRequiredService<IOptions<VoiceInterfaceOptions>>().Value;
+
+    if (wsOptions.Enabled)
+    {
+        app.UseWebSockets(new Microsoft.AspNetCore.Builder.WebSocketOptions
+        {
+            KeepAliveInterval = TimeSpan.FromSeconds(wsOptions.KeepAliveSeconds)
+        });
+
+        WebSocketInterface.Map(app);
+    }
+
+    if (uiOptions.Enabled)
+    {
+        static bool IsLoopback(System.Net.IPAddress? ip) => ip != null && (System.Net.IPAddress.IsLoopback(ip) || ip.Equals(System.Net.IPAddress.IPv6Loopback));
+
+        app.MapGet("/ui", (HttpContext ctx) =>
+        {
+            if (uiOptions.LocalOnly && !IsLoopback(ctx.Connection.RemoteIpAddress))
+            {
+                return Results.StatusCode(StatusCodes.Status403Forbidden);
+            }
+
+            return Results.Text(DashboardAssets.IndexHtml, "text/html; charset=utf-8");
+        });
+
+        app.MapGet("/ui/app.js", (HttpContext ctx) =>
+        {
+            if (uiOptions.LocalOnly && !IsLoopback(ctx.Connection.RemoteIpAddress))
+            {
+                return Results.StatusCode(StatusCodes.Status403Forbidden);
+            }
+
+            return Results.Text(DashboardAssets.AppJs, "application/javascript; charset=utf-8");
+        });
+
+        app.MapGet("/ui/styles.css", (HttpContext ctx) =>
+        {
+            if (uiOptions.LocalOnly && !IsLoopback(ctx.Connection.RemoteIpAddress))
+            {
+                return Results.StatusCode(StatusCodes.Status403Forbidden);
+            }
+
+            return Results.Text(DashboardAssets.StylesCss, "text/css; charset=utf-8");
+        });
+    }
+
+    if (voiceOptions.Enabled)
+    {
+        static bool IsLoopback(System.Net.IPAddress? ip) => ip != null && (System.Net.IPAddress.IsLoopback(ip) || ip.Equals(System.Net.IPAddress.IPv6Loopback));
+
+        static string ResolveRootDirectory(string rootDirectory)
+        {
+            var root = string.IsNullOrWhiteSpace(rootDirectory) ? "data/voice" : rootDirectory;
+            return Path.IsPathRooted(root) ? root : Path.GetFullPath(Path.Combine(Directory.GetCurrentDirectory(), root));
+        }
+
+        static string GetContentType(string path)
+        {
+            var ext = Path.GetExtension(path);
+            return ext.ToLowerInvariant() switch
+            {
+                ".wav" => "audio/wav",
+                ".mp3" => "audio/mpeg",
+                ".ogg" => "audio/ogg",
+                ".m4a" => "audio/mp4",
+                _ => "application/octet-stream"
+            };
+        }
+
+        app.MapPost("/api/voice/transcribe", async (
+            HttpContext ctx,
+            IToolRegistry tools,
+            IOptions<VoiceTranscriptionToolOptions> stt,
+            CancellationToken ct) =>
+        {
+            if (voiceOptions.LocalOnly && !IsLoopback(ctx.Connection.RemoteIpAddress))
+            {
+                return Results.StatusCode(StatusCodes.Status403Forbidden);
+            }
+
+            if (!ctx.Request.HasFormContentType)
+            {
+                return Results.BadRequest(new { error = "Expected multipart/form-data" });
+            }
+
+            var form = await ctx.Request.ReadFormAsync(ct);
+            var file = form.Files.GetFile("file") ?? form.Files.FirstOrDefault();
+
+            if (file is null)
+            {
+                return Results.BadRequest(new { error = "Missing form file (field name: file)" });
+            }
+
+            if (file.Length <= 0)
+            {
+                return Results.BadRequest(new { error = "Empty file" });
+            }
+
+            if (file.Length > voiceOptions.MaxUploadBytes)
+            {
+                return Results.BadRequest(new { error = $"File too large (max {voiceOptions.MaxUploadBytes} bytes)" });
+            }
+
+            var root = ResolveRootDirectory(stt.Value.RootDirectory);
+            var uploadsDir = Path.Combine(root, "uploads");
+            Directory.CreateDirectory(uploadsDir);
+
+            var ext = Path.GetExtension(file.FileName);
+            if (string.IsNullOrWhiteSpace(ext)) ext = ".bin";
+
+            var uploadPath = Path.Combine(uploadsDir, $"upload_{Guid.NewGuid():N}{ext}");
+
+            await using (var fs = new FileStream(uploadPath, FileMode.CreateNew, FileAccess.Write, FileShare.Read))
+            {
+                await file.CopyToAsync(fs, ct);
+            }
+
+            var result = await tools.ExecuteToolWithTrackingAsync(
+                toolName: "audio_transcribe",
+                parameters: new Dictionary<string, object> { ["path"] = uploadPath },
+                agentId: "voice_api",
+                agentRank: "interface",
+                agentName: "voice_api",
+                ct: ct);
+
+            if (!result.Success)
+            {
+                return Results.Problem(title: "Transcription failed", detail: result.Error ?? "Unknown error", statusCode: 500);
+            }
+
+            return Results.Ok(new VoiceTranscribeResponse(
+                transcript: result.Output,
+                tool: "audio_transcribe",
+                metadata: result.Metadata));
+        });
+
+        app.MapPost("/api/voice/speak", async (
+            HttpContext ctx,
+            IToolRegistry tools,
+            CancellationToken ct) =>
+        {
+            if (voiceOptions.LocalOnly && !IsLoopback(ctx.Connection.RemoteIpAddress))
+            {
+                return Results.StatusCode(StatusCodes.Status403Forbidden);
+            }
+
+            var req = await ctx.Request.ReadFromJsonAsync<VoiceSpeakRequest>(cancellationToken: ct);
+            if (req is null || string.IsNullOrWhiteSpace(req.Text))
+            {
+                return Results.BadRequest(new { error = "Missing request body: text" });
+            }
+
+            var result = await tools.ExecuteToolWithTrackingAsync(
+                toolName: "tts_speak",
+                parameters: new Dictionary<string, object> { ["text"] = req.Text },
+                agentId: "voice_api",
+                agentRank: "interface",
+                agentName: "voice_api",
+                ct: ct);
+
+            if (!result.Success)
+            {
+                return Results.Problem(title: "TTS failed", detail: result.Error ?? "Unknown error", statusCode: 500);
+            }
+
+            var outputPath = result.Metadata.TryGetValue("output_path", out var raw) ? raw?.ToString() : result.Output;
+            if (string.IsNullOrWhiteSpace(outputPath) || !File.Exists(outputPath))
+            {
+                return Results.Problem(title: "TTS failed", detail: "No output audio file found", statusCode: 500);
+            }
+
+            var stream = File.OpenRead(outputPath);
+            return Results.File(stream, contentType: GetContentType(outputPath), fileDownloadName: Path.GetFileName(outputPath));
+        });
+    }
+
     // Health endpoints
     app.MapHealthChecks("/health", new HealthCheckOptions
     {
@@ -420,6 +626,47 @@ if (httpOptions.Enabled)
         var metrics = metricsService.GetAllMetrics();
         var body = PrometheusMetricsFormatter.Format(metrics);
         return Results.Text(body, "text/plain; version=0.0.4; charset=utf-8");
+    });
+
+    // Minimal UI support APIs
+    app.MapGet("/api/agents", (IAgentRegistry registry) =>
+    {
+        var agents = registry.GetAllAgents()
+            .Select(a => new
+            {
+                id = a.Id,
+                name = a.Name,
+                rank = a.Rank.ToString(),
+                status = a.Status.ToString()
+            })
+            .OrderBy(a => a.rank)
+            .ThenBy(a => a.name)
+            .ToList();
+
+        return Results.Ok(agents);
+    });
+
+    app.MapGet("/api/agents/stats", (AgentRegistry registry) => Results.Ok(registry.GetStats()));
+
+    app.MapGet("/api/tools", (IToolRegistry tools) =>
+    {
+        var all = tools.GetAllTools()
+            .Select(t => new { name = t.Name, description = t.Description })
+            .OrderBy(t => t.name)
+            .ToList();
+
+        return Results.Ok(all);
+    });
+
+    app.MapGet("/api/events", async (EventStore store, int? minutes, CancellationToken ct) =>
+    {
+        var rangeMinutes = minutes is > 0 and <= 24 * 60 ? minutes.Value : 60;
+        var end = DateTime.UtcNow;
+        var start = end.AddMinutes(-rangeMinutes);
+
+        var events = await store.GetEventsByTimeRangeAsync(start, end, ct);
+        var trimmed = events.TakeLast(500);
+        return Results.Ok(trimmed);
     });
 
     app.MapGet("/", () => Results.Text("InfernalHierarchy is running"));

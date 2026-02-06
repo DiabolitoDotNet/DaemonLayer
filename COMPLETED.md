@@ -1,6 +1,6 @@
 # InfernalHierarchy – Completed Work Log
 
-> **Last Updated:** February 5, 2026
+> **Last Updated:** February 6, 2026
 >
 > This file contains items/features that are **implemented / completed** and were moved out of `TODO.md` to keep the TODO list focused on remaining work.
 >
@@ -114,6 +114,14 @@
 - **Agent Suspension/Hibernation**: Suspend/Resume lifecycle states
 - **SecretRotationService**: hot-reload secrets via `IOptionsMonitor<T>`
 - **ToolAuthorizationService**: rank-based tool permissions + allow/deny lists
+
+### UI & Interfaces ✅
+- **Web dashboard**: built-in local dashboard served from `/ui` (no external frontend dependencies)
+- **WebSocket support**: `/ws` endpoint for real-time agent/broadcast streaming + task submission
+- **Voice interface (local-first)**
+  - Voice API endpoints (config-gated): `POST /api/voice/transcribe` and `POST /api/voice/speak`
+  - Voice tools: `audio_transcribe` (STT) + `tts_speak` (TTS), both disabled-by-default until configured
+  - Dashboard Voice panel to upload audio + play TTS output when enabled
 
 ### Event Sourcing ✅
 - **EventStore**: append-only JSONL audit trail per agent

@@ -30,7 +30,10 @@ public sealed class LiteDbSharedMemory : ISharedMemory, IDisposable
             Directory.CreateDirectory(directory);
         }
 
-        _db = new LiteDatabase(dbPath);
+        var mapper = new BsonMapper();
+        mapper.Entity<MemoryEntry>().Id(x => x.Id);
+
+        _db = new LiteDatabase(dbPath, mapper);
 
         // Create indexes for better query performance
         Decisions.EnsureIndex(nameof(MemoryEntry.CreatedAt));

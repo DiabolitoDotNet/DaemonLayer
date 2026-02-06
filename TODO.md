@@ -76,12 +76,7 @@ _No additional Memory & Learning backlog items currently tracked here._
 - [ ] **Vision model support** - Image analysis with multi-modal models
 
 ### UI & Interfaces
-- [ ] **Web dashboard** - Blazor/React admin panel
-- [ ] **CLI client** - Local command-line interface
-- [ ] **REST API** - HTTP API for external integrations
-- [ ] **WebSocket support** - Real-time updates
-- [ ] **Discord bot** - Alternative to Telegram
-- [ ] **Voice interface** - Speech-to-text + text-to-speech
+_No additional UI & Interfaces backlog items currently tracked here._
 
 ### Deployment & Operations
 - [ ] **Kubernetes deployment** - Helm charts/operators

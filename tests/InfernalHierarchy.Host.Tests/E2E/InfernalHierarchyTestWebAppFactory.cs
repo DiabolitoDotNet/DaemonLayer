@@ -23,6 +23,15 @@ public sealed class InfernalHierarchyTestWebAppFactory : WebApplicationFactory<P
             {
                 ["Http:Enabled"] = "true",
 
+                // UI & WebSockets are local-only by default; TestServer doesn't always populate RemoteIpAddress.
+                ["Ui:Enabled"] = "true",
+                ["Ui:LocalOnly"] = "false",
+                ["WebSockets:Enabled"] = "true",
+                ["WebSockets:LocalOnly"] = "false",
+
+                ["Voice:Enabled"] = "true",
+                ["Voice:LocalOnly"] = "false",
+
                 // Required by validators (ValidateOnStart)
                 ["Ollama:BaseUrl"] = "http://localhost:11434",
                 ["Ollama:DefaultModel"] = "test-model",
