@@ -64,6 +64,7 @@ using OpenTelemetry.Trace;
 using System.Text.Json;
 using InfernalHierarchy.Host.Api;
 using InfernalHierarchy.Host.Docs;
+using InfernalHierarchy.Host.Migration;
 using InfernalHierarchy.Host.Personas;
 using InfernalHierarchy.Host.Ui;
 
@@ -206,6 +207,13 @@ builder.Services.AddSingleton<MetricsCollector>();
 builder.Services.AddSingleton<MetricsService>();
 builder.Services.AddSingleton<PerformanceMonitor>();
 builder.Services.AddSingleton<DistributedTracing>();
+builder.Services.AddHostedService<ActivitySpanProfilingService>();
+
+// Advanced perf: trace capture (ActivityListener + in-memory buffer)
+builder.Services.Configure<TraceCaptureOptions>(builder.Configuration.GetSection("Perf:TraceCapture"));
+builder.Services.AddSingleton<InMemoryTraceCaptureStore>();
+builder.Services.AddSingleton<ITraceCaptureStore>(sp => sp.GetRequiredService<InMemoryTraceCaptureStore>());
+builder.Services.AddHostedService<ActivityTraceCaptureService>();
 
 // OpenTelemetry configuration
 var otelExporterOptions = builder.Configuration.GetSection("OpenTelemetry:Exporters").Get<OpenTelemetryExportOptions>() ?? new OpenTelemetryExportOptions();
@@ -256,6 +264,7 @@ builder.Services.AddSingleton<ISharedMemory, LiteDbSharedMemory>();
 builder.Services.AddSingleton<IPersonaLoader, JsonPersonaLoader>();
 builder.Services.AddSingleton<PersonaFileStore>();
 builder.Services.AddSingleton<DocumentationGenerator>();
+builder.Services.AddSingleton<AgentMigrationService>();
 
 // Agent system
 builder.Services.AddSingleton<AgentRegistry>();
@@ -392,6 +401,110 @@ if (httpOptions.Enabled)
 
     static bool IsLoopback(System.Net.IPAddress? ip) => ip != null && (System.Net.IPAddress.IsLoopback(ip) || ip.Equals(System.Net.IPAddress.IPv6Loopback));
 
+    // Request timing (low-cardinality): record latency by route template, not raw path.
+    // This enables an operator-friendly perf view without exploding metrics cardinality.
+    var httpLatencyCollector = app.Services.GetRequiredService<MetricsCollector>();
+
+    static string RoutePatternToMetricId(string? routePattern)
+    {
+        if (string.IsNullOrWhiteSpace(routePattern))
+        {
+            return "unknown";
+        }
+
+        var trimmed = routePattern.Trim();
+        if (trimmed == "/")
+        {
+            return "root";
+        }
+
+        trimmed = trimmed.Trim('/');
+        if (trimmed.Length == 0)
+        {
+            return "root";
+        }
+
+        var sb = new System.Text.StringBuilder(trimmed.Length);
+        foreach (var c in trimmed)
+        {
+            if (char.IsLetterOrDigit(c))
+            {
+                sb.Append(char.ToLowerInvariant(c));
+                continue;
+            }
+
+            switch (c)
+            {
+                case '/':
+                case '.':
+                case '-':
+                    sb.Append('.');
+                    break;
+                case '{':
+                case '}':
+                    // strip route template braces
+                    break;
+                default:
+                    sb.Append('_');
+                    break;
+            }
+        }
+
+        var s = sb.ToString();
+        while (s.Contains("..", StringComparison.Ordinal))
+        {
+            s = s.Replace("..", ".", StringComparison.Ordinal);
+        }
+
+        return s.Trim('.', '_');
+    }
+
+    app.Use(async (HttpContext ctx, Func<Task> next) =>
+    {
+        // Keep UI assets from dominating perf metrics.
+        if (ctx.Request.Path.StartsWithSegments("/ui", StringComparison.OrdinalIgnoreCase))
+        {
+            await next();
+            return;
+        }
+
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        try
+        {
+            await next();
+        }
+        finally
+        {
+            sw.Stop();
+
+            var endpoint = ctx.GetEndpoint();
+            var routeEndpoint = endpoint as Microsoft.AspNetCore.Routing.RouteEndpoint;
+            var routeTemplate = routeEndpoint?.RoutePattern?.RawText;
+
+            // Attach low-cardinality route info to any active Activity so span profiling can bucket by route.
+            try
+            {
+                System.Diagnostics.Activity.Current?.SetTag("perf.route", routeTemplate ?? "unknown");
+            }
+            catch
+            {
+                // best-effort
+            }
+
+            var routeId = RoutePatternToMetricId(routeTemplate);
+            var method = (ctx.Request.Method ?? "UNKNOWN").ToLowerInvariant();
+            var status = ctx.Response.StatusCode;
+
+            var elapsedMs = sw.Elapsed.TotalMilliseconds;
+
+            httpLatencyCollector.RecordValue("http.latency.ms", elapsedMs);
+            httpLatencyCollector.RecordValue($"http.latency.{method}.{routeId}.ms", elapsedMs);
+
+            httpLatencyCollector.IncrementCounter($"http.requests.{method}.{routeId}");
+            httpLatencyCollector.IncrementCounter($"http.responses.{status}");
+        }
+    });
+
     if (wsOptions.Enabled)
     {
         app.UseWebSockets(new Microsoft.AspNetCore.Builder.WebSocketOptions
@@ -435,6 +548,16 @@ if (httpOptions.Enabled)
         });
 
         app.MapGet("/ui/docs", (HttpContext ctx) =>
+        {
+            if (uiOptions.LocalOnly && !IsLoopback(ctx.Connection.RemoteIpAddress))
+            {
+                return Results.StatusCode(StatusCodes.Status403Forbidden);
+            }
+
+            return Results.Text(DashboardAssets.IndexHtml, "text/html; charset=utf-8");
+        });
+
+        app.MapGet("/ui/migrate", (HttpContext ctx) =>
         {
             if (uiOptions.LocalOnly && !IsLoopback(ctx.Connection.RemoteIpAddress))
             {
@@ -685,6 +808,86 @@ if (httpOptions.Enabled)
         });
     });
 
+    app.MapGet("/api/perf/http", (HttpContext ctx, MetricsCollector collector) =>
+    {
+        if (uiOptions.LocalOnly && !IsLoopback(ctx.Connection.RemoteIpAddress))
+        {
+            return Results.StatusCode(StatusCodes.Status403Forbidden);
+        }
+
+        var all = collector.GetAllHistogramStats();
+        var items = all
+            .Where(kvp => kvp.Key.StartsWith("http.latency.", StringComparison.OrdinalIgnoreCase)
+                          && !kvp.Key.Equals("http.latency.ms", StringComparison.OrdinalIgnoreCase))
+            .Select(kvp => new
+            {
+                metric = kvp.Key,
+                stats = kvp.Value
+            })
+            .OrderByDescending(x => x.stats.P95)
+            .ThenByDescending(x => x.stats.Count)
+            .Take(50)
+            .ToList();
+
+        return Results.Ok(new { items });
+    });
+
+    app.MapGet("/api/perf/spans", (HttpContext ctx, MetricsCollector collector) =>
+    {
+        if (uiOptions.LocalOnly && !IsLoopback(ctx.Connection.RemoteIpAddress))
+        {
+            return Results.StatusCode(StatusCodes.Status403Forbidden);
+        }
+
+        var all = collector.GetAllHistogramStats();
+        var items = all
+            .Where(kvp => kvp.Key.StartsWith("trace.span.", StringComparison.OrdinalIgnoreCase))
+            .Select(kvp => new
+            {
+                metric = kvp.Key,
+                stats = kvp.Value
+            })
+            .OrderByDescending(x => x.stats.P95)
+            .ThenByDescending(x => x.stats.Count)
+            .Take(50)
+            .ToList();
+
+        return Results.Ok(new { items });
+    });
+
+    app.MapGet("/api/perf/traces", (HttpContext ctx, ITraceCaptureStore store, int? limit) =>
+    {
+        if (uiOptions.LocalOnly && !IsLoopback(ctx.Connection.RemoteIpAddress))
+        {
+            return Results.StatusCode(StatusCodes.Status403Forbidden);
+        }
+
+        var items = store.GetRecentTraces(limit ?? 50);
+        return Results.Ok(new { items });
+    });
+
+    app.MapGet("/api/perf/traces/{traceId}", (HttpContext ctx, ITraceCaptureStore store, string traceId) =>
+    {
+        if (uiOptions.LocalOnly && !IsLoopback(ctx.Connection.RemoteIpAddress))
+        {
+            return Results.StatusCode(StatusCodes.Status403Forbidden);
+        }
+
+        var trace = store.GetTrace(traceId);
+        return trace is null ? Results.NotFound() : Results.Ok(trace);
+    });
+
+    app.MapGet("/api/perf/traces/{traceId}/download", (HttpContext ctx, ITraceCaptureStore store, string traceId) =>
+    {
+        if (uiOptions.LocalOnly && !IsLoopback(ctx.Connection.RemoteIpAddress))
+        {
+            return Results.StatusCode(StatusCodes.Status403Forbidden);
+        }
+
+        var json = store.ExportTraceJson(traceId);
+        return Results.Text(json, "application/json; charset=utf-8");
+    });
+
     // Minimal UI support APIs
     app.MapGet("/api/agents", (IAgentRegistry registry) =>
     {
@@ -701,6 +904,45 @@ if (httpOptions.Enabled)
             .ToList();
 
         return Results.Ok(agents);
+    });
+
+    app.MapGet("/api/agents/{agentId}/export", async (
+        HttpContext ctx,
+        string agentId,
+        AgentMigrationService migration,
+        int? facts,
+        int? tasks,
+        int? decisions,
+        CancellationToken ct) =>
+    {
+        if (uiOptions.LocalOnly && !IsLoopback(ctx.Connection.RemoteIpAddress))
+        {
+            return Results.StatusCode(StatusCodes.Status403Forbidden);
+        }
+
+        var bundle = await migration.ExportAsync(
+            agentId,
+            factsLimit: facts ?? 200,
+            tasksLimit: tasks ?? 200,
+            decisionsLimit: decisions ?? 100,
+            ct);
+
+        return bundle is null ? Results.NotFound() : Results.Ok(bundle);
+    });
+
+    app.MapPost("/api/agents/import", async (
+        HttpContext ctx,
+        AgentImportRequest req,
+        AgentMigrationService migration,
+        CancellationToken ct) =>
+    {
+        if (uiOptions.LocalOnly && !IsLoopback(ctx.Connection.RemoteIpAddress))
+        {
+            return Results.StatusCode(StatusCodes.Status403Forbidden);
+        }
+
+        var (ok, error) = await migration.ImportAsync(req, ct);
+        return ok is not null ? Results.Ok(ok) : Results.BadRequest(new { error });
     });
 
     app.MapGet("/api/agents/stats", (AgentRegistry registry) => Results.Ok(registry.GetStats()));

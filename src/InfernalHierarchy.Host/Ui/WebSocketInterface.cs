@@ -6,6 +6,7 @@ using InfernalHierarchy.Core.Entities;
 using InfernalHierarchy.Core.Interfaces;
 using InfernalHierarchy.Host.Configuration;
 using InfernalHierarchy.Core.Serialization;
+using InfernalHierarchy.Host.Security;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
@@ -33,7 +34,7 @@ internal static class WebSocketInterface
                 return Results.NotFound();
             }
 
-            if (options.LocalOnly && !IsLoopback(context.Connection.RemoteIpAddress))
+            if (options.LocalOnly && !LoopbackGuard.IsLoopback(context.Connection.RemoteIpAddress))
             {
                 return Results.StatusCode(StatusCodes.Status403Forbidden);
             }
@@ -242,9 +243,6 @@ internal static class WebSocketInterface
             await messageBus.PublishAsync(agentMessage, ct);
         }
     }
-
-    private static bool IsLoopback(IPAddress? ip)
-        => ip != null && (IPAddress.IsLoopback(ip) || ip.Equals(IPAddress.IPv6Loopback));
 
     private static Dictionary<string, object?> SanitizePayload(Dictionary<string, object> payload)
     {

@@ -9,7 +9,7 @@
 ## 📋 Table of Contents
 1. [Now (Next Sprint)](#-now---next-sprint)
 2. [Active Gaps / Known Limitations](#-active-gaps--known-limitations)
-3. [Operational Readiness](#-operational-readiness)
+3. [Operational Runbooks](#-operational-runbooks)
 4. [Should Have (Production Readiness)](#-should-have---production-readiness)
 5. [Could Have (Future Enhancements)](#-could-have---future-enhancements)
 
@@ -18,44 +18,37 @@
 ## 🔴 NOW - Next Sprint
 
 - [ ] **Operationalize vector search end-to-end**
-  - Run Qdrant locally, enable ONNX embeddings, and validate semantic memory queries end-to-end.
-  - Use `/health/ready` to confirm Qdrant + embedding assets readiness.
-  - Run the live integration test (opt-in) to validate Qdrant roundtrip.
+  - Validate the `docker-compose.yml` stack (Qdrant + Host) performs end-to-end semantic memory queries.
+  - Enable ONNX embeddings and verify local model assets are present and loaded correctly.
+  - Run the opt-in live integration test (`INFERNAL_LIVE_QDRANT=1`) to validate Qdrant roundtrip.
+  - Produce a short operator runbook section in `README.md` or `NEXT_STEPS.md` (how to run + what “good” looks like).
 
 
 ## 🔧 Active Gaps / Known Limitations
 
-1. **Analyzer signal strategy (StyleCop/.NET analyzers)**
-    - Builds are currently warning-clean by running analyzers primarily in the IDE (build-time analyzers disabled).
-    - Recommendation: add a dedicated CI step (or optional local script) that runs analyzers explicitly when you want to tighten quality gates.
+- [ ] **Add an opt-in analyzer gate** (StyleCop/.NET analyzers)
+  - Keep build-time analyzers disabled by default, but add a dedicated CI job (or local script) that runs analyzers explicitly when desired.
 
-2. **Test coverage gaps outside Telegram**
-   - Telegram coverage is now strong, but several areas remain low/zero.
-   - Prioritize: `InfernalHierarchy.Messaging` (non-ChannelMessageBus paths), `InfernalHierarchy.Agents` (Saga/CQRS), and `InfernalHierarchy.Core.CQRS`.
+- [ ] **Increase test coverage outside Telegram**
+  - Prioritize: `InfernalHierarchy.Messaging` (non-ChannelMessageBus paths), `InfernalHierarchy.Agents` (Saga/CQRS), and `InfernalHierarchy.Core.CQRS`.
 
 ---
 
-## 🧰 Operational Readiness
+## 🧰 Operational Runbooks
 
-- [ ] **Vector search runtime dependency (Qdrant)**
-  - Vector memory requires Qdrant to be running.
-  - `/health` includes a dedicated Qdrant health check when vector memory is enabled.
-  - `/health/ready` is available for readiness gating.
-- [ ] **ONNX embeddings (local model assets)**
-  - `OnnxEmbeddingOptions.Enabled` is off by default.
-  - Enabling improves semantic search quality but requires local model assets (see `models/README.md`).
-  - `/health` exposes an `onnx_embeddings` check that reports missing assets when enabled.
-- [ ] **Memory pruning (guardrails required)**
-  - `MemoryPruningOptions` is off by default to reduce accidental data loss.
-  - Needs explicit enablement + retention/rollback considerations.
+- [ ] **Memory pruning runbook + defaults**
+  - Define safe operational defaults (retention windows, dry-run guidance).
+  - Document backup/rollback expectations before enabling pruning.
 
 ---
 
 ## 🎯 SHOULD HAVE - Production Readiness
 
 - [ ] **Automated backup for LiteDB** - Scheduled backups + rotation strategy
-- [ ] **Agent quota system** - Limit agent creation per user/time window
-- [ ] **Performance profiling (advanced)** - MiniProfiler or similar (basic built-in perf UI now exists)
+- [ ] **Agent quota system** - Per-tenant/per-user agent creation quotas (global/rank caps already exist via `ResourceLimitService`)
+- [ ] **Performance profiling (advanced)** - MiniProfiler/tracing viewer (built-in perf UI now includes charts + per-route HTTP latency)
+  - Already implemented: perf UI charts, per-route HTTP latency, histogram stats, span summaries, basic trace capture + trace list/detail/download.
+  - Remaining scope: richer trace viewer UX (timeline/waterfall, span links/search/filter) and/or MiniProfiler.
 
 ---
 
@@ -67,10 +60,9 @@ _No additional Memory & Learning backlog items currently tracked here._
 ### Tool Ecosystem
 - [ ] **API integration tools** - GraphQL-first client + auth helpers (REST covered by `http_request`)
 - [ ] **Database query tools** - SQL query execution (read-only)
-- [ ] **Audio transcription** - Whisper.cpp integration
 
 ### Agent Capabilities
-- [ ] **Agent migration** - Move agents between hosts
+_No additional Agent Capabilities backlog items currently tracked here._
 
 ### LLM Enhancements
 - [ ] **Vision model support** - Image analysis with multi-modal models

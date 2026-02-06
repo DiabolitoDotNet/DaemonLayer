@@ -17,7 +17,7 @@ All advanced features have been **implemented and compile successfully**:
 - ✅ Memory pruning with archival
 - ✅ Comprehensive configuration system
 
-**Build Status**: ✅ 0 compilation errors, 1551 warnings (mostly StyleCop style violations)
+**Build Status**: ✅ Builds clean by default (analyzers are enabled for IDE/live analysis; build-time analyzers are opt-in)
 
 **Test Status**: ✅ `dotnet test -c Release` passes solution-wide (some integration-only tests are skipped by design)
 
@@ -236,14 +236,14 @@ ollama pull llama3.1:8b  # Pull missing model
 ```
 
 ### Issue: "StyleCop warnings everywhere"
-**Solution**: These are non-blocking style warnings. You can:
-- Fix them gradually (recommended for production)
-- Disable StyleCop temporarily in `Directory.Build.props`:
-  ```xml
-  <PropertyGroup>
-    <EnforceCodeStyleInBuild>false</EnforceCodeStyleInBuild>
-  </PropertyGroup>
-  ```
+**Solution**: StyleCop warnings are expected in the IDE and are non-blocking by default.
+
+If you want a stricter, opt-in quality gate (e.g., in CI), run:
+```bash
+dotnet build /p:RunAnalyzersDuringBuild=true /p:EnforceCodeStyleInBuild=true
+```
+
+If you want fewer IDE warnings while iterating, prefer suppressing specific rules in `.editorconfig` instead of turning analyzers off globally.
 
 ### Issue: "Memory pruning not working"
 **Solution**: 
@@ -287,7 +287,7 @@ After completing these steps, you'll have:
 ✅ **Audit trail**: Complete event history for compliance and debugging  
 ✅ **Auto-cleanup**: Intelligent memory pruning to prevent bloat  
 ✅ **Real-time streaming**: Token-by-token LLM responses  
-✅ **Production-ready**: Code quality enforcement with analyzers
+✅ **Production-ready**: IDE guidance + optional analyzer quality gate
 
 ---
 

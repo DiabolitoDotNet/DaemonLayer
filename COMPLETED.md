@@ -18,7 +18,8 @@
 - **Directory.Build.props**: project-wide analyzer configuration
   - StyleCop.Analyzers v1.2.0-beta.556
   - AnalysisMode=All
-  - EnforceCodeStyleInBuild=true
+  - EnforceCodeStyleInBuild=false (IDE/live analysis preferred; build warnings kept clean by default)
+  - RunAnalyzersDuringBuild=false (opt-in when tightening quality gates)
   - Nullable reference types enabled
   - XML documentation generation enforced
 - **.editorconfig**: comprehensive style guide
@@ -103,6 +104,8 @@
 - **OTLP Exporter Wiring**: configurable OTLP tracing exporter (enable via `OpenTelemetry:Exporters:Otlp`)
 - **MetricsService**: counters/gauges/histograms
 - **PerformanceMonitor**: CPU/memory/GC/threads/handles snapshots
+- **In-memory trace capture (ActivityListener)**
+  - APIs: `GET /api/perf/traces`, `GET /api/perf/traces/{traceId}`, `GET /api/perf/traces/{traceId}/download`
 - **Health Checks**: Ollama, Telegram, LiteDB, Agent hierarchy, Qdrant (vector memory)
 - **Structured Logging**: Serilog enrichers and sinks
 
@@ -124,7 +127,12 @@
   - Dashboard Voice panel to upload audio + play TTS output when enabled
 - **Performance profiling UI (built-in)**
   - Dedicated page: `/ui/perf`
-  - APIs: `GET /api/perf/snapshot`, `GET /api/perf/histograms`
+  - APIs: `GET /api/perf/snapshot`, `GET /api/perf/histograms`, `GET /api/perf/http`, `GET /api/perf/spans`, `GET /api/perf/traces*`
+  - Advanced view: charts + per-route HTTP latency + span summaries + basic trace viewer (list/detail/download)
+- **Agent migration UI (built-in)**
+  - Dedicated page: `/ui/migrate`
+  - APIs: `GET /api/agents/{agentId}/export`, `POST /api/agents/import`
+  - Bundle: persona JSON + memory slice (facts/tasks/decisions) with optional signature + replay guard
 - **Persona editor (built-in)**
   - Dedicated page: `/ui/personas`
   - File-backed APIs: `GET /api/personas`, `GET /api/personas/{name}`, `PUT /api/personas/{name}`, `POST /api/personas/{name}/validate`

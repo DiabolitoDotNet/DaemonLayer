@@ -282,11 +282,15 @@ End-to-end collaboration over the real MessageBus is covered by:
 
 **Usage:**
 ```powershell
-# Build with full analysis
+# Default build (fast / warning-clean): analyzers are enabled for IDE/live analysis,
+# but not emitted during build by default.
 dotnet build
 
-# View all analyzer warnings
-dotnet build /p:TreatWarningsAsErrors=true
+# Opt-in: run analyzers during build (useful for CI or a "quality gate" run)
+dotnet build /p:RunAnalyzersDuringBuild=true /p:EnforceCodeStyleInBuild=true
+
+# Opt-in: fail the build on warnings (typically paired with the analyzer gate)
+dotnet build /p:RunAnalyzersDuringBuild=true /p:EnforceCodeStyleInBuild=true /p:TreatWarningsAsErrors=true
 ```
 
 ---
