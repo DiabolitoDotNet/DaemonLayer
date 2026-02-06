@@ -122,6 +122,16 @@
   - Voice API endpoints (config-gated): `POST /api/voice/transcribe` and `POST /api/voice/speak`
   - Voice tools: `audio_transcribe` (STT) + `tts_speak` (TTS), both disabled-by-default until configured
   - Dashboard Voice panel to upload audio + play TTS output when enabled
+- **Performance profiling UI (built-in)**
+  - Dedicated page: `/ui/perf`
+  - APIs: `GET /api/perf/snapshot`, `GET /api/perf/histograms`
+- **Persona editor (built-in)**
+  - Dedicated page: `/ui/personas`
+  - File-backed APIs: `GET /api/personas`, `GET /api/personas/{name}`, `PUT /api/personas/{name}`, `POST /api/personas/{name}/validate`
+  - Persona hot-reload: `JsonPersonaLoader` refreshes cached personas when the soul JSON file changes
+- **Documentation generator (built-in)**
+  - Dedicated page: `/ui/docs`
+  - APIs: `GET /api/docs/markdown`, `GET /api/docs/json`
 
 ### Event Sourcing ✅
 - **EventStore**: append-only JSONL audit trail per agent

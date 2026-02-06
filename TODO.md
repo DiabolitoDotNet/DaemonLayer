@@ -1,6 +1,6 @@
 # InfernalHierarchy – TODO (Pending Work Only)
 
-> **Last Updated:** February 5, 2026  
+> **Last Updated:** February 6, 2026  
 > **Scope:** This file lists only items that are **not yet implemented or not yet completed**.  
 > **Completed items moved to:** `COMPLETED.md`
 
@@ -55,7 +55,7 @@
 
 - [ ] **Automated backup for LiteDB** - Scheduled backups + rotation strategy
 - [ ] **Agent quota system** - Limit agent creation per user/time window
-- [ ] **Performance profiling UI** - MiniProfiler or similar (basic `PerformanceMonitor` already exists)
+- [ ] **Performance profiling (advanced)** - MiniProfiler or similar (basic built-in perf UI now exists)
 
 ---
 
@@ -87,8 +87,6 @@ _No additional UI & Interfaces backlog items currently tracked here._
 
 ### Developer Experience
 - [ ] **Agent playground** - Interactive testing environment
-- [ ] **Persona editor** - Visual JSON editor for souls
 - [ ] **Debugging tools** - Step-through agent reasoning
-- [ ] **Performance profiler** - Identify bottlenecks
 - [ ] **Plugin SDK** - Third-party tool development kit
-- [ ] **Documentation generator** - Auto-generate docs from code
+

@@ -78,6 +78,31 @@ public class MetricsCollector
         }
     }
 
+    public IReadOnlyList<string> GetHistogramNames()
+    {
+        lock (_lock)
+        {
+            return _histograms.Keys.OrderBy(k => k, StringComparer.OrdinalIgnoreCase).ToList();
+        }
+    }
+
+    public Dictionary<string, HistogramStats> GetAllHistogramStats()
+    {
+        List<string> names;
+        lock (_lock)
+        {
+            names = _histograms.Keys.ToList();
+        }
+
+        var result = new Dictionary<string, HistogramStats>(StringComparer.OrdinalIgnoreCase);
+        foreach (var name in names.OrderBy(n => n, StringComparer.OrdinalIgnoreCase))
+        {
+            result[name] = GetHistogramStats(name);
+        }
+
+        return result;
+    }
+
     private static double GetPercentile(List<double> sorted, double percentile)
     {
         var index = (int)Math.Ceiling(percentile * sorted.Count) - 1;

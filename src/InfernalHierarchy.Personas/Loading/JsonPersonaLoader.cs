@@ -12,8 +12,10 @@ public class JsonPersonaLoader : IPersonaLoader
 {
     private readonly ILogger<JsonPersonaLoader> _logger;
     private readonly string _soulsDirectory;
-    private readonly Dictionary<string, Persona> _cache = new();
+    private readonly Dictionary<string, CacheEntry> _cache = new();
     private static readonly JsonSerializerOptions _jsonOptions = new() { PropertyNameCaseInsensitive = true };
+
+    private sealed record CacheEntry(Persona Persona, DateTime LastWriteTimeUtc);
 
     public JsonPersonaLoader(ILogger<JsonPersonaLoader> logger, string? customSoulsDirectory = null)
     {
@@ -43,12 +45,6 @@ public class JsonPersonaLoader : IPersonaLoader
     public async Task<Persona?> LoadPersonaAsync(string name, CancellationToken ct = default)
     {
         var normalizedName = name.ToLowerInvariant();
-        
-        // Check cache first
-        if (_cache.TryGetValue(normalizedName, out var cached))
-        {
-            return cached;
-        }
 
         var filePath = Path.Combine(_soulsDirectory, $"{normalizedName}.json");
 
@@ -58,6 +54,14 @@ public class JsonPersonaLoader : IPersonaLoader
             return null;
         }
 
+        var lastWriteUtc = File.GetLastWriteTimeUtc(filePath);
+
+        // Check cache first (but refresh if file changed)
+        if (_cache.TryGetValue(normalizedName, out var cached) && cached.LastWriteTimeUtc == lastWriteUtc)
+        {
+            return cached.Persona;
+        }
+
         try
         {
             var json = await File.ReadAllTextAsync(filePath, ct);
@@ -65,7 +69,7 @@ public class JsonPersonaLoader : IPersonaLoader
 
             if (persona != null)
             {
-                _cache[normalizedName] = persona;
+                _cache[normalizedName] = new CacheEntry(persona, lastWriteUtc);
                 _logger.LogInformation("😈 Loaded persona: {Name} - {Title}", persona.Name, persona.DemonTitle);
             }
 

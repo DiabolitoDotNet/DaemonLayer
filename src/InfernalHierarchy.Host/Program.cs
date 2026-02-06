@@ -63,6 +63,8 @@ using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
 using System.Text.Json;
 using InfernalHierarchy.Host.Api;
+using InfernalHierarchy.Host.Docs;
+using InfernalHierarchy.Host.Personas;
 using InfernalHierarchy.Host.Ui;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -252,6 +254,8 @@ builder.Services.AddHttpClient();
 builder.Services.AddSingleton<IMessageBus, ChannelMessageBus>();
 builder.Services.AddSingleton<ISharedMemory, LiteDbSharedMemory>();
 builder.Services.AddSingleton<IPersonaLoader, JsonPersonaLoader>();
+builder.Services.AddSingleton<PersonaFileStore>();
+builder.Services.AddSingleton<DocumentationGenerator>();
 
 // Agent system
 builder.Services.AddSingleton<AgentRegistry>();
@@ -386,6 +390,8 @@ if (httpOptions.Enabled)
     var wsOptions = app.Services.GetRequiredService<IOptions<WebSocketInterfaceOptions>>().Value;
     var voiceOptions = app.Services.GetRequiredService<IOptions<VoiceInterfaceOptions>>().Value;
 
+    static bool IsLoopback(System.Net.IPAddress? ip) => ip != null && (System.Net.IPAddress.IsLoopback(ip) || ip.Equals(System.Net.IPAddress.IPv6Loopback));
+
     if (wsOptions.Enabled)
     {
         app.UseWebSockets(new Microsoft.AspNetCore.Builder.WebSocketOptions
@@ -398,9 +404,37 @@ if (httpOptions.Enabled)
 
     if (uiOptions.Enabled)
     {
-        static bool IsLoopback(System.Net.IPAddress? ip) => ip != null && (System.Net.IPAddress.IsLoopback(ip) || ip.Equals(System.Net.IPAddress.IPv6Loopback));
-
         app.MapGet("/ui", (HttpContext ctx) =>
+        {
+            if (uiOptions.LocalOnly && !IsLoopback(ctx.Connection.RemoteIpAddress))
+            {
+                return Results.StatusCode(StatusCodes.Status403Forbidden);
+            }
+
+            return Results.Text(DashboardAssets.IndexHtml, "text/html; charset=utf-8");
+        });
+
+        app.MapGet("/ui/perf", (HttpContext ctx) =>
+        {
+            if (uiOptions.LocalOnly && !IsLoopback(ctx.Connection.RemoteIpAddress))
+            {
+                return Results.StatusCode(StatusCodes.Status403Forbidden);
+            }
+
+            return Results.Text(DashboardAssets.IndexHtml, "text/html; charset=utf-8");
+        });
+
+        app.MapGet("/ui/personas", (HttpContext ctx) =>
+        {
+            if (uiOptions.LocalOnly && !IsLoopback(ctx.Connection.RemoteIpAddress))
+            {
+                return Results.StatusCode(StatusCodes.Status403Forbidden);
+            }
+
+            return Results.Text(DashboardAssets.IndexHtml, "text/html; charset=utf-8");
+        });
+
+        app.MapGet("/ui/docs", (HttpContext ctx) =>
         {
             if (uiOptions.LocalOnly && !IsLoopback(ctx.Connection.RemoteIpAddress))
             {
@@ -433,8 +467,6 @@ if (httpOptions.Enabled)
 
     if (voiceOptions.Enabled)
     {
-        static bool IsLoopback(System.Net.IPAddress? ip) => ip != null && (System.Net.IPAddress.IsLoopback(ip) || ip.Equals(System.Net.IPAddress.IPv6Loopback));
-
         static string ResolveRootDirectory(string rootDirectory)
         {
             var root = string.IsNullOrWhiteSpace(rootDirectory) ? "data/voice" : rootDirectory;
@@ -628,6 +660,31 @@ if (httpOptions.Enabled)
         return Results.Text(body, "text/plain; version=0.0.4; charset=utf-8");
     });
 
+    // Performance profiling APIs
+    app.MapGet("/api/perf/snapshot", (HttpContext ctx, PerformanceMonitor perf) =>
+    {
+        if (uiOptions.LocalOnly && !IsLoopback(ctx.Connection.RemoteIpAddress))
+        {
+            return Results.StatusCode(StatusCodes.Status403Forbidden);
+        }
+
+        return Results.Ok(perf.GetCurrentSnapshot());
+    });
+
+    app.MapGet("/api/perf/histograms", (HttpContext ctx, MetricsCollector collector) =>
+    {
+        if (uiOptions.LocalOnly && !IsLoopback(ctx.Connection.RemoteIpAddress))
+        {
+            return Results.StatusCode(StatusCodes.Status403Forbidden);
+        }
+
+        return Results.Ok(new
+        {
+            names = collector.GetHistogramNames(),
+            stats = collector.GetAllHistogramStats()
+        });
+    });
+
     // Minimal UI support APIs
     app.MapGet("/api/agents", (IAgentRegistry registry) =>
     {
@@ -667,6 +724,102 @@ if (httpOptions.Enabled)
         var events = await store.GetEventsByTimeRangeAsync(start, end, ct);
         var trimmed = events.TakeLast(500);
         return Results.Ok(trimmed);
+    });
+
+    // Persona editor APIs (file-backed)
+    app.MapGet("/api/personas", (HttpContext ctx, PersonaFileStore store) =>
+    {
+        if (uiOptions.LocalOnly && !IsLoopback(ctx.Connection.RemoteIpAddress))
+        {
+            return Results.StatusCode(StatusCodes.Status403Forbidden);
+        }
+
+        var list = store.List().Select(p => new
+        {
+            name = p.name,
+            lastWriteTimeUtc = p.lastWriteTimeUtc,
+            lengthBytes = p.lengthBytes
+        });
+
+        return Results.Ok(list);
+    });
+
+    app.MapGet("/api/personas/{name}", async (HttpContext ctx, string name, PersonaFileStore store, CancellationToken ct) =>
+    {
+        if (uiOptions.LocalOnly && !IsLoopback(ctx.Connection.RemoteIpAddress))
+        {
+            return Results.StatusCode(StatusCodes.Status403Forbidden);
+        }
+
+        var raw = await store.TryLoadRawJsonAsync(name, ct);
+        if (raw is null)
+        {
+            return Results.NotFound(new { error = $"Persona '{name}' not found" });
+        }
+
+        var parsed = await store.TryLoadPersonaAsync(name, ct);
+        return Results.Ok(new
+        {
+            name,
+            json = raw,
+            persona = parsed,
+            valid = parsed is not null
+        });
+    });
+
+    app.MapPut("/api/personas/{name}", async (HttpContext ctx, string name, PersonaRawUpdateRequest req, PersonaFileStore store, CancellationToken ct) =>
+    {
+        if (uiOptions.LocalOnly && !IsLoopback(ctx.Connection.RemoteIpAddress))
+        {
+            return Results.StatusCode(StatusCodes.Status403Forbidden);
+        }
+
+        var result = await store.SaveRawJsonAsync(name, req.Json, ct);
+        if (!result.success)
+        {
+            return Results.BadRequest(new { error = result.error, issues = result.issues });
+        }
+
+        return Results.Ok(new { ok = true, path = result.path });
+    });
+
+    app.MapPost("/api/personas/{name}/validate", (HttpContext ctx, string name, PersonaRawUpdateRequest req, PersonaFileStore store) =>
+    {
+        if (uiOptions.LocalOnly && !IsLoopback(ctx.Connection.RemoteIpAddress))
+        {
+            return Results.StatusCode(StatusCodes.Status403Forbidden);
+        }
+
+        var validation = PersonaFileStore.ValidateRawJson(name, req.Json);
+        if (!validation.success)
+        {
+            return Results.BadRequest(new { error = validation.error, issues = validation.issues });
+        }
+
+        return Results.Ok(new { ok = true, normalizedName = validation.normalizedName });
+    });
+
+    // Documentation generator APIs
+    app.MapGet("/api/docs/markdown", async (HttpContext ctx, DocumentationGenerator docs, CancellationToken ct) =>
+    {
+        if (uiOptions.LocalOnly && !IsLoopback(ctx.Connection.RemoteIpAddress))
+        {
+            return Results.StatusCode(StatusCodes.Status403Forbidden);
+        }
+
+        var md = await docs.GenerateMarkdownAsync(ct);
+        return Results.Text(md, "text/markdown; charset=utf-8");
+    });
+
+    app.MapGet("/api/docs/json", async (HttpContext ctx, DocumentationGenerator docs, CancellationToken ct) =>
+    {
+        if (uiOptions.LocalOnly && !IsLoopback(ctx.Connection.RemoteIpAddress))
+        {
+            return Results.StatusCode(StatusCodes.Status403Forbidden);
+        }
+
+        var json = await docs.GenerateJsonAsync(ct);
+        return Results.Text(json, "application/json; charset=utf-8");
     });
 
     app.MapGet("/", () => Results.Text("InfernalHierarchy is running"));

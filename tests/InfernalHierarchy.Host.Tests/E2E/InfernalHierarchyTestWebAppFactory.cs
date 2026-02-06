@@ -12,9 +12,13 @@ namespace InfernalHierarchy.Host.Tests.E2E;
 public sealed class InfernalHierarchyTestWebAppFactory : WebApplicationFactory<Program>
 {
     public string TempDbPath { get; } = Path.Combine(Path.GetTempPath(), $"infernal_e2e_{Guid.NewGuid():N}.db");
+    public string TempSoulsDir { get; } = Path.Combine(Path.GetTempPath(), $"infernal_souls_{Guid.NewGuid():N}");
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
+        Directory.CreateDirectory(TempSoulsDir);
+        SeedPersona(TempSoulsDir);
+
         builder.UseEnvironment("Testing");
 
         builder.ConfigureAppConfiguration((_, config) =>
@@ -56,7 +60,10 @@ public sealed class InfernalHierarchyTestWebAppFactory : WebApplicationFactory<P
                 ["Email:FromName"] = "Infernal Test Bot",
 
                 // Keep ReAct deterministic in tests.
-                ["ReActOptions:UseJsonResponse"] = "true"
+                ["ReActOptions:UseJsonResponse"] = "true",
+
+                // Persona editor APIs use a file-backed store
+                ["Personas:SoulsDirectory"] = TempSoulsDir
             };
 
             config.AddInMemoryCollection(settings);
@@ -104,7 +111,44 @@ public sealed class InfernalHierarchyTestWebAppFactory : WebApplicationFactory<P
             {
                 // best-effort
             }
+
+            try
+            {
+                if (Directory.Exists(TempSoulsDir))
+                {
+                    Directory.Delete(TempSoulsDir, recursive: true);
+                }
+            }
+            catch
+            {
+                // best-effort
+            }
         }
+    }
+
+    private static void SeedPersona(string soulsDir)
+    {
+        var path = Path.Combine(soulsDir, "testdemon.json");
+        if (File.Exists(path)) return;
+
+        var json = """
+{
+  "name": "testdemon",
+  "demonTitle": "Test Demon",
+  "systemPrompt": "You are a test persona.",
+  "specializations": ["Testing"],
+  "availableTools": ["read_memory"],
+  "personality": {
+    "tone": "Neutral",
+    "approach": "Direct",
+    "verbosity": 3,
+    "useDemonicTheme": false
+  },
+  "customInstructions": {}
+}
+""";
+
+        File.WriteAllText(path, json);
     }
 
     private static void RemoveHostedService<T>(IServiceCollection services)
