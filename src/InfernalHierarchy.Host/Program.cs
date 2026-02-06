@@ -102,6 +102,8 @@ builder.Services.AddSingleton<IValidateOptions<SearXNGOptions>, WebSearchProvide
 builder.Services.AddSingleton<IValidateOptions<BraveSearchOptions>, WebSearchProvidersValidator>();
 builder.Services.AddSingleton<IValidateOptions<EmailNotificationOptions>, EmailNotificationOptionsValidator>();
 builder.Services.AddSingleton<IValidateOptions<ToolRateLimitingOptions>, ToolRateLimitingOptionsValidator>();
+builder.Services.AddSingleton<IValidateOptions<VectorMemoryOptions>, VectorMemoryOptionsValidator>();
+builder.Services.AddSingleton<IValidateOptions<OnnxEmbeddingOptions>, OnnxEmbeddingOptionsValidator>();
 
 builder.Services.AddOptions<OllamaOptions>()
     .Bind(builder.Configuration.GetSection("Ollama"))
@@ -128,7 +130,12 @@ builder.Services.AddOptions<ToolRateLimitingOptions>()
     .Bind(builder.Configuration.GetSection("ToolRateLimiting"))
     .ValidateOnStart();
 builder.Services.Configure<LlmOptions>(builder.Configuration.GetSection("LlmOptions"));
-builder.Services.Configure<VectorMemoryOptions>(builder.Configuration.GetSection("VectorMemoryOptions"));
+builder.Services.AddOptions<VectorMemoryOptions>()
+    .Bind(builder.Configuration.GetSection("VectorMemoryOptions"))
+    .ValidateOnStart();
+builder.Services.AddOptions<OnnxEmbeddingOptions>()
+    .Bind(builder.Configuration.GetSection("OnnxEmbeddingOptions"))
+    .ValidateOnStart();
 builder.Services.Configure<MemoryPruningOptions>(builder.Configuration.GetSection("MemoryPruningOptions"));
 builder.Services.Configure<MemoryLearningOptions>(builder.Configuration.GetSection("MemoryLearningOptions"));
 builder.Services.Configure<RagOptions>(builder.Configuration.GetSection("RagOptions"));
@@ -187,6 +194,7 @@ builder.Services.AddSingleton<GlobalExceptionHandler>();
 builder.Services.AddHealthChecks()
     .AddCheck<OllamaHealthCheck>("ollama", HealthStatus.Degraded, tags: new[] { "llm", "external" })
     .AddCheck<QdrantHealthCheck>("qdrant", HealthStatus.Degraded, tags: new[] { "vector", "external" })
+    .AddCheck<OnnxEmbeddingsHealthCheck>("onnx_embeddings", HealthStatus.Degraded, tags: new[] { "embeddings", "local" })
     .AddCheck<TelegramHealthCheck>("telegram", HealthStatus.Degraded, tags: new[] { "bot", "external" })
     .AddCheck<LiteDbHealthCheck>("litedb", HealthStatus.Unhealthy, tags: new[] { "database", "storage" })
     .AddCheck<AgentHierarchyHealthCheck>("agents", HealthStatus.Degraded, tags: new[] { "agents", "system" });
@@ -311,6 +319,40 @@ if (httpOptions.Enabled)
     // Health endpoints
     app.MapHealthChecks("/health", new HealthCheckOptions
     {
+        ResponseWriter = async (context, report) =>
+        {
+            context.Response.ContentType = "application/json";
+            var payload = new
+            {
+                status = report.Status.ToString(),
+                totalDurationMs = report.TotalDuration.TotalMilliseconds,
+                checks = report.Entries.ToDictionary(
+                    kvp => kvp.Key,
+                    kvp => new
+                    {
+                        status = kvp.Value.Status.ToString(),
+                        description = kvp.Value.Description,
+                        durationMs = kvp.Value.Duration.TotalMilliseconds,
+                        data = kvp.Value.Data
+                    })
+            };
+
+            await context.Response.WriteAsync(JsonSerializer.Serialize(payload, JsonDefaults.WebIndented));
+        }
+    });
+
+    app.MapHealthChecks("/health/live", new HealthCheckOptions
+    {
+        Predicate = _ => false
+    });
+
+    app.MapHealthChecks("/health/ready", new HealthCheckOptions
+    {
+        Predicate = check =>
+            check.Tags.Contains("external") ||
+            check.Tags.Contains("database") ||
+            check.Tags.Contains("storage") ||
+            check.Tags.Contains("embeddings"),
         ResponseWriter = async (context, report) =>
         {
             context.Response.ContentType = "application/json";

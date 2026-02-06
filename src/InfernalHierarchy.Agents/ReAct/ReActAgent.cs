@@ -380,10 +380,17 @@ public class ReActAgent : BaseAgent
 
                 _logger.LogDebug("Iteration {Iteration}: Calling LLM", iterations);
 
-                var response = await _ollamaClient.GetCompletionAsync(
-                    Persona.SystemPrompt,
-                    prompt,
-                    ct);
+                var response = _ollamaClient is IModelOverrideLlmClient modelOverrideClient
+                    && !string.IsNullOrWhiteSpace(Persona.ModelOverride)
+                        ? await modelOverrideClient.GetCompletionWithModelAsync(
+                            Persona.SystemPrompt,
+                            prompt,
+                            Persona.ModelOverride!,
+                            ct)
+                        : await _ollamaClient.GetCompletionAsync(
+                            Persona.SystemPrompt,
+                            prompt,
+                            ct);
 
                 if (string.IsNullOrWhiteSpace(response))
                 {

@@ -19,6 +19,8 @@
 
 - [ ] **Operationalize vector search end-to-end**
   - Run Qdrant locally, enable ONNX embeddings, and validate semantic memory queries end-to-end.
+  - Use `/health/ready` to confirm Qdrant + embedding assets readiness.
+  - Run the live integration test (opt-in) to validate Qdrant roundtrip.
 
 
 ## 🔧 Active Gaps / Known Limitations
@@ -38,9 +40,11 @@
 - [ ] **Vector search runtime dependency (Qdrant)**
   - Vector memory requires Qdrant to be running.
   - `/health` includes a dedicated Qdrant health check when vector memory is enabled.
+  - `/health/ready` is available for readiness gating.
 - [ ] **ONNX embeddings (local model assets)**
   - `OnnxEmbeddingOptions.Enabled` is off by default.
   - Enabling improves semantic search quality but requires local model assets (see `models/README.md`).
+  - `/health` exposes an `onnx_embeddings` check that reports missing assets when enabled.
 - [ ] **Memory pruning (guardrails required)**
   - `MemoryPruningOptions` is off by default to reduce accidental data loss.
   - Needs explicit enablement + retention/rollback considerations.
@@ -75,7 +79,6 @@ _No additional Memory & Learning backlog items currently tracked here._
 
 ### LLM Enhancements
 - [ ] **Vision model support** - Image analysis with multi-modal models
-- [ ] **Fine-tuned models** - LoRA adapters for specialized tasks
 
 ### UI & Interfaces
 - [ ] **Web dashboard** - Blazor/React admin panel

@@ -131,6 +131,52 @@ public class QdrantHealthCheck : IHealthCheck
 }
 
 /// <summary>
+/// Health check for ONNX embeddings assets (local model + tokenizer)
+/// </summary>
+public class OnnxEmbeddingsHealthCheck : IHealthCheck
+{
+    private readonly OnnxEmbeddingOptions _options;
+
+    public OnnxEmbeddingsHealthCheck(IOptions<OnnxEmbeddingOptions> options)
+    {
+        _options = options.Value;
+    }
+
+    public Task<HealthCheckResult> CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken = default)
+    {
+        var data = new Dictionary<string, object>
+        {
+            ["enabled"] = _options.Enabled,
+            ["model_path"] = _options.ModelPath,
+            ["tokenizer_path"] = _options.TokenizerPath,
+            ["embedding_dimension"] = _options.EmbeddingDimension,
+            ["max_sequence_length"] = _options.MaxSequenceLength,
+        };
+
+        if (!_options.Enabled)
+        {
+            data["status"] = "disabled";
+            return Task.FromResult(HealthCheckResult.Healthy("ONNX embeddings disabled", data: data));
+        }
+
+        var modelExists = !string.IsNullOrWhiteSpace(_options.ModelPath) && File.Exists(_options.ModelPath);
+        var tokenizerExists = !string.IsNullOrWhiteSpace(_options.TokenizerPath) && File.Exists(_options.TokenizerPath);
+
+        data["model_exists"] = modelExists;
+        data["tokenizer_exists"] = tokenizerExists;
+
+        if (modelExists && tokenizerExists)
+        {
+            data["status"] = "ready";
+            return Task.FromResult(HealthCheckResult.Healthy("ONNX embeddings assets present", data: data));
+        }
+
+        data["status"] = "missing_assets";
+        return Task.FromResult(HealthCheckResult.Degraded("ONNX embeddings enabled but model/tokenizer assets are missing", data: data));
+    }
+}
+
+/// <summary>
 /// Health check for Telegram Bot service
 /// </summary>
 public class TelegramHealthCheck : IHealthCheck

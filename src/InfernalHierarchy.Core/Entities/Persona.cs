@@ -8,6 +8,7 @@ public class Persona
     public string Name { get; set; } = string.Empty;
     public string DemonTitle { get; set; } = string.Empty;
     public string SystemPrompt { get; set; } = string.Empty;
+    public string? ModelOverride { get; set; }
     public IReadOnlyList<string> Specializations { get; init; } = Array.Empty<string>();
     public IReadOnlyList<string> AvailableTools { get; init; } = Array.Empty<string>();
     public PersonalityTraits Personality { get; set; } = new();

@@ -69,6 +69,9 @@
   - Background service for semantic clustering and LLM-based fact compression/summarization
 - **Prompt optimization (A/B testing for system prompts)**
   - `prompt_ab_test` tool for running repeatable trials across prompt variants and producing a JSON report + winner
+- **Fine-tuned model selection (persona-level overrides)**
+  - Personas can optionally set `ModelOverride` in their soul JSON to use a fine-tuned Ollama model name per agent
+  - Implemented via `IModelOverrideLlmClient` (optional capability) in the Ollama client
 
 ### Agent Collaboration ✅
 - **Complete Agent Collaboration System**

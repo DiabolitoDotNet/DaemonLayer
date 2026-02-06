@@ -13,6 +13,7 @@ namespace InfernalHierarchy.Tools.Clients;
 /// Client for Ollama LLM via its OpenAI-compatible HTTP API.
 /// </summary>
 public class OllamaClient : ILlmClient
+    , IModelOverrideLlmClient
 {
     private readonly HttpClient _http;
     private readonly JsonSerializerOptions _json;
@@ -55,11 +56,34 @@ public class OllamaClient : ILlmClient
         string userMessage,
         CancellationToken ct = default)
     {
+        return await GetCompletionInternalAsync(systemPrompt, userMessage, modelOverride: null, ct).ConfigureAwait(false);
+    }
+
+    public Task<string> GetCompletionWithModelAsync(
+        string systemPrompt,
+        string userMessage,
+        string model,
+        CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(model))
+        {
+            return GetCompletionAsync(systemPrompt, userMessage, ct);
+        }
+
+        return GetCompletionInternalAsync(systemPrompt, userMessage, modelOverride: model.Trim(), ct);
+    }
+
+    private async Task<string> GetCompletionInternalAsync(
+        string systemPrompt,
+        string userMessage,
+        string? modelOverride,
+        CancellationToken ct)
+    {
         try
         {
             var request = new ChatCompletionRequest
             {
-                Model = _options.DefaultModel,
+                Model = modelOverride ?? _options.DefaultModel,
                 Temperature = _options.Temperature,
                 MaxTokens = _options.MaxTokens,
                 Stream = false,
