@@ -1,5 +1,6 @@
 using InfernalHierarchy.Core.ErrorHandling;
 using InfernalHierarchy.Core.Eventing;
+using InfernalHierarchy.Core.Entities;
 using InfernalHierarchy.Core.Serialization;
 using InfernalHierarchy.Core.Interfaces;
 using Microsoft.Extensions.Logging;
@@ -16,23 +17,72 @@ public sealed class DefaultToolExecutionPipeline : IToolExecutionPipeline
     private readonly GlobalExceptionHandler? _exceptionHandler;
     private readonly IAgentEventSink? _eventSink;
     private readonly IToolRateLimiter? _rateLimiter;
+    private readonly IToolAuthorizationService? _authorizationService;
 
     public DefaultToolExecutionPipeline(
         ILogger<DefaultToolExecutionPipeline> logger,
         AgentLearningService? learningService = null,
         GlobalExceptionHandler? exceptionHandler = null,
         IAgentEventSink? eventSink = null,
-        IToolRateLimiter? rateLimiter = null)
+        IToolRateLimiter? rateLimiter = null,
+        IToolAuthorizationService? authorizationService = null)
     {
         _logger = logger;
         _learningService = learningService;
         _exceptionHandler = exceptionHandler;
         _eventSink = eventSink;
         _rateLimiter = rateLimiter;
+        _authorizationService = authorizationService;
     }
 
     public async Task<ToolResult> ExecuteAsync(ToolExecutionContext context)
     {
+        if (_authorizationService != null && !string.IsNullOrWhiteSpace(context.AgentId))
+        {
+            var rank = AgentRank.Worker;
+            if (!string.IsNullOrWhiteSpace(context.AgentRank) &&
+                Enum.TryParse(context.AgentRank, ignoreCase: true, out AgentRank parsedRank))
+            {
+                rank = parsedRank;
+            }
+
+            var agentName = !string.IsNullOrWhiteSpace(context.AgentName)
+                ? context.AgentName
+                : context.AgentId;
+
+            var decision = _authorizationService.IsAuthorized(
+                context.AgentId,
+                agentName,
+                rank,
+                context.ToolName);
+
+            if (!decision.IsAuthorized)
+            {
+                var denied = new ToolResult
+                {
+                    Success = false,
+                    Output = string.Empty,
+                    Error = string.IsNullOrWhiteSpace(decision.Reason)
+                        ? "Access denied"
+                        : $"Access denied: {decision.Reason}",
+                    Metadata = new Dictionary<string, object>
+                    {
+                        ["authorization_denied"] = true,
+                        ["tool"] = context.ToolName,
+                        ["agent_rank"] = context.AgentRank ?? rank.ToString()
+                    }
+                };
+
+                TryAppendToolEvent(
+                    context,
+                    success: false,
+                    duration: TimeSpan.Zero,
+                    errorMessage: denied.Error);
+
+                return denied;
+            }
+        }
+
         if (_rateLimiter != null)
         {
             var decision = _rateLimiter.Check(context);

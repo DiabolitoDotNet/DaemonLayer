@@ -1,5 +1,6 @@
 using InfernalHierarchy.Core.ErrorHandling;
 using InfernalHierarchy.Core.Eventing;
+using InfernalHierarchy.Core.Entities;
 using InfernalHierarchy.Core.Interfaces;
 using InfernalHierarchy.Tools.Execution;
 using InfernalHierarchy.Tools.Learning;
@@ -11,6 +12,16 @@ namespace InfernalHierarchy.Tools.Tests;
 
 public sealed class DefaultToolExecutionPipelineTests
 {
+    private sealed class DenyAllAuthorizationService : IToolAuthorizationService
+    {
+        public AuthorizationResult IsAuthorized(string agentId, string agentName, AgentRank rank, string toolName)
+            => AuthorizationResult.Failure("denied by test");
+
+        public List<string> GetAuthorizedTools(string agentId, string agentName, AgentRank rank) => new();
+
+        public void ReloadPermissions() { }
+    }
+
     private sealed class FakeTool : ITool
     {
         private readonly Func<Dictionary<string, object>, CancellationToken, Task<ToolResult>> _handler;
@@ -98,6 +109,42 @@ public sealed class DefaultToolExecutionPipelineTests
         Assert.Equal("t1", (string)sink.Events[0].Metadata["tool"]);
 
         Assert.Equal(1.0, learning.GetToolSuccessRate("t1"));
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_WhenAuthorizationDenies_ReturnsFailure_AndDoesNotExecuteTool()
+    {
+        var auth = new DenyAllAuthorizationService();
+
+        var pipeline = new DefaultToolExecutionPipeline(
+            NullLogger<DefaultToolExecutionPipeline>.Instance,
+            learningService: null,
+            exceptionHandler: null,
+            eventSink: null,
+            rateLimiter: null,
+            authorizationService: auth);
+
+        var toolWasCalled = false;
+        var tool = new FakeTool("t-denied", "d", (p, ct) =>
+        {
+            toolWasCalled = true;
+            return Task.FromResult(new ToolResult { Success = true, Output = "ok" });
+        });
+
+        var context = new ToolExecutionContext(
+            ToolName: tool.Name,
+            Tool: tool,
+            Parameters: new Dictionary<string, object>(),
+            AgentId: "agent-1",
+            AgentRank: "Duke",
+            CancellationToken: CancellationToken.None,
+            AgentName: "Baal");
+
+        var result = await pipeline.ExecuteAsync(context);
+
+        Assert.False(result.Success);
+        Assert.False(toolWasCalled);
+        Assert.Contains("Access denied", result.Error ?? string.Empty, StringComparison.Ordinal);
     }
 
     [Fact]

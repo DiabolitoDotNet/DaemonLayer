@@ -109,10 +109,14 @@ public sealed class ToolAuthorizationServiceCoverageTests
         var sut = new ToolAuthorizationService(NullLogger<ToolAuthorizationService>.Instance, config);
 
         var toolsForDuke = sut.GetAuthorizedTools("a", "lucifer", AgentRank.Duke);
-        toolsForDuke.Should().BeEquivalentTo(["t1"]);
+        toolsForDuke.Should().Contain("t1");
+        toolsForDuke.Should().NotContain("t2");
+        toolsForDuke.Should().NotContain("t3");
 
         var toolsForWorker = sut.GetAuthorizedTools("a", "lucifer", AgentRank.Worker);
-        toolsForWorker.Should().BeEquivalentTo(["t2"]);
+        toolsForWorker.Should().Contain("t2");
+        toolsForWorker.Should().NotContain("t1");
+        toolsForWorker.Should().NotContain("t3");
     }
 
     [Fact]

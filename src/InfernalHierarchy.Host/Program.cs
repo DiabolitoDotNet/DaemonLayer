@@ -31,6 +31,8 @@ using InfernalHierarchy.Tools.Telemetry;
 using InfernalHierarchy.Tools.Tools.Agent;
 using InfernalHierarchy.Tools.Tools.Collaboration;
 using InfernalHierarchy.Tools.Tools.Experiments;
+using InfernalHierarchy.Tools.Tools.FileSystem;
+using InfernalHierarchy.Tools.Tools.Http;
 using InfernalHierarchy.Tools.Tools.Memory;
 using InfernalHierarchy.Tools.Tools.Search;
 using InfernalHierarchy.Tools.Tools.Telegram;
@@ -104,6 +106,8 @@ builder.Services.AddSingleton<IValidateOptions<EmailNotificationOptions>, EmailN
 builder.Services.AddSingleton<IValidateOptions<ToolRateLimitingOptions>, ToolRateLimitingOptionsValidator>();
 builder.Services.AddSingleton<IValidateOptions<VectorMemoryOptions>, VectorMemoryOptionsValidator>();
 builder.Services.AddSingleton<IValidateOptions<OnnxEmbeddingOptions>, OnnxEmbeddingOptionsValidator>();
+builder.Services.AddSingleton<IValidateOptions<FileSystemToolOptions>, FileSystemToolOptionsValidator>();
+builder.Services.AddSingleton<IValidateOptions<HttpRequestToolOptions>, HttpRequestToolOptionsValidator>();
 
 builder.Services.AddOptions<OllamaOptions>()
     .Bind(builder.Configuration.GetSection("Ollama"))
@@ -129,6 +133,12 @@ builder.Services.AddOptions<EmailNotificationOptions>()
 builder.Services.AddOptions<ToolRateLimitingOptions>()
     .Bind(builder.Configuration.GetSection("ToolRateLimiting"))
     .ValidateOnStart();
+builder.Services.AddOptions<FileSystemToolOptions>()
+    .Bind(builder.Configuration.GetSection("FileSystem"))
+    .ValidateOnStart();
+builder.Services.AddOptions<HttpRequestToolOptions>()
+    .Bind(builder.Configuration.GetSection("HttpTool"))
+    .ValidateOnStart();
 builder.Services.Configure<LlmOptions>(builder.Configuration.GetSection("LlmOptions"));
 builder.Services.AddOptions<VectorMemoryOptions>()
     .Bind(builder.Configuration.GetSection("VectorMemoryOptions"))
@@ -150,6 +160,7 @@ builder.Services.AddSingleton<ResourceLimitService>();
 
 // Security and reliability
 builder.Services.AddSingleton<ToolAuthorizationService>();
+builder.Services.AddSingleton<IToolAuthorizationService>(sp => sp.GetRequiredService<ToolAuthorizationService>());
 builder.Services.AddSingleton<TelegramBotClientFactory>();
 builder.Services.AddSingleton<ITelegramBotClientFactory>(sp => sp.GetRequiredService<TelegramBotClientFactory>());
 
@@ -285,6 +296,9 @@ builder.Services.AddSingleton<SearXNGSearchTool>();
 builder.Services.AddSingleton<BraveSearchTool>();
 builder.Services.AddSingleton<WebSearchTool>();
 
+// Register HTTP tool client
+builder.Services.AddHttpClient(nameof(HttpRequestTool));
+
 // Register unified web search as IWebSearchTool
 builder.Services.AddSingleton<IWebSearchTool>(sp => sp.GetRequiredService<WebSearchTool>());
 builder.Services.AddSingleton<ITool>(sp => sp.GetRequiredService<WebSearchTool>());
@@ -299,6 +313,10 @@ builder.Services.AddSingleton<ITool, CreateAgentFromTemplateTool>();
 builder.Services.AddSingleton<ITool, ListTemplatesTool>();
 builder.Services.AddSingleton<ITool, PromptAbTestTool>();
 builder.Services.AddSingleton<ITool, EmailNotificationTool>();
+builder.Services.AddSingleton<ITool, FileReadTool>();
+builder.Services.AddSingleton<ITool, FileWriteTool>();
+builder.Services.AddSingleton<ITool, FileSearchTool>();
+builder.Services.AddSingleton<ITool, HttpRequestTool>();
 
 // Register all tools in the registry
 builder.Services.AddHostedService<ToolRegistrationService>();

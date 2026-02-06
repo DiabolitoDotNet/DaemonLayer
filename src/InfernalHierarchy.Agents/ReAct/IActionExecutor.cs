@@ -13,6 +13,7 @@ public sealed record ActionExecutionContext(
     string ActionInputText,
     Dictionary<string, object>? ActionInputObject,
     string AgentId,
+    string AgentName,
     string AgentRank,
     IReadOnlyCollection<string> AvailableTools,
     CancellationToken CancellationToken);

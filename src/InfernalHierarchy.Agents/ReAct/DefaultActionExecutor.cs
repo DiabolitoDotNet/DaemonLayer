@@ -52,6 +52,7 @@ public sealed class DefaultActionExecutor : IActionExecutor
             parameters,
             context.AgentId,
             context.AgentRank,
+            context.AgentName,
             context.CancellationToken).ConfigureAwait(false);
 
         string toolCall;

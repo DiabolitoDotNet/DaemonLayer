@@ -376,6 +376,7 @@ public class ReActAgentAdditionalCoverageTests
                 ),
                 agent.Id,
                 agent.Rank.ToString(),
+                It.IsAny<string?>(),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(new ToolResult { Success = true, Output = "done" });
 

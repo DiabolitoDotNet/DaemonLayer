@@ -456,6 +456,7 @@ public class ReActAgent : BaseAgent
                         ActionInputText: actionInput,
                         ActionInputObject: actionInputObject,
                         AgentId: Id,
+                        AgentName: Name,
                         AgentRank: Rank.ToString(),
                         AvailableTools: Persona.AvailableTools,
                         CancellationToken: ct)).ConfigureAwait(false);

@@ -94,6 +94,7 @@ public class ToolRegistry : IToolRegistry
         Dictionary<string, object> parameters,
         string? agentId = null,
         string? agentRank = null,
+        string? agentName = null,
         CancellationToken ct = default)
     {
         var tool = GetTool(toolName);
@@ -115,7 +116,8 @@ public class ToolRegistry : IToolRegistry
                 Parameters: parameters,
                 AgentId: agentId,
                 AgentRank: agentRank,
-                CancellationToken: ct)).ConfigureAwait(false);
+                CancellationToken: ct,
+                AgentName: agentName)).ConfigureAwait(false);
         }
 
         var stopwatch = Stopwatch.StartNew();

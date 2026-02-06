@@ -179,6 +179,7 @@ Action Input: done
                 It.IsAny<Dictionary<string, object>>(),
                 It.IsAny<string>(),
                 It.IsAny<string>(),
+            It.IsAny<string?>(),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(new ToolResult { Success = true, Output = "tool ok" });
 
@@ -222,6 +223,7 @@ Action Input: done
             It.Is<Dictionary<string, object>>(d => d.ContainsKey("param1")),
             It.IsAny<string>(),
             It.IsAny<string>(),
+            It.IsAny<string?>(),
             It.IsAny<CancellationToken>()), Times.Once);
     }
 

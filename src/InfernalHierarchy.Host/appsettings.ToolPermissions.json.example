@@ -29,6 +29,30 @@
       "AllowedRanks": "Supreme,Prince,Duke,Worker",
       "WhitelistedAgents": [],
       "BlacklistedAgents": []
+    },
+    "fs_read": {
+      "Enabled": false,
+      "AllowedRanks": "Supreme,Prince,Duke,Worker",
+      "WhitelistedAgents": [],
+      "BlacklistedAgents": []
+    },
+    "fs_search": {
+      "Enabled": false,
+      "AllowedRanks": "Supreme,Prince,Duke,Worker",
+      "WhitelistedAgents": [],
+      "BlacklistedAgents": []
+    },
+    "fs_write": {
+      "Enabled": false,
+      "AllowedRanks": "Supreme,Prince",
+      "WhitelistedAgents": [],
+      "BlacklistedAgents": []
+    },
+    "http_request": {
+      "Enabled": false,
+      "AllowedRanks": "Supreme,Prince,Duke",
+      "WhitelistedAgents": [],
+      "BlacklistedAgents": []
     }
   }
 }

@@ -84,6 +84,14 @@
 - **Typed HTTP clients for web search**
   - Introduced typed provider clients (SearXNG + Brave Search) with consistent parsing and error mapping
 
+### Tool Ecosystem ✅
+- **Sandboxed filesystem tools**
+  - `fs_read`, `fs_write`, `fs_search` with sandbox root + extension allowlist + size limits
+- **Allowlisted HTTP tool**
+  - `http_request` with scheme/host/method allowlists, timeouts, and max response size
+- **Authorization enforced at execution-time**
+  - Tool permissions are checked inside the tool execution pipeline (single choke point), with agent name propagated for allow/deny rules
+
 ### Observability & Monitoring ✅
 - **DistributedTracing**: OpenTelemetry Activity-based tracing
 - **HTTP Health Endpoint**: `/health` JSON endpoint (gated by `Http.Enabled`)

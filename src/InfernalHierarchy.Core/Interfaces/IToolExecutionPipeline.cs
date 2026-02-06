@@ -14,4 +14,5 @@ public sealed record ToolExecutionContext(
     Dictionary<string, object> Parameters,
     string? AgentId,
     string? AgentRank,
-    CancellationToken CancellationToken);
+    CancellationToken CancellationToken,
+    string? AgentName = null);

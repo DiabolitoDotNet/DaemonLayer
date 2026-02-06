@@ -29,5 +29,11 @@ public interface IToolRegistry
     IEnumerable<ITool> GetAllTools();
     IEnumerable<ITool> GetToolsForAgent(string[] toolNames);
     T? GetService<T>() where T : class;
-    Task<ToolResult> ExecuteToolWithTrackingAsync(string toolName, Dictionary<string, object> parameters, string? agentId = null, string? agentRank = null, CancellationToken ct = default);
+    Task<ToolResult> ExecuteToolWithTrackingAsync(
+        string toolName,
+        Dictionary<string, object> parameters,
+        string? agentId = null,
+        string? agentRank = null,
+        string? agentName = null,
+        CancellationToken ct = default);
 }

@@ -65,9 +65,8 @@
 _No additional Memory & Learning backlog items currently tracked here._
 
 ### Tool Ecosystem
-- [ ] **File system tools** - Read/write/search local files (sandboxed)
 - [ ] **Code execution tools** - Sandboxed Python/Node.js execution
-- [ ] **API integration tools** - Generic REST/GraphQL client
+- [ ] **API integration tools** - GraphQL-first client + auth helpers (REST covered by `http_request`)
 - [ ] **Database query tools** - SQL query execution (read-only)
 - [ ] **Notification tools** - Email
 - [ ] **Audio transcription** - Whisper.cpp integration

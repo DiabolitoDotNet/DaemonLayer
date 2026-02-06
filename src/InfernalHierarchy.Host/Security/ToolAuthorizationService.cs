@@ -8,7 +8,7 @@ namespace InfernalHierarchy.Host.Security;
 /// <summary>
 /// Service that enforces tool authorization based on agent rank and permissions
 /// </summary>
-public class ToolAuthorizationService
+public class ToolAuthorizationService : IToolAuthorizationService
 {
     private readonly ILogger<ToolAuthorizationService> _logger;
     private readonly IConfiguration _configuration;
@@ -107,14 +107,16 @@ public class ToolAuthorizationService
 
     private Dictionary<string, ToolPermissions> LoadToolPermissions()
     {
-        var permissions = new Dictionary<string, ToolPermissions>();
+        // Start from built-in defaults so new tools remain safely configured
+        // even when the user provides a partial ToolPermissions section.
+        var permissions = GetDefaultPermissions();
 
         // Load from configuration (ToolPermissions section)
         var configSection = _configuration.GetSection("ToolPermissions");
         if (!configSection.Exists())
         {
             _logger.LogInformation("No ToolPermissions configuration found, using defaults");
-            return GetDefaultPermissions();
+            return permissions;
         }
 
         foreach (var toolSection in configSection.GetChildren())
@@ -173,6 +175,34 @@ public class ToolAuthorizationService
                 AllowedRanks = new() { AgentRank.Supreme, AgentRank.Prince, AgentRank.Duke, AgentRank.Worker },
                 WhitelistedAgents = new(),
                 BlacklistedAgents = new()
+            },
+            ["fs_read"] = new()
+            {
+                Enabled = false,
+                AllowedRanks = new() { AgentRank.Supreme, AgentRank.Prince, AgentRank.Duke, AgentRank.Worker },
+                WhitelistedAgents = new(),
+                BlacklistedAgents = new()
+            },
+            ["fs_search"] = new()
+            {
+                Enabled = false,
+                AllowedRanks = new() { AgentRank.Supreme, AgentRank.Prince, AgentRank.Duke, AgentRank.Worker },
+                WhitelistedAgents = new(),
+                BlacklistedAgents = new()
+            },
+            ["fs_write"] = new()
+            {
+                Enabled = false,
+                AllowedRanks = new() { AgentRank.Supreme, AgentRank.Prince },
+                WhitelistedAgents = new(),
+                BlacklistedAgents = new()
+            },
+            ["http_request"] = new()
+            {
+                Enabled = false,
+                AllowedRanks = new() { AgentRank.Supreme, AgentRank.Prince, AgentRank.Duke },
+                WhitelistedAgents = new(),
+                BlacklistedAgents = new()
             }
         };
     }
@@ -192,21 +222,4 @@ public class ToolAuthorizationService
 
         return ranks;
     }
-}
-
-public class ToolPermissions
-{
-    public bool Enabled { get; set; } = true;
-    public List<AgentRank> AllowedRanks { get; set; } = new();
-    public List<string> WhitelistedAgents { get; set; } = new();
-    public List<string> BlacklistedAgents { get; set; } = new();
-}
-
-public class AuthorizationResult
-{
-    public bool IsAuthorized { get; set; }
-    public string? Reason { get; set; }
-
-    public static AuthorizationResult Success() => new() { IsAuthorized = true };
-    public static AuthorizationResult Failure(string reason) => new() { IsAuthorized = false, Reason = reason };
 }
