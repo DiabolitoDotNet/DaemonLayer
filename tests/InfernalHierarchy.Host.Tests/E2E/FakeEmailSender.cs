@@ -18,8 +18,12 @@ public sealed class FakeEmailSender : IEmailSender
             Subject = message.Subject,
             Body = message.Body,
             IsBodyHtml = message.IsBodyHtml,
-            From = message.From
         };
+
+        if (message.From is not null)
+        {
+            clone.From = message.From;
+        }
 
         foreach (var to in message.To)
         {

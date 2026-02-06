@@ -13,3 +13,7 @@ TestResults/
 *.log
 *.coverage
 *.cobertura.xml
+
+# Event store (generated at runtime)
+src/InfernalHierarchy.Host/events/
+src/InfernalHierarchy.Host/events/*.jsonl

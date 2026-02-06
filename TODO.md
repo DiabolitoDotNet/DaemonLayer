@@ -69,8 +69,7 @@ _No additional Memory & Learning backlog items currently tracked here._
 - [ ] **Code execution tools** - Sandboxed Python/Node.js execution
 - [ ] **API integration tools** - Generic REST/GraphQL client
 - [ ] **Database query tools** - SQL query execution (read-only)
-- [ ] **Notification tools** - Email/Slack/Discord integrations
-- [ ] **Image generation tools** - Local Stable Diffusion or similar
+- [ ] **Notification tools** - Email
 - [ ] **Audio transcription** - Whisper.cpp integration
 - [ ] **Tool marketplace** - Hot-load tools from external assemblies
 
