@@ -1,7 +1,5 @@
 using System.Reflection;
-using InfernalHierarchy.Core.Interfaces;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
 
 namespace InfernalHierarchy.Tools.Marketplace;
 

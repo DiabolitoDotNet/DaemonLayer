@@ -1,5 +1,3 @@
-using InfernalHierarchy.Tools.Options;
-using Microsoft.Extensions.Options;
 
 namespace InfernalHierarchy.Host.Configuration.Validation;
 

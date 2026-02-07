@@ -1,5 +1,4 @@
 using InfernalHierarchy.Core.Entities;
-using InfernalHierarchy.Host.Configuration;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 

@@ -1,8 +1,4 @@
-using InfernalHierarchy.Core.Interfaces;
 using InfernalHierarchy.Tools.Notifications;
-using InfernalHierarchy.Tools.Options;
-using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 using System.Net.Mail;
 
 namespace InfernalHierarchy.Tools.Tools.Notifications;

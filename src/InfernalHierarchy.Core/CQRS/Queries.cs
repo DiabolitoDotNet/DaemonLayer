@@ -1,4 +1,3 @@
-using InfernalHierarchy.Core.Entities;
 
 namespace InfernalHierarchy.Core.CQRS;
 

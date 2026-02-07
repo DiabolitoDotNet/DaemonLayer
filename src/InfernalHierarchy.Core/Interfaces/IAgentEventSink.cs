@@ -1,4 +1,3 @@
-using InfernalHierarchy.Core.Eventing;
 
 namespace InfernalHierarchy.Core.Interfaces;
 

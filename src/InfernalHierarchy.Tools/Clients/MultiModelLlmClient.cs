@@ -1,10 +1,6 @@
 using Azure.AI.OpenAI;
 using Azure.Core;
-using InfernalHierarchy.Core.Interfaces;
 using InfernalHierarchy.Core.Results;
-using InfernalHierarchy.Tools.Telemetry;
-using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 using OpenAI.Chat;
 using System.ClientModel;
 

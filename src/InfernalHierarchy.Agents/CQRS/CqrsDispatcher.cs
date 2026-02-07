@@ -1,7 +1,6 @@
 using System.Collections.Concurrent;
 using InfernalHierarchy.Core.CQRS;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
 
 namespace InfernalHierarchy.Agents.CQRS;
 

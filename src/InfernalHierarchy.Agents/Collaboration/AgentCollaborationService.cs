@@ -1,10 +1,7 @@
 using System.Collections.Concurrent;
 using System.Threading;
 using System.Threading.Channels;
-using InfernalHierarchy.Core.Entities;
-using InfernalHierarchy.Core.Interfaces;
 using InfernalHierarchy.Agents.Collaboration.Strategies;
-using Microsoft.Extensions.Logging;
 
 namespace InfernalHierarchy.Agents.Collaboration;
 

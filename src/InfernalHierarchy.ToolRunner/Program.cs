@@ -3,7 +3,6 @@ using InfernalHierarchy.Tools.Options;
 using InfernalHierarchy.Tools.Tools.Notifications;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.Extensions.Options;
 
 static string? GetArg(string[] args, string name)
 {

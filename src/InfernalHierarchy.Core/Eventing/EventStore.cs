@@ -1,4 +1,3 @@
-using InfernalHierarchy.Core.Entities;
 using InfernalHierarchy.Core.Interfaces;
 using Microsoft.Extensions.Logging;
 using System.Collections.Concurrent;

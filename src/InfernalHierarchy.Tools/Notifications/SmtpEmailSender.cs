@@ -1,7 +1,4 @@
-using InfernalHierarchy.Tools.Options;
-using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.Extensions.Options;
 using System.Net;
 using System.Net.Mail;
 

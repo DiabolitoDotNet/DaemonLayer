@@ -1,7 +1,5 @@
-using InfernalHierarchy.Tools.Options;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 using System.Text.Json;
 
 namespace InfernalHierarchy.Host.Configuration;

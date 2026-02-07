@@ -1,21 +1,16 @@
 using System;
 using System.IO;
-using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
 using Serilog;
-using InfernalHierarchy.Host.Configuration;
 using InfernalHierarchy.Host.Docs;
 using InfernalHierarchy.Host.Migration;
 using InfernalHierarchy.Host.Personas;
-using InfernalHierarchy.Host.Security;
 using InfernalHierarchy.Host.Telegram;
-using InfernalHierarchy.Host.Observability;
 
 namespace InfernalHierarchy.Host.Infrastructure;
 

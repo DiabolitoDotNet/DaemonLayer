@@ -1,11 +1,8 @@
 using System;
 using System.Diagnostics;
 using System.Threading.Tasks;
-using InfernalHierarchy.Host.Observability;
-using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Options;
 
 namespace InfernalHierarchy.Host.Infrastructure;
 

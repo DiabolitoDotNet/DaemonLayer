@@ -1,5 +1,3 @@
-using InfernalHierarchy.Core.Entities;
-using InfernalHierarchy.Core.Interfaces;
 
 namespace InfernalHierarchy.GraphQL;
 

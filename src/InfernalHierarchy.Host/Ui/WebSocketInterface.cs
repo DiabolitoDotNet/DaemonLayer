@@ -3,14 +3,9 @@ using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
 using InfernalHierarchy.Core.Entities;
-using InfernalHierarchy.Core.Interfaces;
-using InfernalHierarchy.Host.Configuration;
 using InfernalHierarchy.Core.Serialization;
-using InfernalHierarchy.Host.Security;
-using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 
 namespace InfernalHierarchy.Host.Ui;
 

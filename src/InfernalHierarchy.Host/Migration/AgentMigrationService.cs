@@ -3,7 +3,6 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using InfernalHierarchy.Core.Entities;
-using InfernalHierarchy.Core.Interfaces;
 using InfernalHierarchy.Core.Serialization;
 using InfernalHierarchy.Host.Personas;
 using Microsoft.Extensions.Configuration;

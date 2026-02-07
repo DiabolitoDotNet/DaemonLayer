@@ -1,15 +1,6 @@
-using InfernalHierarchy.Core.Configuration;
-using InfernalHierarchy.Core.Eventing;
-using InfernalHierarchy.Core.Entities;
-using InfernalHierarchy.Core.Interfaces;
 using InfernalHierarchy.Agents.Registry;
-using InfernalHierarchy.Messaging.Bus;
 using InfernalHierarchy.Agents.ReAct;
-using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 using InfernalHierarchy.Tools;
-using InfernalHierarchy.Tools.Clients;
-using InfernalHierarchy.Tools.Telemetry;
 
 namespace InfernalHierarchy.Agents;
 

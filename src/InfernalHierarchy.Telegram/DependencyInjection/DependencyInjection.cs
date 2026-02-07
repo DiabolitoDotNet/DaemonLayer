@@ -1,4 +1,3 @@
-using InfernalHierarchy.Telegram.Commands;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace InfernalHierarchy.Telegram.DependencyInjection;

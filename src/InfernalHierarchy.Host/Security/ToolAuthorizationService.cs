@@ -1,5 +1,4 @@
 using InfernalHierarchy.Core.Entities;
-using InfernalHierarchy.Core.Interfaces;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 

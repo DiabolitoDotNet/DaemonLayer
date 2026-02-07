@@ -1,5 +1,3 @@
-using InfernalHierarchy.Host.Observability;
-using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 
 namespace InfernalHierarchy.Host.Api;

@@ -1,10 +1,4 @@
-using InfernalHierarchy.Core.Interfaces;
-using InfernalHierarchy.Host.Configuration;
-using InfernalHierarchy.Host.Security;
-using InfernalHierarchy.Tools.Options;
-using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
-using Microsoft.Extensions.Options;
 
 namespace InfernalHierarchy.Host.Api;
 

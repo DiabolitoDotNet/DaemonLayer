@@ -1,5 +1,4 @@
 using InfernalHierarchy.Core.Saga;
-using Microsoft.Extensions.Logging;
 using System.Collections.ObjectModel;
 
 namespace InfernalHierarchy.Agents.Saga;

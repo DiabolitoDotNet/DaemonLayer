@@ -1,5 +1,3 @@
-using InfernalHierarchy.Core.Eventing;
-using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 
 namespace InfernalHierarchy.Host.Api;

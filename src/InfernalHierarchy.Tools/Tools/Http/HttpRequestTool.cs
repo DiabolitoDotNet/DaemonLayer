@@ -1,9 +1,5 @@
 using System.Net.Http.Headers;
 using System.Text;
-using InfernalHierarchy.Core.Interfaces;
-using InfernalHierarchy.Tools.Options;
-using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 
 namespace InfernalHierarchy.Tools.Tools.Http;
 

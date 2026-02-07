@@ -1,4 +1,3 @@
-using InfernalHierarchy.Core.Interfaces;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 

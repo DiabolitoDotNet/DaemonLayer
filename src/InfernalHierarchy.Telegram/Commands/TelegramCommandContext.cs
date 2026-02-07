@@ -1,5 +1,3 @@
-using InfernalHierarchy.Core.Interfaces;
-using Microsoft.Extensions.Logging;
 using Telegram.Bot;
 
 namespace InfernalHierarchy.Telegram.Commands;

@@ -1,7 +1,4 @@
 using InfernalHierarchy.Core.Entities;
-using InfernalHierarchy.Core.Interfaces;
-using InfernalHierarchy.Messaging.Bus;
-using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 
 namespace InfernalHierarchy.Host.Api;

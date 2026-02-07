@@ -1,9 +1,5 @@
-using InfernalHierarchy.Core.Interfaces;
-using InfernalHierarchy.Tools.Options;
-using InfernalHierarchy.Tools.Tools.Voice;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 
 namespace InfernalHierarchy.Host.Hosting;
 

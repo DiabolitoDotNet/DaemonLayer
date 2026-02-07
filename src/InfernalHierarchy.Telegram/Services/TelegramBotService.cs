@@ -1,12 +1,5 @@
-using InfernalHierarchy.Core.ErrorHandling;
-using InfernalHierarchy.Core.Entities;
-using InfernalHierarchy.Core.Interfaces;
-using InfernalHierarchy.Telegram.Commands;
-using InfernalHierarchy.Telegram.Options;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 using Telegram.Bot;
 using Telegram.Bot.Exceptions;
 using Telegram.Bot.Polling;

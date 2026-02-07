@@ -1,6 +1,3 @@
-using InfernalHierarchy.Core.Entities;
-using InfernalHierarchy.Core.Interfaces;
-using Microsoft.Extensions.Logging;
 using Telegram.Bot;
 using Telegram.Bot.Types.Enums;
 using CoreMessageType = InfernalHierarchy.Core.Entities.MessageType;

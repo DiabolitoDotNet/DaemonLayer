@@ -1,11 +1,7 @@
 using System.Text;
 using System.Text.Json;
-using InfernalHierarchy.Core.Interfaces;
 using InfernalHierarchy.Core.Serialization;
-using InfernalHierarchy.Host.Observability;
 using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.Options;
-using InfernalHierarchy.Host.Configuration;
 
 namespace InfernalHierarchy.Host.Docs;
 

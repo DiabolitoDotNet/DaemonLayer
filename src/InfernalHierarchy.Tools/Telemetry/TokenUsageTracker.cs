@@ -1,5 +1,3 @@
-using InfernalHierarchy.Core.Entities;
-using Microsoft.Extensions.Logging;
 using System.Collections.Concurrent;
 
 namespace InfernalHierarchy.Tools.Telemetry;
