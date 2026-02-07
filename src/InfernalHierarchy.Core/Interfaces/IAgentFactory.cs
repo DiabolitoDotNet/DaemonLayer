@@ -2,37 +2,43 @@
 namespace InfernalHierarchy.Core.Interfaces;
 
 /// <summary>
-/// Factory for creating agents dynamically
+/// Factory for creating and managing agents dynamically.
+/// This interface typically bridges persona loading, dependency injection, and registry tracking.
 /// </summary>
 public interface IAgentFactory
 {
     /// <summary>
-    /// Create an agent from a persona
+    /// Creates an agent instance from a persona.
     /// </summary>
+    /// <param name="personaName">Persona name (usually maps to a JSON file in <c>souls/</c>).</param>
+    /// <param name="rank">Rank to assign to the agent instance.</param>
+    /// <param name="parentId">Optional parent agent id for hierarchical tracking.</param>
+    /// <param name="ct">Cancellation token.</param>
     Task<IAgent> CreateAgentAsync(string personaName, AgentRank rank, string? parentId = null, CancellationToken ct = default);
 
     /// <summary>
-    /// Get an agent by ID
+    /// Gets an active agent by id, if it exists.
     /// </summary>
     IAgent? GetAgent(string agentId);
 
     /// <summary>
-    /// Get all active agents
+    /// Gets all active agents.
     /// </summary>
     IEnumerable<IAgent> GetAllAgents();
 
     /// <summary>
-    /// Register an agent in the registry
+    /// Registers an agent in the underlying registry.
     /// </summary>
     void RegisterAgent(IAgent agent);
 
     /// <summary>
-    /// Unregister an agent
+    /// Unregisters an agent.
     /// </summary>
     void UnregisterAgent(string agentId);
 
     /// <summary>
-    /// Terminate an agent and all its children
+    /// Terminates an agent and all its children (if any).
+    /// Implementations should ensure child agents are stopped before removal.
     /// </summary>
     Task TerminateAgentAsync(string agentId, CancellationToken ct = default);
 }

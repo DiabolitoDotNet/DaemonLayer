@@ -35,6 +35,12 @@ _No items currently tracked for this section._
 
 _No additional operational runbooks currently tracked here._
 
+- [ ] **Runbook: End-to-end request tracing (Telegram → Agent → Tool → Memory → Telegram)**
+  - Include: where to look in logs/traces/metrics, correlation identifiers, and common failure modes.
+
+- [ ] **Runbook: Tool authorization debugging**
+  - Include: how to interpret deny reasons, where tool-permission config lives, and how to reload permissions safely.
+
 ---
 
 ## 🎯 SHOULD HAVE - Production Readiness
@@ -44,6 +50,9 @@ _No additional operational runbooks currently tracked here._
 
 - [ ] **Embedded UI maintainability (DRY)**
   - Remaining scope: split `DashboardAssets.cs` (CSS/JS) into per-page/per-asset modules (partial classes or embedded resources) to reduce churn and improve readability.
+
+- [ ] **Architecture diagrams (C4 + sequence)**
+  - Add Mermaid diagrams for: container/component architecture, and the typical runtime sequence (Telegram update → validation → orchestrator → ReAct → tool pipeline → memory → response).
 
 ---
 
@@ -93,4 +102,13 @@ _No additional UI & Interfaces backlog items currently tracked here._
 - [ ] **Agent playground** - Interactive testing environment
 - [ ] **Debugging tools** - Step-through agent reasoning
 - [ ] **Plugin SDK** - Third-party tool development kit
+
+- [ ] **Architecture Decision Records (ADRs)**
+  - Capture key decisions (Channels message bus, LiteDB shared memory, tool pipeline security boundaries, local-first/Ollama constraint, Telegram as primary interface).
+
+- [ ] **Documentation hardening: Capabilities “recipes” + extension guide**
+  - Make `Documentation/Capabilities.md` more actionable with concrete workflows, guardrails, and how-to extend (new tool, new persona, new agent type).
+
+- [ ] **ADRs: tool pipeline security boundary + persona/template model**
+  - Add ADRs covering: (1) centralized tool execution pipeline as the security boundary, (2) personas/templates as JSON assets under `souls/` and `templates/`.
 

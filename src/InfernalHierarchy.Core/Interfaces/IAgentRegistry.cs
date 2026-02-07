@@ -7,17 +7,19 @@ namespace InfernalHierarchy.Core.Interfaces;
 public interface IAgentRegistry
 {
     /// <summary>
-    /// Register an agent in the registry
+    /// Registers an agent in the registry.
     /// </summary>
     void Register(IAgent agent);
 
     /// <summary>
-    /// Unregister an agent from the registry
+    /// Unregisters an agent from the registry asynchronously.
+    /// Prefer this when unregister triggers cleanup work.
     /// </summary>
     Task UnregisterAsync(string agentId, CancellationToken ct = default);
 
     /// <summary>
-    /// Unregister an agent synchronously
+    /// Unregisters an agent from the registry synchronously.
+    /// Prefer <see cref="UnregisterAsync"/> when cleanup is required.
     /// </summary>
     void Unregister(string agentId);
 
@@ -37,7 +39,7 @@ public interface IAgentRegistry
     IEnumerable<IAgent> GetAgentsByRank(AgentRank rank);
 
     /// <summary>
-    /// Get all child agents of a specific parent
+    /// Gets all child agents of a specific parent.
     /// </summary>
     IEnumerable<IAgent> GetChildAgents(string parentId);
 
