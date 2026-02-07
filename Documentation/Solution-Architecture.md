@@ -166,7 +166,105 @@ Shared memory provides durable context across agent runs.
 - Optional: vector memory via `IVectorMemory` to support semantic retrieval (when configured).
 - Background pruning/retention enforcement to prevent unbounded growth.
 
-Memory entries typically include tenant context, tags, timestamps, and content.
+#### Shared memory entry schema (practical)
+
+Shared memory is **typed**: today the durable records are `Fact`, `Decision`, and `TaskEntry` (all derived from a shared `MemoryEntry` base).
+
+Common fields (base `MemoryEntry`):
+
+- `id`: unique id
+- `createdAt`: UTC timestamp
+- `createdBy`: creating agent id
+- `visibility`: `Private | RankBased | Shared | Public`
+- `sharedWithAgents`: list of agent ids (only meaningful when `visibility=Shared`)
+- `minimumRankToView`: `Supreme | Prince | Duke | Worker` (only meaningful when `visibility=RankBased`)
+
+Type-specific fields:
+
+- `Fact`
+	- `category`: free-form grouping key (agents commonly use this to differentiate subtypes like user preferences, critique notes, plans, etc.)
+	- `content`: primary fact payload (string)
+	- `source`: attribution (url, tool name, operator note, etc.)
+	- `confidence`: `0..1`
+	- plus versioning fields (`version`, `lastModifiedAt`, `lastModifiedBy`, `versionHistory`, ...)
+- `Decision`
+	- `context`: problem statement
+	- `action`: the chosen action
+	- `reasoning`: justification
+	- `outcome`: optional result
+- `TaskEntry`
+	- `description`: task text
+	- `assignedTo`: agent id
+	- `status`: `Pending | InProgress | Completed | Failed | Cancelled`
+	- `result`: optional completion text
+	- `completedAt`: UTC timestamp when completed
+
+Notes:
+
+- If you need richer shapes such as `user-preference`, `critique`, or `plan` **with fields like** `priority`, `valid_until`, or structured `sources`, a pragmatic approach is to store **structured JSON inside** `Fact.content` and use `Fact.category` as the discriminator. (This keeps the persistence model simple while still letting agents evolve their own schemas.)
+
+##### Examples (typical persisted shape)
+
+Fact (user preference encoded as structured JSON inside `content`):
+
+```json
+{
+	"id": "f_7f3c0c8d",
+	"createdAt": "2026-02-07T17:05:12Z",
+	"createdBy": "agent-lucifer",
+	"visibility": "Public",
+	"sharedWithAgents": [],
+	"minimumRankToView": null,
+
+	"category": "user_preference",
+	"source": "operator",
+	"confidence": 0.95,
+	"content": "{\"preference\":\"always include the UI URL in deployment replies\",\"priority\":\"high\",\"valid_until\":\"2026-12-31\"}",
+
+	"version": 1,
+	"previousVersionId": null,
+	"lastModifiedAt": "2026-02-07T17:05:12Z",
+	"lastModifiedBy": "agent-lucifer",
+	"versionHistory": []
+}
+```
+
+Decision (branch-level action + reasoning):
+
+```json
+{
+	"id": "d_1a9b2c3d",
+	"createdAt": "2026-02-07T17:06:40Z",
+	"createdBy": "agent-belial",
+	"visibility": "RankBased",
+	"sharedWithAgents": [],
+	"minimumRankToView": "Duke",
+
+	"context": "Docker compose UI/WS not reachable due to LocalOnly defaults",
+	"action": "Set Ui__LocalOnly=false and WebSockets__LocalOnly=false in docker-compose",
+	"reasoning": "Container traffic is not loopback; keep secure defaults in appsettings but override for compose runs",
+	"outcome": "UI reachable at /ui; health ready endpoint returns Healthy"
+}
+```
+
+TaskEntry (work item with lifecycle):
+
+```json
+{
+	"id": "t_9c8b7a6d",
+	"createdAt": "2026-02-07T17:07:10Z",
+	"createdBy": "agent-lucifer",
+	"visibility": "Private",
+	"sharedWithAgents": [],
+	"minimumRankToView": null,
+
+	"description": "Verify docker-compose override files retain required mounts",
+	"assignedTo": "agent-belial",
+	"status": "Completed",
+	"result": "Merged config validated via docker compose config",
+	"completedAt": "2026-02-07T17:10:22Z"
+}
+```
 
 ### Messaging layer
 
