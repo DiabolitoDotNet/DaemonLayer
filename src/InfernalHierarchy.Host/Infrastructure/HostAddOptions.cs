@@ -10,6 +10,7 @@ internal static class HostAddOptions
         AddUiAndInterfaceOptions(builder);
         AddVectorMemoryOptions(builder);
         AddOperatorApiOptions(builder);
+        AddSupervisorOptions(builder);
     }
 
     private static void AddAgentAndCoreOptions(WebApplicationBuilder builder)
@@ -96,6 +97,13 @@ internal static class HostAddOptions
     {
         builder.Services.AddOptions<OperatorApiOptions>()
             .Bind(builder.Configuration.GetSection("OperatorApi"))
+            .ValidateOnStart();
+    }
+
+    private static void AddSupervisorOptions(WebApplicationBuilder builder)
+    {
+        builder.Services.AddOptions<AgentSupervisorOptions>()
+            .Bind(builder.Configuration.GetSection("AgentSupervisor"))
             .ValidateOnStart();
     }
 }

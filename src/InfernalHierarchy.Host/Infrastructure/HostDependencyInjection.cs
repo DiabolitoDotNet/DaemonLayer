@@ -331,5 +331,8 @@ internal static class HostDependencyInjection
         builder.Services.AddInfernalTelegramCommandHandlers();
         builder.Services.AddHostedService<TelegramBotService>();
         builder.Services.AddHostedService<AgentOrchestrator>();
+
+        builder.Services.AddSingleton<IAgentSupervisor, AgentSupervisor>();
+        builder.Services.AddHostedService(sp => (AgentSupervisor)sp.GetRequiredService<IAgentSupervisor>());
     }
 }

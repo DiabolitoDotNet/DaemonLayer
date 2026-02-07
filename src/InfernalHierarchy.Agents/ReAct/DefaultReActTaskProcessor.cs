@@ -29,8 +29,14 @@ public sealed class DefaultReActTaskProcessor : IReActTaskProcessor
             return await HandleTelegramCommandAsync(context, command, task, ct).ConfigureAwait(false);
         }
 
+        var effectiveTaskContent = task.Content;
+        if (IsSupervisorReplan(task))
+        {
+            effectiveTaskContent = BuildSupervisorReplanTaskContent(task);
+        }
+
         context.SetStatus(AgentStatus.Thinking);
-        context.Logger.LogInformation("🔥 {AgentName} processing task: {Content}", context.AgentName, task.Content);
+        context.Logger.LogInformation("🔥 {AgentName} processing task: {Content}", context.AgentName, effectiveTaskContent);
 
         try
         {
@@ -39,7 +45,7 @@ public sealed class DefaultReActTaskProcessor : IReActTaskProcessor
             var baseContext = await context.BuildBaseContextAsync(task, ct).ConfigureAwait(false);
             var systemContext = await _ragContextEnricher.EnrichAsync(
                 baseContext,
-                query: task.Content,
+                query: effectiveTaskContent,
                 agentId: context.AgentId,
                 agentRank: context.AgentRank,
                 vectorMemory: context.VectorMemory,
@@ -47,7 +53,7 @@ public sealed class DefaultReActTaskProcessor : IReActTaskProcessor
                 logger: context.Logger,
                 ct: ct).ConfigureAwait(false);
 
-            var result = await RunLoopAsync(context, systemContext, task.Content, ct).ConfigureAwait(false);
+            var result = await RunLoopAsync(context, systemContext, effectiveTaskContent, ct).ConfigureAwait(false);
 
             await context.SharedMemory.AddDecisionAsync(new Decision
             {
@@ -122,6 +128,48 @@ public sealed class DefaultReActTaskProcessor : IReActTaskProcessor
                 Payload = new Dictionary<string, object>(task.Payload ?? new Dictionary<string, object>())
             };
         }
+    }
+
+    private static bool IsSupervisorReplan(AgentMessage task)
+    {
+        if (task.Type != MessageType.Command)
+        {
+            return false;
+        }
+
+        if (task.Content.StartsWith("SUPERVISOR_REPLAN:", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        if (task.Payload?.TryGetValue("supervisor_action", out var action) == true)
+        {
+            return string.Equals(action?.ToString(), "replan", StringComparison.OrdinalIgnoreCase);
+        }
+
+        return false;
+    }
+
+    private static string BuildSupervisorReplanTaskContent(AgentMessage task)
+    {
+        var reason = task.Content;
+        if (reason.StartsWith("SUPERVISOR_REPLAN:", StringComparison.OrdinalIgnoreCase))
+        {
+            reason = reason["SUPERVISOR_REPLAN:".Length..].Trim();
+        }
+
+        return $"""
+            SUPERVISOR REPLAN REQUEST
+            Reason: {reason}
+
+            You are the root agent. Recover from a stall/loop and produce an updated, concrete plan.
+
+            Output format:
+            1) Diagnosis (why progress stalled)
+            2) Updated plan (5-12 numbered steps, each testable)
+            3) Immediate next step (do it now)
+            4) If you suspect runaway sub-agents: list which agents/ranks should be preempted and why (do not spawn new agents unless necessary).
+            """;
     }
 
     private static bool IsCollaborationRequest(AgentMessage task) =>

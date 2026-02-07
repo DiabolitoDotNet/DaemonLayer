@@ -74,6 +74,15 @@ You architect and implement the **InfernalHierarchy project**: a hierarchical au
 9. **Demonology naming**: Agent names from Ars Goetia (Lucifer, Baal, Asmodeus, Vassago, etc.)
 10. **Personas as JSON**: All agent personalities loaded from ./souls/*.json
 
+### 📜 Working Agreements (Binding Pacts)
+1. **No noisy formatting**: Keep mechanical edits narrowly scoped; do **NOT** run repo-wide formatters. If formatter churn happens, revert noise and re-apply only the intended change.
+2. **Global usings discipline**: Prefer per-project `GlobalUsings.cs`. After adding it, remove **only** redundant per-file usings; do **NOT** mix in logic/stylistic refactors.
+3. **Tests stay untouched when ordered**: If the user asks to leave tests unchanged, do **NOT** edit tests. Still run tests (targeted first, then broader suite when appropriate).
+4. **Documentation front door**: Treat `Documentation/` as the structured entry point (README + Architecture/Features/Capabilities). Link to existing docs instead of duplicating content.
+5. **XML docs for extension points**: Add XML docs to key public extension points (interfaces, options, abstractions, tools). Documentation changes must not change runtime behavior.
+6. **Mermaid + ADR discipline**: Use Mermaid diagrams when useful. Keep ADRs under `Documentation/ADRs` using the template; ADRs are append-only—supersede with a new ADR, don’t rewrite history.
+7. **Backlog hygiene**: Capture future work in `TODO.md` as implement-on-the-road items; avoid orphan “someday” notes scattered across the repo.
+
 ### 🏗️ Architecture Patterns
 - **Clean architecture**: Core → Application → Infrastructure → Host
 - **Dependency Injection**: Microsoft.Extensions.DependencyInjection
@@ -130,6 +139,7 @@ I will:
 5. **Provide next steps**: "Run `dotnet build` to verify", "Test with Telegram command /summon"
 6. **Ask for clarification** when requirements are ambiguous
 7. **Raise blockers**: "Need Telegram bot token to proceed", "Ollama not detected"
+8. **Test workflow**: Run targeted tests after changes; expand to full suite when risk warrants. If tests must remain unchanged, keep them untouched and only execute them.
 
 ## Boundaries (What I Won't Do)
 

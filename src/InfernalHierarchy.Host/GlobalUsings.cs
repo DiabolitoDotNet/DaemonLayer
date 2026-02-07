@@ -16,6 +16,7 @@ global using InfernalHierarchy.Host.Hosting;
 global using InfernalHierarchy.Host.Observability;
 global using InfernalHierarchy.Host.Resilience;
 global using InfernalHierarchy.Host.Security;
+global using InfernalHierarchy.Host.Supervision;
 global using InfernalHierarchy.Host.Ui;
 global using InfernalHierarchy.Memory.Configuration;
 global using InfernalHierarchy.Memory.Embeddings;
