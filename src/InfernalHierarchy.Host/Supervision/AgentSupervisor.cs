@@ -17,6 +17,11 @@ public sealed class AgentSupervisor : BackgroundService, IAgentSupervisor
         int NoProgressTicks,
         DateTimeOffset? LastInterventionAt);
 
+    private sealed record RootInterventionState(
+        DateTimeOffset? LastReplanAt,
+        DateTimeOffset? LastPreemptAt,
+        DateTimeOffset? LastInterventionAt);
+
     private static readonly string SupervisorId = "supervisor";
 
     private readonly IAgentRegistry _registry;
@@ -27,6 +32,7 @@ public sealed class AgentSupervisor : BackgroundService, IAgentSupervisor
     private readonly ILogger<AgentSupervisor> _logger;
 
     private readonly ConcurrentDictionary<string, Observation> _observations = new();
+    private readonly ConcurrentDictionary<string, RootInterventionState> _rootInterventions = new();
 
     public AgentSupervisor(
         IAgentRegistry registry,
@@ -112,6 +118,8 @@ public sealed class AgentSupervisor : BackgroundService, IAgentSupervisor
             return;
         }
 
+        var replanGrace = TimeSpan.FromTicks(Math.Max(_options.PollInterval.Ticks * 2, TimeSpan.FromSeconds(2).Ticks));
+
         // Prevent unbounded growth if agents churn over time.
         var liveAgentIds = new HashSet<string>(agents.Select(a => a.Id), StringComparer.Ordinal);
         foreach (var trackedId in _observations.Keys)
@@ -119,6 +127,14 @@ public sealed class AgentSupervisor : BackgroundService, IAgentSupervisor
             if (!liveAgentIds.Contains(trackedId))
             {
                 _observations.TryRemove(trackedId, out _);
+            }
+        }
+
+        foreach (var trackedRootId in _rootInterventions.Keys)
+        {
+            if (!liveAgentIds.Contains(trackedRootId))
+            {
+                _rootInterventions.TryRemove(trackedRootId, out _);
             }
         }
 
@@ -197,26 +213,61 @@ public sealed class AgentSupervisor : BackgroundService, IAgentSupervisor
 
             var rootId = TryFindRootAgentId(agent, agents) ?? agent.Id;
 
+            var previousRootState = _rootInterventions.GetOrAdd(rootId, _ => new RootInterventionState(
+                LastReplanAt: null,
+                LastPreemptAt: null,
+                LastInterventionAt: null));
+
+            var rootCooldownOk = previousRootState.LastInterventionAt is null || (now - previousRootState.LastInterventionAt) >= _options.InterventionCooldown;
+            if (!rootCooldownOk)
+            {
+                continue;
+            }
+
             var reason = $"Agent '{agent.Name}' ({agent.Rank}) appears stuck. Status={agent.Status}. " +
                          $"StalledFor={stalledFor.TotalSeconds:F0}s. NoProgressTicks={updated.NoProgressTicks}.";
 
-            // Never auto-preempt the Supreme/root agent.
-            if (_options.PreemptEnabled && agent.Rank != AgentRank.Supreme && isStalled)
+            // Root-scoped escalation ladder to avoid thrashing across a whole tree:
+            // 1) First intervention for a root is always a replan.
+            // 2) If the same root is still stalled after a previous replan (and there has been no progress since), escalate to preempt (non-root only), then request a new replan.
+            var rootHasReplan = previousRootState.LastReplanAt is not null;
+            var noProgressSinceReplan = previousRootState.LastReplanAt is not null && updated.LastProgressAt <= previousRootState.LastReplanAt;
+            var replanGraceElapsed = previousRootState.LastReplanAt is not null && (now - previousRootState.LastReplanAt.Value) >= replanGrace;
+            var canPreemptThisAgent = _options.PreemptEnabled && agent.Rank != AgentRank.Supreme && agent.Id != rootId;
+
+            if (rootHasReplan && noProgressSinceReplan && replanGraceElapsed && isStalled && canPreemptThisAgent)
             {
                 await PreemptAgentAsync(agent.Id, reason, ct).ConfigureAwait(false);
 
-                // Also ask the root to re-plan so the overall tree converges after pruning.
+                // Ask the root to re-plan so the overall tree converges after pruning.
                 await RequestReplanAsync(rootId, $"Preempted agent {agent.Id}. {reason}", ct).ConfigureAwait(false);
                 _logger.LogWarning(
-                    "🧭 Supervisor preempted {AgentName} ({AgentId}) and requested replan from root {RootId}",
+                    "🧭 Supervisor escalated: preempted {AgentName} ({AgentId}) and requested replan from root {RootId}",
                     agent.Name,
                     agent.Id,
                     rootId);
+
+                _rootInterventions[rootId] = previousRootState with
+                {
+                    LastPreemptAt = now,
+                    LastReplanAt = now,
+                    LastInterventionAt = now
+                };
             }
             else
             {
                 await RequestReplanAsync(rootId, reason, ct).ConfigureAwait(false);
-                _logger.LogWarning("🧭 Supervisor requested replan from root {RootId} due to {AgentName} ({AgentId})", rootId, agent.Name, agent.Id);
+                _logger.LogWarning(
+                    "🧭 Supervisor requested replan from root {RootId} due to {AgentName} ({AgentId})",
+                    rootId,
+                    agent.Name,
+                    agent.Id);
+
+                _rootInterventions[rootId] = previousRootState with
+                {
+                    LastReplanAt = now,
+                    LastInterventionAt = now
+                };
             }
 
             _observations[agent.Id] = (_observations[agent.Id]) with { LastInterventionAt = now };

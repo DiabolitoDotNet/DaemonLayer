@@ -51,6 +51,7 @@ flowchart TB
 		cfg[Config + Secrets + Validation]
 		obs[Logging + Tracing + Metrics + Health]
 		svc[Background Services]
+		sup[AgentSupervisor]
 		tgsvc[Telegram Bot Service]
 	end
 
@@ -85,6 +86,9 @@ flowchart TB
 	end
 
 	tgsvc --> orch
+	sup --> bus
+	sup --> factory
+	sup --> sm
 	orch --> factory
 	factory --> loader
 	loader --> souls
@@ -114,6 +118,14 @@ The entry point is a Worker/Hosted-Service style host that:
 - wires dependency injection,
 - starts background services (health, metrics, pruning, monitoring),
 - runs the Telegram update loop and routes inbound messages.
+
+It also optionally runs **agent supervision** via `AgentSupervisor` (when enabled):
+
+- Observes active agents and infers progress from status changes and recent decision writes.
+- When a subtree appears stalled/looping, publishes a command to the root agent: `SUPERVISOR_REPLAN: ...`.
+- Uses a **root-scoped cooldown** (based on `AgentSupervisor:InterventionCooldown`) to avoid thrashing across a whole tree.
+- Escalates from **replan → preempt** only if there has been **no progress since the last supervisor replan**, and a small grace window has elapsed (derived from `PollInterval`).
+- Never auto-preempts the root/Supreme agent.
 
 ### Agent layer
 

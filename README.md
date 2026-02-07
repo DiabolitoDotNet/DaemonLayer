@@ -17,6 +17,7 @@ Un système distribué d'agents LLM locaux fonctionnant avec Ollama, organisés 
 - ✅ **Interface** : Telegram Bot full-duplex
 - ✅ **Tools dynamiques** : web_search, create_sub_agent, memory, telegram
 - ✅ **Personas JSON** : Chargement dynamique des âmes démoniaques
+- ✅ **Supervision** : AgentSupervisor détecte les agents bloqués (replan) et peut préempter un sous-agent après replan si aucune progression
 - ✅ **.NET 10** : Dernière version avec performance optimisée
 
 ## 📋 Architecture
@@ -111,6 +112,15 @@ InfernalHierarchy/
   },
   "Memory": {
     "DatabasePath": "data/infernal.db"
+  },
+  "AgentSupervisor": {
+    "Enabled": false,
+    "PollInterval": "00:00:02",
+    "MaxStallDuration": "00:00:30",
+    "MaxNoProgressTicks": 10,
+    "InterventionCooldown": "00:02:00",
+    "PreemptEnabled": true,
+    "DecisionLookbackCount": 50
   }
 }
 ```

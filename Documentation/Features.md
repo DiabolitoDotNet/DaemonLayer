@@ -7,6 +7,7 @@ This is the consolidated feature list of the InfernalHierarchy solution. It inte
 - Hierarchical agent model (Supreme → Prince → Duke → Worker)
 - ReAct-style reasoning loop with tool use
 - Agent lifecycle management (creation, tracking, shutdown)
+- Agent supervision (`AgentSupervisor`) to detect stalls/loops and intervene (root replan, optional preemption with escalation)
 - Persona-driven behavior (souls in `souls/`)
 - Template-driven task shaping (see `templates/`)
 
