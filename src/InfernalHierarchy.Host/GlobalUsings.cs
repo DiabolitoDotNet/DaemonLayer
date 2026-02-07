@@ -19,6 +19,7 @@ global using InfernalHierarchy.Host.Security;
 global using InfernalHierarchy.Host.Supervision;
 global using InfernalHierarchy.Host.Tools;
 global using InfernalHierarchy.Host.Ui;
+global using InfernalHierarchy.Host.Voice;
 global using InfernalHierarchy.Memory.Configuration;
 global using InfernalHierarchy.Memory.Embeddings;
 global using InfernalHierarchy.Memory.Learning;

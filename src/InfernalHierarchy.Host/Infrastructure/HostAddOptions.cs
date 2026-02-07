@@ -86,6 +86,10 @@ internal static class HostAddOptions
         builder.Services.AddOptions<VoiceInterfaceOptions>()
             .Bind(builder.Configuration.GetSection("Voice"))
             .ValidateOnStart();
+
+        builder.Services.AddOptions<VoiceCopilotOptions>()
+            .Bind(builder.Configuration.GetSection("VoiceCopilot"))
+            .ValidateOnStart();
         builder.Services.AddOptions<VoiceTranscriptionToolOptions>()
             .Bind(builder.Configuration.GetSection("VoiceTranscription"))
             .ValidateOnStart();

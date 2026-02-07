@@ -80,12 +80,12 @@ _No additional UI & Interfaces backlog items currently tracked here._
 - [ ] **Blue-green deployments** - Zero-downtime deployments
 - [ ] **Chaos engineering** - Resilience testing tools
 
-- [ ] **Voice sidecar services (later)** - long-lived Whisper.cpp + Piper services
-  - Note: the current **in-container/local** voice path is already implemented (whisper.cpp binary + ffmpeg + Piper.Net in-process) via `Dockerfile` + `docker-compose.voice.yml`.
+- [ ] **Voice sidecar services (later)** - long-lived STT + TTS services
+  - Note: the current **in-container/local** voice path is already implemented (Faster-Whisper + Kokoro-82M via Python helpers) via `Dockerfile` + `docker-compose.voice.yml`.
   - Goal: keep STT/TTS models hot and isolate CPU/RAM usage from the Host, while still supporting the embedded UI voice endpoints.
   - Proposed containers:
-    - `voice-stt` (whisper.cpp) running as a long-lived service (model loaded once). Exposes an internal HTTP endpoint like `POST /transcribe` accepting an audio payload (or a shared-volume file path) and returning `{ transcript, segments, timings }`.
-    - `voice-tts` (Piper) running as a long-lived service (voice loaded once). Exposes `POST /speak` returning WAV bytes (or a shared-volume output path).
+    - `voice-stt` (Faster-Whisper) running as a long-lived service (model loaded once). Exposes an internal HTTP endpoint like `POST /transcribe` accepting an audio payload (or a shared-volume file path) and returning `{ transcript, segments, timings }`.
+    - `voice-tts` (Kokoro) running as a long-lived service (voice loaded once). Exposes `POST /speak` returning WAV bytes (or a shared-volume output path).
     - Optional `voice-preprocess` (ffmpeg) is usually unnecessary as a separate container; either:
       - run ffmpeg inside `voice-stt`, or
       - keep ffmpeg in the Host container and upload WAV to `voice-stt`.
@@ -93,7 +93,7 @@ _No additional UI & Interfaces backlog items currently tracked here._
     - Add alternative tool implementations (or a mode switch) so `audio_transcribe` / `tts_speak` can call the sidecars over HTTP instead of running local processes.
     - Keep the existing local-first process-runner path as a fallback when sidecars are disabled.
   - Compose wiring (high level):
-    - Mount model directories read-only: `./models/whisper:/models/whisper:ro`, `./models/piper:/models/piper:ro`.
+    - Mount the Hugging Face cache: `./models/hf:/models/hf` and set `HF_HOME=/models/hf`.
     - Use an internal Docker network; expose no public ports for voice services.
     - Add health checks + resource limits (CPU/memory) for `voice-stt` and `voice-tts`.
     - Use environment variables in the Host to select backend: `VoiceTranscription:Backend=sidecar|local`, `TextToSpeech:Backend=sidecar|local`, and set sidecar URLs.

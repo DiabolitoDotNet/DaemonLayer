@@ -1,7 +1,9 @@
 using System.Net.Http;
+using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.IO;
 
 namespace InfernalHierarchy.Tools.Clients;
 
@@ -10,6 +12,8 @@ namespace InfernalHierarchy.Tools.Clients;
 /// </summary>
 public class OllamaClient : ILlmClient
     , IModelOverrideLlmClient
+    , IStreamingLlmClient
+    , ITunableLlmClient
 {
     private readonly HttpClient _http;
     private readonly JsonSerializerOptions _json;
@@ -55,6 +59,40 @@ public class OllamaClient : ILlmClient
         return await GetCompletionInternalAsync(systemPrompt, userMessage, modelOverride: null, ct).ConfigureAwait(false);
     }
 
+    public Task<string> GetCompletionWithOptionsAsync(
+        string systemPrompt,
+        string userMessage,
+        double? temperature,
+        int? maxTokens,
+        CancellationToken ct = default)
+    {
+        return GetCompletionInternalAsync(systemPrompt, userMessage, modelOverride: null, temperature, maxTokens, ct);
+    }
+
+    public async IAsyncEnumerable<string> GetStreamingCompletionAsync(
+        string systemPrompt,
+        string userMessage,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
+    {
+        await foreach (var chunk in GetStreamingCompletionInternalAsync(systemPrompt, userMessage, modelOverride: null, ct).WithCancellation(ct))
+        {
+            yield return chunk;
+        }
+    }
+
+    public async IAsyncEnumerable<string> GetStreamingCompletionWithOptionsAsync(
+        string systemPrompt,
+        string userMessage,
+        double? temperature,
+        int? maxTokens,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
+    {
+        await foreach (var chunk in GetStreamingCompletionInternalAsync(systemPrompt, userMessage, modelOverride: null, temperature, maxTokens, ct).WithCancellation(ct))
+        {
+            yield return chunk;
+        }
+    }
+
     public Task<string> GetCompletionWithModelAsync(
         string systemPrompt,
         string userMessage,
@@ -69,10 +107,151 @@ public class OllamaClient : ILlmClient
         return GetCompletionInternalAsync(systemPrompt, userMessage, modelOverride: model.Trim(), ct);
     }
 
+    private IAsyncEnumerable<string> GetStreamingCompletionInternalAsync(
+        string systemPrompt,
+        string userMessage,
+        string? modelOverride,
+        CancellationToken ct)
+        => GetStreamingCompletionInternalAsync(systemPrompt, userMessage, modelOverride, temperature: null, maxTokens: null, ct);
+
+    private async IAsyncEnumerable<string> GetStreamingCompletionInternalAsync(
+        string systemPrompt,
+        string userMessage,
+        string? modelOverride,
+        double? temperature,
+        int? maxTokens,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, "chat/completions");
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("text/event-stream"));
+
+        var payload = new ChatCompletionRequest
+        {
+            Model = modelOverride ?? _options.DefaultModel,
+            Temperature = temperature ?? _options.Temperature,
+            MaxTokens = maxTokens ?? _options.MaxTokens,
+            Stream = true,
+            Messages = new()
+            {
+                new ChatCompletionMessage { Role = "system", Content = systemPrompt },
+                new ChatCompletionMessage { Role = "user", Content = userMessage }
+            }
+        };
+
+        request.Content = new StringContent(JsonSerializer.Serialize(payload, _json), Encoding.UTF8, "application/json");
+
+        HttpResponseMessage? response = null;
+        try
+        {
+            response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
+            if (!response.IsSuccessStatusCode)
+            {
+                var body = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+                _logger.LogError(
+                    "LLM streaming request failed: {StatusCode} | Body: {Body}",
+                    (int)response.StatusCode,
+                    Truncate(body, 2000));
+                throw new HttpRequestException(
+                    $"Ollama streaming completion failed with status {(int)response.StatusCode} ({response.StatusCode})");
+            }
+
+            await using var stream = await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
+            using var reader = new StreamReader(stream);
+
+            while (!reader.EndOfStream && !ct.IsCancellationRequested)
+            {
+                var line = await reader.ReadLineAsync().ConfigureAwait(false);
+                if (line is null)
+                {
+                    break;
+                }
+
+                if (line.Length == 0)
+                {
+                    continue;
+                }
+
+                if (!line.StartsWith("data:", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                var data = line.Substring("data:".Length).Trim();
+                if (string.Equals(data, "[DONE]", StringComparison.OrdinalIgnoreCase))
+                {
+                    yield break;
+                }
+
+                if (string.IsNullOrWhiteSpace(data))
+                {
+                    continue;
+                }
+
+                string? content = null;
+                try
+                {
+                    using var doc = JsonDocument.Parse(data);
+
+                    if (doc.RootElement.TryGetProperty("error", out var errorEl))
+                    {
+                        _logger.LogWarning("LLM streaming error payload: {Error}", Truncate(errorEl.ToString(), 2000));
+                        continue;
+                    }
+
+                    if (doc.RootElement.TryGetProperty("choices", out var choicesEl) &&
+                        choicesEl.ValueKind == JsonValueKind.Array &&
+                        choicesEl.GetArrayLength() > 0)
+                    {
+                        var choice0 = choicesEl[0];
+
+                        // OpenAI streaming format: choices[0].delta.content
+                        if (choice0.TryGetProperty("delta", out var deltaEl) &&
+                            deltaEl.ValueKind == JsonValueKind.Object &&
+                            deltaEl.TryGetProperty("content", out var deltaContentEl) &&
+                            deltaContentEl.ValueKind == JsonValueKind.String)
+                        {
+                            content = deltaContentEl.GetString();
+                        }
+                        // Fallback format: choices[0].message.content
+                        else if (choice0.TryGetProperty("message", out var messageEl) &&
+                            messageEl.ValueKind == JsonValueKind.Object &&
+                            messageEl.TryGetProperty("content", out var msgContentEl) &&
+                            msgContentEl.ValueKind == JsonValueKind.String)
+                        {
+                            content = msgContentEl.GetString();
+                        }
+                    }
+                }
+                catch (JsonException)
+                {
+                    _logger.LogDebug("Skipping non-JSON SSE data chunk: {Chunk}", Truncate(data, 500));
+                }
+
+                if (!string.IsNullOrEmpty(content))
+                {
+                    yield return content;
+                }
+            }
+        }
+        finally
+        {
+            response?.Dispose();
+        }
+    }
+
     private async Task<string> GetCompletionInternalAsync(
         string systemPrompt,
         string userMessage,
         string? modelOverride,
+        CancellationToken ct)
+        => await GetCompletionInternalAsync(systemPrompt, userMessage, modelOverride, temperature: null, maxTokens: null, ct).ConfigureAwait(false);
+
+    private async Task<string> GetCompletionInternalAsync(
+        string systemPrompt,
+        string userMessage,
+        string? modelOverride,
+        double? temperature,
+        int? maxTokens,
         CancellationToken ct)
     {
         try
@@ -80,8 +259,8 @@ public class OllamaClient : ILlmClient
             var request = new ChatCompletionRequest
             {
                 Model = modelOverride ?? _options.DefaultModel,
-                Temperature = _options.Temperature,
-                MaxTokens = _options.MaxTokens,
+                Temperature = temperature ?? _options.Temperature,
+                MaxTokens = maxTokens ?? _options.MaxTokens,
                 Stream = false,
                 Messages = new()
                 {

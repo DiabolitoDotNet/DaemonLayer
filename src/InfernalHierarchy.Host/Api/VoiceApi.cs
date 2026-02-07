@@ -142,5 +142,48 @@ internal static class VoiceApi
             var stream = File.OpenRead(outputPath);
             return Results.File(stream, contentType: GetContentType(outputPath), fileDownloadName: Path.GetFileName(outputPath));
         });
+
+        app.MapPost("/api/voice/copilot", async (
+            HttpContext ctx,
+            VoiceCopilotService copilot,
+            IVoiceCopilotTtsQueue ttsQueue,
+            IOptions<VoiceCopilotOptions> copilotOptions,
+            CancellationToken ct) =>
+        {
+            if (!IsAllowed(ctx, voiceOptions))
+            {
+                return Results.StatusCode(StatusCodes.Status403Forbidden);
+            }
+
+            if (!copilotOptions.Value.Enabled)
+            {
+                return Results.StatusCode(StatusCodes.Status404NotFound);
+            }
+
+            var req = await ctx.Request.ReadFromJsonAsync<VoiceCopilotRequest>(cancellationToken: ct);
+            if (req is null || string.IsNullOrWhiteSpace(req.Text))
+            {
+                return Results.BadRequest(new { error = "Missing request body: text" });
+            }
+
+            if (req.Text.Length > 10_000)
+            {
+                return Results.BadRequest(new { error = "Text too long (max 10000 chars)" });
+            }
+
+            var result = await copilot.GetReplyAsync(
+                transcript: req.Text,
+                sessionId: req.SessionId,
+                ct: ct);
+
+            var willSpeak = req.Speak ?? copilotOptions.Value.SpeakByDefault;
+            var ttsEnqueued = willSpeak && ttsQueue.TryEnqueue(result.SessionId, result.SpeechText);
+
+            return Results.Ok(new VoiceCopilotResponse(
+                sessionId: result.SessionId,
+                reply: result.ReplyText,
+                speechText: result.SpeechText,
+                ttsEnqueued: ttsEnqueued));
+        });
     }
 }

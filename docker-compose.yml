@@ -17,6 +17,55 @@ services:
       - Ui__LocalOnly=false
       - WebSockets__LocalOnly=false
 
+      # Voice API (enabled by default in docker-compose)
+      - Voice__Enabled=true
+      - Voice__LocalOnly=false
+
+      # Voice Copilot (transcript -> short FR reply -> optional TTS fire-and-forget)
+      - VoiceCopilot__Enabled=true
+      - VoiceCopilot__SpeakByDefault=true
+      - VoiceCopilot__MaxHistoryMessages=6
+      - VoiceCopilot__Temperature=0.4
+      - VoiceCopilot__MaxTokens=140
+
+      # Shared Hugging Face cache for Faster-Whisper + Kokoro
+      - HF_HOME=/models/hf
+
+      # STT (Faster-Whisper: large-v3-turbo)
+      - VoiceTranscription__Enabled=true
+      - VoiceTranscription__ExecutablePath=/opt/voice-venv/bin/python
+      - VoiceTranscription__RootDirectory=/app/data/voice
+      - VoiceTranscription__DecoderExecutablePath=/usr/bin/ffmpeg
+      - VoiceTranscription__Arguments__0=/app/voice/faster_whisper_transcribe.py
+      - VoiceTranscription__Arguments__1=--input
+      - VoiceTranscription__Arguments__2={input}
+      - VoiceTranscription__Arguments__3=--model
+      - VoiceTranscription__Arguments__4=large-v3-turbo
+      - VoiceTranscription__Arguments__5=--device
+      - VoiceTranscription__Arguments__6=cpu
+      - VoiceTranscription__Arguments__7=--compute_type
+      - VoiceTranscription__Arguments__8=int8
+      - VoiceTranscription__Arguments__9=--language
+      - VoiceTranscription__Arguments__10=en
+
+      # TTS (Kokoro-82M via python)
+      - TextToSpeech__Enabled=true
+      - TextToSpeech__UsePiperNet=false
+      - TextToSpeech__RootDirectory=/app/data/voice
+      - TextToSpeech__OutputExtension=.wav
+      - TextToSpeech__ExecutablePath=/opt/voice-venv/bin/python
+      - TextToSpeech__Arguments__0=/app/voice/kokoro_tts.py
+      - TextToSpeech__Arguments__1=--text
+      - TextToSpeech__Arguments__2={text}
+      - TextToSpeech__Arguments__3=--output
+      - TextToSpeech__Arguments__4={output}
+      - TextToSpeech__Arguments__5=--voice
+      - TextToSpeech__Arguments__6=af_heart
+      - TextToSpeech__Arguments__7=--lang_code
+      - TextToSpeech__Arguments__8=a
+      - TextToSpeech__Arguments__9=--sample_rate
+      - TextToSpeech__Arguments__10=24000
+
       # Ensure docker secrets are honored in container runs.
       - DockerSecrets__Enabled=true
       - DockerSecrets__RootPath=/run/secrets
@@ -27,6 +76,7 @@ services:
       - ./logs:/app/logs
       - ./souls:/souls
       - ./templates:/app/templates:ro
+      - ./models/hf:/models/hf
     depends_on:
       - searxng
       - qdrant

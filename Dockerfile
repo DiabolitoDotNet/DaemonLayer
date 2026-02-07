@@ -22,44 +22,36 @@ COPY templates/ ./templates/
 WORKDIR /source/src/InfernalHierarchy.Host
 RUN dotnet publish -c Release -o /app --no-restore
 
-# Stage 1b: Build whisper.cpp (STT)
-FROM debian:bookworm-slim AS whisper-build
-WORKDIR /whisper
-
-RUN apt-get update && \
-        apt-get install -y --no-install-recommends \
-            ca-certificates \
-            git \
-            build-essential \
-            cmake \
-        && rm -rf /var/lib/apt/lists/*
-
-# Build whisper.cpp from source
-RUN git clone --depth 1 https://github.com/ggerganov/whisper.cpp .
-RUN cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-RUN cmake --build build --config Release -j
-
-RUN mkdir -p /out && cp /whisper/build/bin/main /out/whisper
-
 # Stage 2: Runtime
 # Host is an ASP.NET Core app (health/metrics endpoints), so we need Microsoft.AspNetCore.App
 FROM mcr.microsoft.com/dotnet/aspnet:10.0
 WORKDIR /app
 
-# Install ffmpeg (used for decoding uploads into WAV for whisper.cpp)
+# Install ffmpeg (used for decoding uploads into WAV) + Python tooling for faster-whisper/kokoro
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends ffmpeg && \
-    rm -rf /var/lib/apt/lists/*
+    apt-get install -y --no-install-recommends \
+        ffmpeg \
+        python3 \
+        python3-pip \
+        python3-venv \
+        espeak-ng \
+        libsndfile1 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Voice helpers (Python)
+COPY scripts/voice /app/voice
+
+# Install Python deps into a dedicated venv (Ubuntu marks system Python as externally-managed)
+# Note: Torch CPU wheels are hosted on the official PyTorch index.
+RUN python3 -m venv /opt/voice-venv && \
+    /opt/voice-venv/bin/pip install --no-cache-dir --upgrade pip && \
+    /opt/voice-venv/bin/pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu torch && \
+    /opt/voice-venv/bin/pip install --no-cache-dir -r /app/voice/requirements.txt
 
 # Copy build output
 COPY --from=build /app ./
 COPY --from=build /source/souls /souls
 COPY --from=build /source/templates ./templates
-
-# Copy whisper.cpp binary
-# (whisper.cpp builds a 'main' binary; we standardize it to /usr/local/bin/whisper)
-RUN mkdir -p /usr/local/bin
-COPY --from=whisper-build /out/whisper /usr/local/bin/whisper
 
 # Create data directory for LiteDB
 RUN mkdir -p /app/data && \

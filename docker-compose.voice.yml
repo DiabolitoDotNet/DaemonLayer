@@ -1,4 +1,4 @@
-# Voice override: enables /api/voice/* and configures STT (whisper.cpp) + TTS (Piper.Net in-process)
+# Voice override: enables /api/voice/* and configures STT (Faster-Whisper) + TTS (Kokoro-82M)
 # Usage:
 #   docker compose -f docker-compose.yml -f docker-compose.voice.yml up -d --build
 # Then open:
@@ -11,33 +11,52 @@ services:
       - Voice__Enabled=true
       - Voice__LocalOnly=false
 
-      # STT (whisper.cpp)
+      # Voice Copilot (transcript -> short FR reply -> optional TTS fire-and-forget)
+      - VoiceCopilot__Enabled=true
+      - VoiceCopilot__SpeakByDefault=true
+      - VoiceCopilot__MaxHistoryMessages=6
+      - VoiceCopilot__Temperature=0.4
+      - VoiceCopilot__MaxTokens=140
+
+      - HF_HOME=/models/hf
+
+      # STT (Faster-Whisper: large-v3-turbo)
       - VoiceTranscription__Enabled=true
-      - VoiceTranscription__ExecutablePath=/usr/local/bin/whisper
+      - VoiceTranscription__ExecutablePath=/opt/voice-venv/bin/python
       - VoiceTranscription__RootDirectory=/app/data/voice
       - VoiceTranscription__DecoderExecutablePath=/usr/bin/ffmpeg
-      # whisper.cpp args: tune model path + language to your needs
-      # NOTE: {input} is replaced with the (possibly ffmpeg-decoded) WAV path.
-      - VoiceTranscription__Arguments__0=-m
-      - VoiceTranscription__Arguments__1=/models/whisper/ggml-base.en.bin
-      - VoiceTranscription__Arguments__2=-f
-      - VoiceTranscription__Arguments__3={input}
-      - VoiceTranscription__Arguments__4=--language
-      - VoiceTranscription__Arguments__5=en
-      - VoiceTranscription__Arguments__6=--no-timestamps
+      - VoiceTranscription__Arguments__0=/app/voice/faster_whisper_transcribe.py
+      - VoiceTranscription__Arguments__1=--input
+      - VoiceTranscription__Arguments__2={input}
+      - VoiceTranscription__Arguments__3=--model
+      - VoiceTranscription__Arguments__4=large-v3-turbo
+      - VoiceTranscription__Arguments__5=--device
+      - VoiceTranscription__Arguments__6=cpu
+      - VoiceTranscription__Arguments__7=--compute_type
+      - VoiceTranscription__Arguments__8=int8
+      - VoiceTranscription__Arguments__9=--language
+      - VoiceTranscription__Arguments__10=en
 
-      # TTS (Piper.Net in-process)
+      # TTS (Kokoro-82M via python)
       - TextToSpeech__Enabled=true
-      - TextToSpeech__UsePiperNet=true
+      - TextToSpeech__UsePiperNet=false
       - TextToSpeech__RootDirectory=/app/data/voice
       - TextToSpeech__OutputExtension=.wav
-      - TextToSpeech__PiperWarmupAtStartup=true
-      # Point this to a real voice model mounted in ./models/piper
-      - TextToSpeech__PiperVoicePath=/models/piper/voice.onnx
+      - TextToSpeech__ExecutablePath=/opt/voice-venv/bin/python
+      - TextToSpeech__Arguments__0=/app/voice/kokoro_tts.py
+      - TextToSpeech__Arguments__1=--text
+      - TextToSpeech__Arguments__2={text}
+      - TextToSpeech__Arguments__3=--output
+      - TextToSpeech__Arguments__4={output}
+      - TextToSpeech__Arguments__5=--voice
+      - TextToSpeech__Arguments__6=af_heart
+      - TextToSpeech__Arguments__7=--lang_code
+      - TextToSpeech__Arguments__8=a
+      - TextToSpeech__Arguments__9=--sample_rate
+      - TextToSpeech__Arguments__10=24000
 
     volumes:
-      - ./models/whisper:/models/whisper:ro
-      - ./models/piper:/models/piper:ro
+      - ./models/hf:/models/hf
       - ./data:/app/data
       - ./logs:/app/logs
       - ./souls:/souls

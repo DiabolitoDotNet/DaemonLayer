@@ -1,19 +1,24 @@
-# Voice interface (Whisper.cpp STT + Piper.Net TTS, CPU-only)
+# Voice interface (Faster-Whisper STT + Kokoro-82M TTS, local-first)
 
-This project is local-first. The voice pipeline is **disabled by default** and must be explicitly enabled in configuration.
+This project is local-first.
 
-## STT: Whisper.cpp (CPU-only)
+- In application defaults, the voice pipeline is **disabled by default** and must be explicitly enabled in configuration.
+- In Docker, the provided `docker-compose.yml` enables the voice endpoints by default. Models are downloaded on first use and cached under `./models/hf`.
 
-1. Download/build `whisper.cpp` for Windows and locate the CLI executable (commonly `whisper-cli.exe`).
-2. Download a GGML model (e.g., `ggml-base.en.bin`) and place it somewhere local.
+## STT: Faster-Whisper (large-v3-turbo, CPU)
+
+In Docker, STT is implemented by running a small Python helper that uses `faster-whisper` (CTranslate2). The model is downloaded on first use and cached under `./models/hf`.
+
+1. Ensure Python is available.
+2. Install dependencies: `pip install faster-whisper`
 3. Configure the STT tool:
 
 - `VoiceTranscription:Enabled=true`
-- `VoiceTranscription:ExecutablePath` = full path to `whisper-cli.exe`
+- `VoiceTranscription:ExecutablePath` = `python3` (or `python.exe` on Windows)
 - `VoiceTranscription:Arguments` should include:
-  - `-ngl 0` to force CPU-only (no GPU layers)
-  - `-f {input}` where `{input}` is substituted by the tool
-  - Optional: `-nt` (no timestamps), `-np` (no progress)
+  - the helper script path
+  - `--input {input}` where `{input}` is substituted by the tool
+  - `--model large-v3-turbo`
 
 Example `appsettings.json` snippet:
 
@@ -22,27 +27,25 @@ Example `appsettings.json` snippet:
   "Voice": { "Enabled": true, "LocalOnly": true },
   "VoiceTranscription": {
     "Enabled": true,
-    "ExecutablePath": "C:/tools/whisper/whisper-cli.exe",
+    "ExecutablePath": "python",
     "RootDirectory": "data/voice",
-    "Arguments": ["-m", "C:/tools/whisper/models/ggml-base.en.bin", "-nt", "-np", "-ngl", "0", "-f", "{input}"]
+    "Arguments": ["C:/path/to/faster_whisper_transcribe.py", "--input", "{input}", "--model", "large-v3-turbo", "--device", "cpu", "--compute_type", "int8", "--language", "en"]
   }
 }
 ```
 
-## TTS: Piper.Net (CPU-only)
+## TTS: Kokoro-82M (CPU)
 
-TTS is implemented in-process using `LMSupply.Synthesizer` (Piper/VITS ONNX).
+In Docker, TTS is implemented by running a small Python helper that uses the `kokoro` package. Model assets are downloaded on first use and cached under `./models/hf`.
 
-1. Download a Piper-compatible **voice** (typically an ONNX model + config) and place it in a local directory.
-2. Configure the TTS tool:
+1. Ensure Python is available.
+2. Install dependencies: `pip install kokoro soundfile`
+3. Configure the TTS tool:
 
 - `TextToSpeech:Enabled=true`
-- `TextToSpeech:UsePiperNet=true`
-- `TextToSpeech:PiperVoicePath` = the voice directory (or alias supported by the synthesizer)
-- Optional: `TextToSpeech:PiperSpeakerId` for multi-speaker voices
-- Optional: `TextToSpeech:PiperThreadCount` (0 = auto)
-- Optional: `TextToSpeech:PiperWarmupOnLoad` (default true) to reduce first-call latency
-- Optional: `TextToSpeech:PiperWarmupAtStartup` (default false) to pre-load + warm the model when the Host starts
+- `TextToSpeech:UsePiperNet=false`
+- `TextToSpeech:ExecutablePath` = `python3` (or `python.exe` on Windows)
+- `TextToSpeech:Arguments` must include `{text}` and `{output}` placeholders
 
 Example:
 
@@ -51,13 +54,9 @@ Example:
   "Voice": { "Enabled": true, "LocalOnly": true },
   "TextToSpeech": {
     "Enabled": true,
-    "UsePiperNet": true,
-    "PiperVoicePath": "C:/voices/en_US-lessac",
-    "PiperSpeakerId": 0,
-    "PiperSpeed": 1.0,
-    "PiperThreadCount": 0,
-    "PiperWarmupOnLoad": true,
-    "PiperWarmupAtStartup": false,
+    "UsePiperNet": false,
+    "ExecutablePath": "python",
+    "Arguments": ["C:/path/to/kokoro_tts.py", "--text", "{text}", "--output", "{output}", "--voice", "af_heart", "--lang_code", "a", "--sample_rate", "24000"],
     "RootDirectory": "data/voice",
     "OutputExtension": ".wav"
   }
@@ -70,5 +69,26 @@ When `Voice:Enabled=true`:
 
 - `POST /api/voice/transcribe` (multipart/form-data, `file`)
 - `POST /api/voice/speak` (JSON `{ "text": "..." }`) → returns an audio file (WAV by default)
+- `POST /api/voice/copilot` (JSON `{ "text": "...", "sessionId": "...", "speak": false }`) → returns `{ sessionId, reply, speechText, ttsEnqueued }`
 
 These endpoints are **local-only by default**: set `Voice:LocalOnly=false` to allow non-loopback clients.
+
+Quick smoke test (recommended in Docker with `Voice:LocalOnly=false`):
+
+```bash
+curl -H "Content-Type: application/json" \
+  -d '{"text":"Bonjour","sessionId":"demo","speak":false}' \
+  http://localhost:5080/api/voice/copilot
+```
+
+## Troubleshooting
+
+- If `POST /api/voice/speak` or `/api/voice/transcribe` returns HTTP 500 in Docker right after enabling voice, run:
+
+  - `docker compose logs infernal-hierarchy --tail 200`
+
+  Most issues are missing dependencies (Python packages) or missing outbound connectivity for the first model download.
+
+- To prefetch models into `./models/hf` (best-effort):
+
+  - `docker compose exec infernal-hierarchy /opt/voice-venv/bin/python /app/voice/download_voice_models.py`

@@ -168,15 +168,20 @@ The embedded UI includes a Voice panel that calls:
 
 For interactive/local usage, the recommended “optimized enough” setup is:
 
-- **TTS**: Piper.Net (in-process) with the model cached after first use
-- **STT**: whisper.cpp CLI invoked per request (low volume)
+- **TTS**: Kokoro-82M (Python)
+- **STT**: Faster-Whisper `large-v3-turbo` (Python)
 
-1) Put models on disk:
+1) Start with an empty local cache directory (models download on first use):
 
-- Whisper model under `./models/whisper` (example: `ggml-base.en.bin`)
-- Piper ONNX voice under `./models/piper` (example: `voice.onnx`)
+- Hugging Face cache under `./models/hf`
 
-2) Start the stack using the voice override:
+2) Start the stack:
+
+```bash
+docker compose -f docker-compose.yml up -d --build
+```
+
+If you prefer keeping voice settings isolated, you can still use the override file:
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.voice.yml up -d --build
@@ -186,11 +191,30 @@ docker compose -f docker-compose.yml -f docker-compose.voice.yml up -d --build
 
 - `http://localhost:5080/ui`
 
-Edit `docker-compose.voice.yml` if your model filenames differ:
+Smoke test the copilot endpoint (does not require TTS):
 
-- `VoiceTranscription__Arguments__1` → Whisper model path
-- `TextToSpeech__PiperVoicePath` → Piper voice path
-- `TextToSpeech__PiperWarmupAtStartup` → pre-load + warm the model at container startup (recommended)
+```bash
+curl -H "Content-Type: application/json" \
+  -d '{"text":"Salut ! Tu peux m\u0027aider ?","sessionId":"demo","speak":false}' \
+  http://localhost:5080/api/voice/copilot
+```
+
+PowerShell (avoids `curl` alias issues):
+
+```powershell
+Invoke-RestMethod -Method Post -Uri http://localhost:5080/api/voice/copilot -ContentType "application/json" -Body '{"text":"Salut ! Tu peux m\u0027aider ?","sessionId":"demo","speak":false}'
+```
+
+Optional: prefetch the models (best-effort; large downloads):
+
+```bash
+docker compose exec infernal-hierarchy /opt/voice-venv/bin/python /app/voice/download_voice_models.py
+```
+
+Edit `docker-compose.yml` / `docker-compose.voice.yml` if you want to change defaults:
+
+- STT model: `VoiceTranscription__Arguments__4` (default `large-v3-turbo`)
+- TTS voice: `TextToSpeech__Arguments__6` (default `af_heart`)
 
 ---
 

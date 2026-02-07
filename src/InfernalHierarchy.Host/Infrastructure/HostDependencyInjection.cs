@@ -143,11 +143,21 @@ internal static class HostDependencyInjection
         AddAgentSystem(builder);
         AddToolExecutionPipeline(builder);
         AddLlmAndLearning(builder);
+        AddVoiceCopilot(builder);
         AddNotifications(builder);
         AddAdvancedMemory(builder);
         AddCollaboration(builder);
         AddTemplates(builder);
         AddEventSourcing(builder);
+    }
+
+    private static void AddVoiceCopilot(WebApplicationBuilder builder)
+    {
+        builder.Services.AddSingleton<VoiceCopilotService>();
+
+        builder.Services.AddSingleton<VoiceCopilotTtsQueue>();
+        builder.Services.AddSingleton<IVoiceCopilotTtsQueue>(sp => sp.GetRequiredService<VoiceCopilotTtsQueue>());
+        builder.Services.AddHostedService(sp => sp.GetRequiredService<VoiceCopilotTtsQueue>());
     }
 
     private static void AddMessagingAndMemory(WebApplicationBuilder builder)

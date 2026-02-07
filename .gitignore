@@ -17,6 +17,10 @@ TestResults/
 # Secrets (local-only)
 secrets/
 
+# Voice / model caches (runtime downloads)
+models/hf/
+!models/hf/README.md
+
 # Event store (generated at runtime)
 src/InfernalHierarchy.Host/events/
 src/InfernalHierarchy.Host/events/*.jsonl
