@@ -159,6 +159,124 @@ Action Input: done
     }
 
     [Fact]
+    public async Task ProcessTaskAsync_WhenExplicitVerificationRequested_ShouldRunCritiqueAndApplyImprovedSummary()
+    {
+        // Arrange
+        var agentEntity = CreateTestAgent();
+        agentEntity.Id = "agent-1";
+        agentEntity.Rank = AgentRank.Prince;
+
+        _mockMemory.Setup(x => x.GetRecentDecisionsAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Array.Empty<Decision>());
+        _mockMemory.Setup(x => x.AddDecisionAsync(It.IsAny<Decision>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        _mockOllama.Setup(x => x.GetCompletionAsync(
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync("""
+Thought: Draft answer.
+Action: FINAL_ANSWER
+Action Input: draft
+""");
+
+        var criticJson = "{\"quality_score\":8,\"contradictions\":[],\"missing_sources\":[],\"recommendations\":[\"ok\"],\"should_rollback\":false,\"should_kill_branch\":false,\"improved_summary\":\"improved\"}";
+        var criticAgent = new StubAgent(
+            id: "critic-1",
+            name: "Orobas",
+            rank: AgentRank.Duke,
+            responseContent: criticJson);
+
+        _mockAgentFactory
+            .Setup(x => x.CreateAgentAsync("Orobas", AgentRank.Duke, "agent-1", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(criticAgent);
+
+        _mockAgentFactory
+            .Setup(x => x.TerminateAgentAsync("critic-1", It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        var critiqueOptions = new CritiqueOptions
+        {
+            Enabled = true,
+            CriticPersonaName = "Orobas",
+            CriticRank = AgentRank.Duke,
+            MinDepth = 99,
+            MinToolCalls = 99,
+            TriggerKeywords = new List<string> { "vérifie" }
+        };
+
+        var reactAgent = new ReActAgent(
+            agentEntity,
+            _testPersona,
+            _mockMessageBus.Object,
+            _mockMemory.Object,
+            _mockToolRegistry.Object,
+            _mockAgentFactory.Object,
+            _mockOllama.Object,
+            _mockLogger.Object,
+            _mockEventSink.Object,
+            critiqueOptions: critiqueOptions);
+
+        var task = new AgentMessage
+        {
+            Id = "task-1",
+            FromAgentId = "sender",
+            ToAgentId = "agent-1",
+            Type = MessageType.Task,
+            Content = "vérifie bien la réponse"
+        };
+
+        // Act
+        var response = await reactAgent.ProcessTaskAsync(task, CancellationToken.None);
+
+        // Assert
+        response.Content.Should().Be("improved");
+        response.Payload.Should().ContainKey("critique");
+        response.Payload.Should().ContainKey("critique_applied");
+        _mockAgentFactory.Verify(x => x.CreateAgentAsync("Orobas", AgentRank.Duke, "agent-1", It.IsAny<CancellationToken>()), Times.Once);
+        _mockAgentFactory.Verify(x => x.TerminateAgentAsync("critic-1", It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    private sealed class StubAgent : IAgent
+    {
+        private readonly string _responseContent;
+
+        public StubAgent(string id, string name, AgentRank rank, string responseContent)
+        {
+            Id = id;
+            Name = name;
+            Rank = rank;
+            _responseContent = responseContent;
+            Persona = new Persona { Name = name, SystemPrompt = "stub" };
+        }
+
+        public string Id { get; }
+        public string Name { get; }
+        public AgentRank Rank { get; }
+        public AgentStatus Status { get; } = AgentStatus.Idle;
+        public Persona Persona { get; }
+
+        public Task StartAsync(CancellationToken ct = default) => Task.CompletedTask;
+        public Task StopAsync(CancellationToken ct = default) => Task.CompletedTask;
+        public Task SuspendAsync(CancellationToken ct = default) => Task.CompletedTask;
+        public Task ResumeAsync(CancellationToken ct = default) => Task.CompletedTask;
+
+        public Task<AgentMessage> ProcessTaskAsync(AgentMessage task, CancellationToken ct = default)
+        {
+            return Task.FromResult(new AgentMessage
+            {
+                FromAgentId = Id,
+                ToAgentId = task.FromAgentId,
+                Type = MessageType.Report,
+                Content = _responseContent
+            });
+        }
+
+        public bool CanCreateSubAgent(AgentRank targetRank) => false;
+    }
+
+    [Fact]
     public async Task ProcessTaskAsync_JsonToolCall_ExecutesToolThenReturnsFinalAnswer()
     {
         // Arrange

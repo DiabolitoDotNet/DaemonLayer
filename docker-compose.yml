@@ -1,5 +1,4 @@
 # Docker Compose pour services locaux (SearXNG)
-version: '3.8'
 
 services:
   # InfernalHierarchy .NET Worker Service
@@ -15,12 +14,19 @@ services:
       - Memory__DatabasePath=/app/data/infernal.db
       - Http__Enabled=true
       - Http__Urls=http://0.0.0.0:5080
+      - Ui__LocalOnly=false
+      - WebSockets__LocalOnly=false
+
+      # Ensure docker secrets are honored in container runs.
+      - DockerSecrets__Enabled=true
+      - DockerSecrets__RootPath=/run/secrets
       - VectorMemoryOptions__Enabled=true
       - VectorMemoryOptions__QdrantUrl=http://qdrant:6333
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs
-      - ./souls:/app/souls
+      - ./souls:/souls
+      - ./templates:/app/templates:ro
     depends_on:
       - searxng
       - qdrant

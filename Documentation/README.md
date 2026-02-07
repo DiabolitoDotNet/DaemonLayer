@@ -13,7 +13,7 @@ The repository root already contains detailed topic docs (security, observabilit
 
 ## Related docs (repo root)
 
-- [README](../README.md) — quickstart, project map, operational notes
+- [README](../README.md) — quickstart, project map, operational notes (includes configuration examples for `AgentSupervisor`, `ToolCache`, and `Critique`)
 - [IMPLEMENTATION_SUMMARY](../IMPLEMENTATION_SUMMARY.md) — what’s implemented and why it matters
 - [ADVANCED_FEATURES](../ADVANCED_FEATURES.md) — higher-level/experimental features
 - [OBSERVABILITY](../OBSERVABILITY.md) and [OBSERVABILITY_SUMMARY](../OBSERVABILITY_SUMMARY.md)

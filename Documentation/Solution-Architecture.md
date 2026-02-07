@@ -70,6 +70,7 @@ flowchart TB
 
 	subgraph Memory[InfernalHierarchy.Memory]
 		sm[ISharedMemory]
+		tc[IToolResultCacheStore]
 		prune[Memory Pruning]
 		embed[Embeddings/ONNX (optional)]
 		vm[IVectorMemory (optional)]
@@ -100,6 +101,7 @@ flowchart TB
 	pipeline --> authz
 	pipeline --> rl
 	pipeline --> sm
+	pipeline --> tc
 	sm --> prune
 	sm --> vm
 	vm --> embed
@@ -137,6 +139,8 @@ Common patterns:
 - **Delegation**: higher-rank agents can create and task lower-rank agents.
 - **Templates/personas**: an agent’s behavior is driven by a persona (a “soul”) and task templates.
 
+Where enabled, a Prince/Supreme can run a short-lived **critique loop** at the end of a branch: it spawns a dedicated Critic persona (default: `Orobas`) to review contradictions, missing sources, and propose an improved synthesis. This is gated by simple heuristics (depth, tool-call count, or explicit user request) to avoid unnecessary token cost, and it intentionally skips critique for supervisor replan commands.
+
 Personas are stored as JSON under `souls/` and loaded through an `IPersonaLoader`.
 
 ### Tools layer
@@ -146,8 +150,11 @@ Tools are the “capability surface” of the system. Tools are:
 - registered/discovered via a registry,
 - executed through an execution pipeline,
 - authorized by `IToolAuthorizationService`,
+- optionally served from a short-lived shared cache (when enabled),
 - throttled by `IToolRateLimiter`,
 - instrumented for tracing/metrics/logging.
+
+When `ToolCache` is enabled, the pipeline checks cache **after authorization** and **before rate limiting** (to avoid burning rate limits for identical requests). Cache entries are keyed by tool name + stable input signature and expire after a configurable TTL (validated to 5–30 minutes).
 
 Examples: memory read/write, web search, Telegram send, sub-agent creation.
 

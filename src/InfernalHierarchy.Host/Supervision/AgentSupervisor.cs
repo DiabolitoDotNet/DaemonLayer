@@ -22,7 +22,7 @@ public sealed class AgentSupervisor : BackgroundService, IAgentSupervisor
         DateTimeOffset? LastPreemptAt,
         DateTimeOffset? LastInterventionAt);
 
-    private static readonly string SupervisorId = "supervisor";
+    private static readonly string SupervisorId = "Belial";
 
     private readonly IAgentRegistry _registry;
     private readonly IAgentFactory _agentFactory;

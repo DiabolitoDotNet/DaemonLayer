@@ -80,6 +80,8 @@ This enables multi-user use with isolation.
 
 - **Tool permissions** are the main safety boundary.
 - **Rate limiting** controls blast radius and prevents runaway loops.
+- **Tool result caching** can reduce duplicate expensive tool calls (where safe).
+- **Critique loop** (Prince/Supreme, end-of-branch) can improve synthesis quality when explicitly requested or when branches get deep/tool-heavy.
 - **Memory pruning** prevents infinite persistence.
 - **Resource monitoring** can detect overload.
 

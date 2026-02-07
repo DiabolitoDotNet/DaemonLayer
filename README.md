@@ -121,9 +121,37 @@ InfernalHierarchy/
     "InterventionCooldown": "00:02:00",
     "PreemptEnabled": true,
     "DecisionLookbackCount": 50
+  },
+  "Critique": {
+    "Enabled": true,
+    "CriticPersonaName": "Orobas",
+    "CriticRank": "Duke",
+    "MinDepth": 3,
+    "MinToolCalls": 5,
+    "TriggerKeywords": ["vérifie", "verify", "double-check"]
+  },
+  "ToolCache": {
+    "Enabled": true,
+    "DefaultTtl": "00:15:00",
+    "ClearOnStartup": false,
+    "CacheFailures": false,
+    "CacheableTools": ["web_search"],
+    "NonCacheableTools": ["send_telegram"],
+    "Tools": {
+      "web_search": { "Ttl": "00:10:00" },
+      "get_time": { "Volatile": true }
+    }
   }
 }
 ```
+
+Notes:
+
+- Le cache de tools est un cache court-terme partagé (LiteDB), clé = `toolName` + signature stable des paramètres.
+- TTL validé entre 5 et 30 minutes (global + overrides).
+- Bypass possible par appel via paramètres: `cache_skip=true` ou `cache_bust=true`.
+
+- La boucle de critique (`Critique`) déclenche (Prince/Supreme) un agent critique dédié (persona `Orobas`) à la fin d'une branche si: profondeur ≥ `MinDepth`, tool calls ≥ `MinToolCalls`, ou si l'utilisateur demande explicitement de vérifier.
 
 ### Personnalisation des Personas
 

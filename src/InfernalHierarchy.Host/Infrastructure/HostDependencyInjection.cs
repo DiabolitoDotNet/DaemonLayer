@@ -51,6 +51,7 @@ internal static class HostDependencyInjection
         builder.Services.AddSingleton<IValidateOptions<BraveSearchOptions>, WebSearchProvidersValidator>();
         builder.Services.AddSingleton<IValidateOptions<EmailNotificationOptions>, EmailNotificationOptionsValidator>();
         builder.Services.AddSingleton<IValidateOptions<ToolRateLimitingOptions>, ToolRateLimitingOptionsValidator>();
+        builder.Services.AddSingleton<IValidateOptions<ToolResultCacheOptions>, ToolResultCacheOptionsValidator>();
         builder.Services.AddSingleton<IValidateOptions<VectorMemoryOptions>, VectorMemoryOptionsValidator>();
         builder.Services.AddSingleton<IValidateOptions<OnnxEmbeddingOptions>, OnnxEmbeddingOptionsValidator>();
         builder.Services.AddSingleton<IValidateOptions<FileSystemToolOptions>, FileSystemToolOptionsValidator>();
@@ -152,7 +153,9 @@ internal static class HostDependencyInjection
     private static void AddMessagingAndMemory(WebApplicationBuilder builder)
     {
         builder.Services.AddSingleton<IMessageBus, ChannelMessageBus>();
-        builder.Services.AddSingleton<ISharedMemory, LiteDbSharedMemory>();
+        builder.Services.AddSingleton<LiteDbSharedMemory>();
+        builder.Services.AddSingleton<ISharedMemory>(sp => sp.GetRequiredService<LiteDbSharedMemory>());
+        builder.Services.AddSingleton<IToolResultCacheStore>(sp => sp.GetRequiredService<LiteDbSharedMemory>());
     }
 
     private static void AddPersonaAndDocsServices(WebApplicationBuilder builder)
@@ -316,6 +319,7 @@ internal static class HostDependencyInjection
     private static void AddToolHostedServices(WebApplicationBuilder builder)
     {
         builder.Services.AddHostedService<TextToSpeechWarmupService>();
+        builder.Services.AddHostedService<ToolCacheStartupService>();
         builder.Services.AddHostedService<ToolRegistrationService>();
         builder.Services.AddHostedService<ToolMarketplaceHostedService>();
     }

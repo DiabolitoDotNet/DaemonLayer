@@ -8,6 +8,7 @@ This is the consolidated feature list of the InfernalHierarchy solution. It inte
 - ReAct-style reasoning loop with tool use
 - Agent lifecycle management (creation, tracking, shutdown)
 - Agent supervision (`AgentSupervisor`) to detect stalls/loops and intervene (root replan, optional preemption with escalation)
+- Optional self-reflection / critique loop (`Critique`) for Prince/Supreme branches via a dedicated Critic persona (default: `Orobas`), triggered only on completed branch reports (and skipped for supervisor replans)
 - Persona-driven behavior (souls in `souls/`)
 - Template-driven task shaping (see `templates/`)
 
@@ -15,7 +16,8 @@ This is the consolidated feature list of the InfernalHierarchy solution. It inte
 
 - Standard tool abstraction (`ITool`) for pluggability
 - Tool registry / discovery
-- Central execution pipeline (validation → authorization → rate limit → execute → observe)
+- Central execution pipeline (validation → authorization → optional cache → rate limit → execute → observe)
+- Short-lived tool result cache (`ToolCache`) backed by LiteDB (tool name + stable input signature, TTL 5–30 minutes)
 - Tool authorization policies (deny-by-default possible)
 - Tool rate limiting / throttling
 - Tool telemetry (timings, outcomes, correlation)

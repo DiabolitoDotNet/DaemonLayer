@@ -21,6 +21,7 @@ public class AgentFactory : IAgentFactory
     private readonly IVectorMemory? _vectorMemory;
     private readonly RagOptions _ragOptions;
     private readonly ReActOptions _reActOptions;
+    private readonly CritiqueOptions _critiqueOptions;
     private readonly TokenUsageTracker? _tokenUsageTracker;
     private readonly MultiModelLlmClient? _multiModelLlmClient;
     private readonly IAgentCollaborationService? _collaborationService;
@@ -126,6 +127,7 @@ public class AgentFactory : IAgentFactory
         _vectorMemory = null;
         _ragOptions = new RagOptions();
         _reActOptions = new ReActOptions();
+        _critiqueOptions = new CritiqueOptions();
         _tokenUsageTracker = null;
         _multiModelLlmClient = null;
         _collaborationService = null;
@@ -218,6 +220,7 @@ public class AgentFactory : IAgentFactory
             _vectorMemory,
             _ragOptions,
             _reActOptions,
+            _critiqueOptions,
             _tokenUsageTracker,
             _multiModelLlmClient,
             _collaborationService,

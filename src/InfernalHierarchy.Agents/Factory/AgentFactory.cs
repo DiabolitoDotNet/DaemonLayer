@@ -20,6 +20,7 @@ public class AgentFactory : IAgentFactory
     private readonly IVectorMemory? _vectorMemory;
     private readonly RagOptions _ragOptions;
     private readonly ReActOptions _reActOptions;
+    private readonly CritiqueOptions _critiqueOptions;
     private readonly TokenUsageTracker? _tokenUsageTracker;
     private readonly MultiModelLlmClient? _multiModelLlmClient;
     private readonly IAgentCollaborationService? _collaborationService;
@@ -36,6 +37,7 @@ public class AgentFactory : IAgentFactory
         IVectorMemory vectorMemory,
         IOptions<RagOptions> ragOptions,
         IOptions<ReActOptions> reActOptions,
+        IOptions<CritiqueOptions> critiqueOptions,
         IAgentEventSink? eventSink,
         TokenUsageTracker? tokenUsageTracker = null,
         MultiModelLlmClient? multiModelLlmClient = null,
@@ -50,6 +52,7 @@ public class AgentFactory : IAgentFactory
             logger,
             loggerFactory,
             eventSink,
+            critiqueOptions,
             tokenUsageTracker,
             multiModelLlmClient,
             collaborationService)
@@ -57,6 +60,7 @@ public class AgentFactory : IAgentFactory
         _vectorMemory = vectorMemory;
         _ragOptions = ragOptions.Value;
         _reActOptions = reActOptions.Value;
+        _critiqueOptions = critiqueOptions.Value;
     }
 
     public AgentFactory(
@@ -90,7 +94,8 @@ public class AgentFactory : IAgentFactory
         ILlmClient ollamaClient,
         ILogger<AgentFactory> logger,
         ILoggerFactory loggerFactory,
-        IAgentEventSink? eventSink)
+        IAgentEventSink? eventSink,
+        IOptions<CritiqueOptions>? critiqueOptions = null)
     {
         _personaLoader = personaLoader;
         _messageBus = messageBus;
@@ -104,6 +109,7 @@ public class AgentFactory : IAgentFactory
         _vectorMemory = null;
         _ragOptions = new RagOptions();
         _reActOptions = new ReActOptions();
+        _critiqueOptions = critiqueOptions?.Value ?? new CritiqueOptions();
         _tokenUsageTracker = null;
         _multiModelLlmClient = null;
         _collaborationService = null;
@@ -119,6 +125,7 @@ public class AgentFactory : IAgentFactory
         ILogger<AgentFactory> logger,
         ILoggerFactory loggerFactory,
         IAgentEventSink? eventSink,
+        IOptions<CritiqueOptions> critiqueOptions,
         TokenUsageTracker? tokenUsageTracker,
         MultiModelLlmClient? multiModelLlmClient,
         IAgentCollaborationService? collaborationService)
@@ -131,7 +138,8 @@ public class AgentFactory : IAgentFactory
             ollamaClient,
             logger,
             loggerFactory,
-            eventSink)
+            eventSink,
+            critiqueOptions)
     {
         _tokenUsageTracker = tokenUsageTracker;
         _multiModelLlmClient = multiModelLlmClient;
@@ -183,6 +191,7 @@ public class AgentFactory : IAgentFactory
             _vectorMemory,
             _ragOptions,
             _reActOptions,
+            _critiqueOptions,
             _tokenUsageTracker,
             _multiModelLlmClient,
             _collaborationService);

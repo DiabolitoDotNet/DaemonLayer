@@ -7,10 +7,18 @@ internal static class HostAddOptions
         AddAgentAndCoreOptions(builder);
         AddSearchAndProviderOptions(builder);
         AddToolOptions(builder);
+        AddCritiqueOptions(builder);
         AddUiAndInterfaceOptions(builder);
         AddVectorMemoryOptions(builder);
         AddOperatorApiOptions(builder);
         AddSupervisorOptions(builder);
+    }
+
+    private static void AddCritiqueOptions(WebApplicationBuilder builder)
+    {
+        builder.Services.AddOptions<CritiqueOptions>()
+            .Bind(builder.Configuration.GetSection("Critique"))
+            .ValidateOnStart();
     }
 
     private static void AddAgentAndCoreOptions(WebApplicationBuilder builder)
@@ -49,6 +57,9 @@ internal static class HostAddOptions
     {
         builder.Services.AddOptions<ToolRateLimitingOptions>()
             .Bind(builder.Configuration.GetSection("ToolRateLimiting"))
+            .ValidateOnStart();
+        builder.Services.AddOptions<ToolResultCacheOptions>()
+            .Bind(builder.Configuration.GetSection("ToolCache"))
             .ValidateOnStart();
         builder.Services.AddOptions<FileSystemToolOptions>()
             .Bind(builder.Configuration.GetSection("FileSystem"))

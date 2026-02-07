@@ -19,3 +19,7 @@ services:
       - OnnxEmbeddingOptions__MaxSequenceLength=128
     volumes:
       - ./models/sentence-transformers:/app/models/sentence-transformers:ro
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./souls:/souls
+      - ./templates:/app/templates:ro

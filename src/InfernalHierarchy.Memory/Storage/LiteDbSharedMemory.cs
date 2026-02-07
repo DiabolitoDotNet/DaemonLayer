@@ -5,7 +5,7 @@ namespace InfernalHierarchy.Memory.Storage;
 /// <summary>
 /// LiteDB implementation of shared memory
 /// </summary>
-public sealed class LiteDbSharedMemory : ISharedMemory, IDisposable
+public sealed class LiteDbSharedMemory : ISharedMemory, IToolResultCacheStore, IDisposable
 {
     private readonly LiteDatabase _db;
     private readonly ILogger<LiteDbSharedMemory> _logger;
@@ -13,6 +13,7 @@ public sealed class LiteDbSharedMemory : ISharedMemory, IDisposable
     private ILiteCollection<Decision> Decisions => _db.GetCollection<Decision>("decisions");
     private ILiteCollection<Fact> Facts => _db.GetCollection<Fact>("facts");
     private ILiteCollection<TaskEntry> Tasks => _db.GetCollection<TaskEntry>("tasks");
+    private ILiteCollection<CachedToolResult> ToolCache => _db.GetCollection<CachedToolResult>("tool_cache");
 
     public LiteDbSharedMemory(IOptions<MemoryOptions> options, ILogger<LiteDbSharedMemory> logger)
     {
@@ -27,6 +28,7 @@ public sealed class LiteDbSharedMemory : ISharedMemory, IDisposable
 
         var mapper = new BsonMapper();
         mapper.Entity<MemoryEntry>().Id(x => x.Id);
+        mapper.Entity<CachedToolResult>().Id(x => x.InputKey);
 
         _db = new LiteDatabase(dbPath, mapper);
 
@@ -41,8 +43,61 @@ public sealed class LiteDbSharedMemory : ISharedMemory, IDisposable
         Tasks.EnsureIndex(nameof(TaskEntry.AssignedTo));
         Tasks.EnsureIndex(nameof(MemoryEntry.CreatedAt));
 
+        ToolCache.EnsureIndex(nameof(CachedToolResult.ToolName));
+        ToolCache.EnsureIndex(nameof(CachedToolResult.ExpiresAt));
+
         _logger.LogInformation("💾 LiteDB shared memory initialized at {Path}", dbPath);
     }
+
+    #region Tool Result Cache
+
+    public Task<CachedToolResult?> GetAsync(string inputKey, CancellationToken ct = default)
+    {
+        var cached = ToolCache.FindById(inputKey);
+        if (cached is null)
+        {
+            return Task.FromResult<CachedToolResult?>(null);
+        }
+
+        if (cached.ExpiresAt <= DateTimeOffset.UtcNow)
+        {
+            ToolCache.Delete(inputKey);
+            return Task.FromResult<CachedToolResult?>(null);
+        }
+
+        return Task.FromResult<CachedToolResult?>(cached);
+    }
+
+    public Task UpsertAsync(CachedToolResult entry, CancellationToken ct = default)
+    {
+        if (entry is null)
+        {
+            throw new ArgumentNullException(nameof(entry));
+        }
+
+        ToolCache.Upsert(entry);
+        return Task.CompletedTask;
+    }
+
+    public Task<bool> RemoveAsync(string inputKey, CancellationToken ct = default)
+    {
+        var removed = ToolCache.Delete(inputKey);
+        return Task.FromResult(removed);
+    }
+
+    public Task<int> PruneExpiredAsync(DateTimeOffset now, CancellationToken ct = default)
+    {
+        var removed = ToolCache.DeleteMany(x => x.ExpiresAt <= now);
+        return Task.FromResult(removed);
+    }
+
+    public Task ClearAsync(CancellationToken ct = default)
+    {
+        ToolCache.DeleteAll();
+        return Task.CompletedTask;
+    }
+
+    #endregion
 
     #region Decisions
 

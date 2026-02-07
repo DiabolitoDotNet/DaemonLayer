@@ -1,5 +1,3 @@
-version: '3.8'
-
 # Voice override: enables /api/voice/* and configures STT (whisper.cpp) + TTS (Piper.Net in-process)
 # Usage:
 #   docker compose -f docker-compose.yml -f docker-compose.voice.yml up -d --build
@@ -41,4 +39,7 @@ services:
       - ./models/whisper:/models/whisper:ro
       - ./models/piper:/models/piper:ro
       - ./data:/app/data
+      - ./logs:/app/logs
+      - ./souls:/souls
+      - ./templates:/app/templates:ro
 

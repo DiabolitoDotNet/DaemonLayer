@@ -17,6 +17,7 @@ RUN dotnet restore ./src/InfernalHierarchy.Host/InfernalHierarchy.Host.csproj
 # Copy everything else and build
 COPY src/ ./src/
 COPY souls/ ./souls/
+COPY templates/ ./templates/
 
 WORKDIR /source/src/InfernalHierarchy.Host
 RUN dotnet publish -c Release -o /app --no-restore
@@ -53,6 +54,7 @@ RUN apt-get update && \
 # Copy build output
 COPY --from=build /app ./
 COPY --from=build /source/souls /souls
+COPY --from=build /source/templates ./templates
 
 # Copy whisper.cpp binary
 # (whisper.cpp builds a 'main' binary; we standardize it to /usr/local/bin/whisper)
