@@ -11,6 +11,7 @@ using MsOptions = Microsoft.Extensions.Options.Options;
 using Moq;
 using System.Reflection;
 using Telegram.Bot;
+using Telegram.Bot.Requests.Abstractions;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;
 using Xunit;
@@ -28,7 +29,9 @@ public sealed class TelegramBotServiceUpdateHandlingTests
     {
         return new TelegramBotService(
             MsOptions.Create(options),
+            MsOptions.Create(new TelegramVoiceOptions { Enabled = false, ReplyWithVoice = false }),
             messageBus,
+            toolRegistry: null,
             NullLogger<TelegramBotService>.Instance,
             serviceProvider);
     }
@@ -54,6 +57,14 @@ public sealed class TelegramBotServiceUpdateHandlingTests
 
         // Avoid overload binding issues by setting a default return for Task<Message>.
         mock.SetReturnsDefault(Task.FromResult(new Message()));
+
+        // Many Telegram.Bot v22+ extension methods flow through SendRequest<T>.
+        // In loose mocks, the default for Task<T> is null which can throw when awaited.
+        mock.SetReturnsDefault(Task.FromResult(true));
+
+        mock
+            .Setup(c => c.SendRequest(It.IsAny<IRequest<bool>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
 
         return mock;
     }
@@ -106,6 +117,75 @@ public sealed class TelegramBotServiceUpdateHandlingTests
         published[0].Content.Should().Be("do the thing");
         published[0].Payload.Should().ContainKey("telegram_chat_id");
         published[0].Payload.Should().ContainKey("telegram_user_id");
+
+        static bool ArgHasText(object? arg, Func<string, bool> predicate)
+        {
+            if (arg is null)
+            {
+                return false;
+            }
+
+            if (arg is string s)
+            {
+                return predicate(s);
+            }
+
+            var textProp = arg.GetType().GetProperty("Text", BindingFlags.Instance | BindingFlags.Public);
+            if (textProp?.PropertyType == typeof(string) && textProp.GetValue(arg) is string text)
+            {
+                return predicate(text);
+            }
+
+            return false;
+        }
+
+        static bool ArgTypeNameContains(object? arg, string needle)
+        {
+            if (arg is null) return false;
+            var name = arg.GetType().Name;
+            return name.Contains(needle, StringComparison.OrdinalIgnoreCase);
+        }
+
+        var anyEyesReaction = botClient.Invocations.Any(i =>
+            (i.Method.Name.Contains("SendRequest", StringComparison.OrdinalIgnoreCase)
+             || i.Method.Name.Contains("MakeRequest", StringComparison.OrdinalIgnoreCase))
+            && i.Arguments.Any(a => ArgTypeNameContains(a, "SetMessageReactionRequest")));
+
+        var anyTaskQueued = botClient.Invocations
+            .Any(i => i.Arguments.Any(a => ArgHasText(a, s => s.Contains("Task queued", StringComparison.OrdinalIgnoreCase))));
+
+        var anyEyesMessage = botClient.Invocations
+            .Any(i => i.Arguments.Any(a => ArgHasText(a, s => s == "👀")));
+
+        anyEyesReaction.Should().BeTrue();
+        anyEyesMessage.Should().BeFalse();
+        anyTaskQueued.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task HandleUpdateAsync_WithPlainText_InjectsLuciferPreambleWhenConfigured()
+    {
+        var published = new List<AgentMessage>();
+        var messageBus = new Mock<IMessageBus>();
+        messageBus
+            .Setup(b => b.PublishAsync(It.IsAny<AgentMessage>(), It.IsAny<CancellationToken>()))
+            .Callback<AgentMessage, CancellationToken>((msg, _) => published.Add(msg))
+            .Returns(Task.CompletedTask);
+
+        var serviceProvider = new ServiceCollection().BuildServiceProvider();
+
+        using var service = CreateService(
+            new TelegramOptions { BotToken = "x", AllowedUserIds = Array.Empty<long>(), LuciferPreamble = "PRE" },
+            messageBus.Object,
+            serviceProvider);
+
+        var botClient = CreateBotClientMock();
+        var update = CreateUpdate(chatId: 123, userId: 111, text: "do the thing");
+
+        await service.HandleUpdateAsync(botClient.Object, update, CancellationToken.None);
+
+        published.Should().ContainSingle();
+        published[0].Content.Should().Be("PRE\n\n---\nDemande utilisateur (Telegram):\ndo the thing");
     }
 
     [Fact]

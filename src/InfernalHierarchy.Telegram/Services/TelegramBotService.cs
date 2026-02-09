@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using System.Diagnostics;
 using Telegram.Bot;
 using Telegram.Bot.Exceptions;
 using Telegram.Bot.Polling;
@@ -7,6 +8,7 @@ using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;
 using CoreMessageType = InfernalHierarchy.Core.Entities.MessageType;
 using System.Text.RegularExpressions;
+using IOFile = System.IO.File;
 
 namespace InfernalHierarchy.Telegram.Services;
 
@@ -19,19 +21,25 @@ public class TelegramBotService : BackgroundService
     private readonly ILogger<TelegramBotService> _logger;
     private readonly IMessageBus _messageBus;
     private readonly TelegramOptions _options;
+    private readonly TelegramVoiceOptions _voiceOptions;
+    private readonly IToolRegistry? _toolRegistry;
     private readonly IServiceProvider _serviceProvider;
     private readonly IReadOnlyDictionary<string, ITelegramCommandHandler> _commandHandlers;
     private ITelegramBotClient? _botClient;
 
     public TelegramBotService(
         IOptions<TelegramOptions> options,
+        IOptions<TelegramVoiceOptions> voiceOptions,
         IMessageBus messageBus,
+        IToolRegistry? toolRegistry,
         ILogger<TelegramBotService> logger,
         IServiceProvider serviceProvider,
         IEnumerable<ITelegramCommandHandler>? commandHandlers = null)
     {
         _options = options.Value;
+        _voiceOptions = voiceOptions.Value;
         _messageBus = messageBus;
+        _toolRegistry = toolRegistry;
         _logger = logger;
         _serviceProvider = serviceProvider;
 
@@ -55,6 +63,8 @@ public class TelegramBotService : BackgroundService
         {
             var me = await _botClient.GetMe(stoppingToken);
             _logger.LogInformation("🤖 Telegram bot started: @{Username}", me.Username);
+
+            await TryNotifyStartupAsync(_botClient, me.Username, stoppingToken).ConfigureAwait(false);
 
             // Start a background listener that forwards agent reports back to Telegram.
             // Agents reply to the sender via message bus (ToAgentId = task.FromAgentId).
@@ -107,19 +117,35 @@ public class TelegramBotService : BackgroundService
                     continue;
                 }
 
-                var text = string.IsNullOrWhiteSpace(message.Content)
-                    ? $"(empty {message.Type} from {message.FromAgentId})"
-                    : FormatForTelegram(message);
-
-                // Keep Telegram messages within reasonable size.
-                if (text.Length > 3800)
+                if (string.IsNullOrWhiteSpace(message.Content))
                 {
-                    text = text[..3800] + "…";
+                    _logger.LogDebug(
+                        "Skipping agent message {MessageId} from {From}: empty content (Type={Type})",
+                        message.Id,
+                        message.FromAgentId,
+                        message.Type);
+                    continue;
                 }
+
+                var text = FormatForTelegram(message);
 
                 try
                 {
-                    await _botClient.SendMessage(chatId, text, cancellationToken: ct);
+                    var chunks = SplitTelegramMessage(text);
+                    var sentAny = false;
+
+                    foreach (var chunk in chunks)
+                    {
+                        await _botClient.SendMessage(chatId, chunk, cancellationToken: ct);
+
+                        if (!sentAny && _voiceOptions is { Enabled: true, ReplyWithVoice: true })
+                        {
+                            // Voice replies should stay short; use only the first chunk.
+                            await TrySendVoiceReplyAsync(_botClient, chatId, chunk, ct).ConfigureAwait(false);
+                        }
+
+                        sentAny = true;
+                    }
                 }
                 catch (OperationCanceledException) when (ct.IsCancellationRequested)
                 {
@@ -142,6 +168,35 @@ public class TelegramBotService : BackgroundService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Telegram forwarder loop failed");
+        }
+    }
+
+    private async Task TryNotifyStartupAsync(ITelegramBotClient botClient, string? botUsername, CancellationToken ct)
+    {
+        try
+        {
+            var chatId = _options.StartupNotificationChatId;
+            if (chatId == 0 && _options.AllowedUserIds.Length == 1)
+            {
+                chatId = _options.AllowedUserIds[0];
+            }
+
+            if (chatId == 0)
+            {
+                return;
+            }
+
+            var name = string.IsNullOrWhiteSpace(botUsername) ? "(unknown)" : "@" + botUsername;
+            await botClient.SendMessage(chatId, $"✅ InfernalHierarchy is up. Telegram bot online: {name}", cancellationToken: ct)
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Telegram startup notification failed (best-effort)");
         }
     }
 
@@ -174,11 +229,16 @@ public class TelegramBotService : BackgroundService
             }
         }
 
-        // Generic: keep it short (first sentence) for readability.
-        var firstSentenceEnd = text.IndexOf('.', StringComparison.Ordinal);
-        if (firstSentenceEnd > 0 && firstSentenceEnd < 240)
+        // For user-facing reports, do not shorten the content.
+        // Long reports are handled by message chunking at send-time.
+        if (message.Type is not CoreMessageType.Report)
         {
-            text = text[..(firstSentenceEnd + 1)];
+            // Generic: keep it short (first sentence) for readability.
+            var firstSentenceEnd = text.IndexOf('.', StringComparison.Ordinal);
+            if (firstSentenceEnd > 0 && firstSentenceEnd < 240)
+            {
+                text = text[..(firstSentenceEnd + 1)];
+            }
         }
 
         return text.Trim();
@@ -238,6 +298,18 @@ public class TelegramBotService : BackgroundService
         }
     }
 
+    private static string BuildLuciferContent(string userText, string? preamble)
+    {
+        var p = preamble?.Trim();
+        if (string.IsNullOrWhiteSpace(p))
+        {
+            return userText;
+        }
+
+        // Keep the user's message clearly delineated for the agent.
+        return $"{p}\n\n---\nDemande utilisateur (Telegram):\n{userText}";
+    }
+
     internal async Task HandleUpdateAsync(ITelegramBotClient botClient, Update update, CancellationToken ct)
     {
         if (update.Message is not { } message || message.Text is not { } messageText)
@@ -263,12 +335,16 @@ public class TelegramBotService : BackgroundService
             }
             else
             {
+                // Lightweight receipt acknowledgement (avoid noisy "Task queued..." spam).
+                // Prefer a reaction (👀) on the user's message, not a new message.
+                await TryAcknowledgeReceiptAsync(botClient, chatId, message.MessageId, ct).ConfigureAwait(false);
+
                 var agentMessage = new AgentMessage
                 {
                     FromAgentId = TelegramAgentId,
                     ToAgentId = "lucifer",
                     Type = CoreMessageType.Task,
-                    Content = messageText,
+                    Content = BuildLuciferContent(messageText, _options.LuciferPreamble),
                     Payload = new Dictionary<string, object>
                     {
                         ["telegram_chat_id"] = chatId,
@@ -277,7 +353,6 @@ public class TelegramBotService : BackgroundService
                 };
 
                 await _messageBus.PublishAsync(agentMessage, ct);
-                await botClient.SendMessage(chatId, "✅ Task queued for Lucifer (processing soon)...", cancellationToken: ct);
             }
         }
         catch (Exception ex)
@@ -389,12 +464,253 @@ public class TelegramBotService : BackgroundService
 
         try
         {
-            await _botClient.SendMessage(chatId, text, cancellationToken: ct);
-            _logger.LogDebug("📤 Sent Telegram message to {ChatId}", chatId);
+            var chunks = SplitTelegramMessage(text);
+            foreach (var chunk in chunks)
+            {
+                await _botClient.SendMessage(chatId, chunk, cancellationToken: ct);
+            }
+
+            _logger.LogDebug("📤 Sent Telegram message(s) to {ChatId}", chatId);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to send Telegram message to {ChatId}", chatId);
+        }
+    }
+
+    private const int TelegramMaxMessageLength = 3800;
+
+    private static IEnumerable<string> SplitTelegramMessage(string text)
+    {
+        if (string.IsNullOrEmpty(text))
+        {
+            yield return string.Empty;
+            yield break;
+        }
+
+        var remaining = text;
+        while (remaining.Length > TelegramMaxMessageLength)
+        {
+            var window = remaining.AsSpan(0, TelegramMaxMessageLength);
+
+            // Prefer splitting on a newline or space close to the end of the window.
+            var splitAt = FindSplitIndex(window);
+            if (splitAt <= 0)
+            {
+                splitAt = TelegramMaxMessageLength;
+            }
+
+            yield return remaining[..splitAt].TrimEnd();
+            remaining = remaining[splitAt..].TrimStart();
+        }
+
+        if (!string.IsNullOrWhiteSpace(remaining))
+        {
+            yield return remaining;
+        }
+    }
+
+    private static int FindSplitIndex(ReadOnlySpan<char> window)
+    {
+        // Scan backwards but only within a limited range to avoid O(n^2)
+        // behavior on huge messages.
+        var start = Math.Max(0, window.Length - 400);
+        for (var i = window.Length - 1; i >= start; i--)
+        {
+            if (window[i] == '\n')
+            {
+                return i + 1;
+            }
+
+            if (char.IsWhiteSpace(window[i]))
+            {
+                return i + 1;
+            }
+        }
+
+        return -1;
+    }
+
+    private static async Task TryAcknowledgeReceiptAsync(ITelegramBotClient botClient, long chatId, int messageId, CancellationToken ct)
+    {
+        try
+        {
+            // Telegram reaction API (setMessageReaction)
+            await botClient.SetMessageReaction(
+                chatId,
+                messageId,
+                reaction: new[] { new ReactionTypeEmoji { Emoji = "👀" } },
+                cancellationToken: ct).ConfigureAwait(false);
+        }
+        catch
+        {
+            // Best-effort acknowledgement; ignore.
+        }
+    }
+
+    private async Task TrySendVoiceReplyAsync(ITelegramBotClient botClient, long chatId, string text, CancellationToken ct)
+    {
+        if (_toolRegistry is null)
+        {
+            _logger.LogDebug("Telegram voice reply requested but no IToolRegistry is available.");
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return;
+        }
+
+        ToolResult tts;
+        try
+        {
+            tts = await _toolRegistry.ExecuteToolWithTrackingAsync(
+                _voiceOptions.SpeakToolName,
+                new Dictionary<string, object> { ["text"] = text },
+                agentId: TelegramAgentId,
+                agentRank: "interface",
+                agentName: "Telegram",
+                ct: ct).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Telegram voice reply: TTS tool invocation failed");
+            return;
+        }
+
+        if (!tts.Success || string.IsNullOrWhiteSpace(tts.Output) || !IOFile.Exists(tts.Output))
+        {
+            _logger.LogDebug("Telegram voice reply: TTS did not produce an output file. Success={Success} Error={Error}", tts.Success, tts.Error);
+            return;
+        }
+
+        var wavPath = tts.Output;
+        var oggPath = Path.ChangeExtension(wavPath, ".ogg");
+
+        try
+        {
+            // Prefer sending as a voice note (ogg/opus).
+            var converted = await TryConvertToOggOpusAsync(wavPath, oggPath, ct).ConfigureAwait(false);
+            var sendPath = converted ? oggPath : wavPath;
+
+            var fileInfo = new FileInfo(sendPath);
+            if (fileInfo.Length <= 0 || fileInfo.Length > _voiceOptions.MaxAudioBytes)
+            {
+                _logger.LogDebug(
+                    "Telegram voice reply: audio file size out of bounds. Path={Path} Bytes={Bytes} Max={Max}",
+                    sendPath,
+                    fileInfo.Length,
+                    _voiceOptions.MaxAudioBytes);
+                return;
+            }
+
+            await using var stream = IOFile.OpenRead(sendPath);
+
+            if (converted)
+            {
+                await botClient.SendVoice(
+                    chatId,
+                    InputFile.FromStream(stream, Path.GetFileName(sendPath)),
+                    cancellationToken: ct).ConfigureAwait(false);
+            }
+            else
+            {
+                // Fallback: send as a regular audio file if conversion failed.
+                await botClient.SendAudio(
+                    chatId,
+                    InputFile.FromStream(stream, Path.GetFileName(sendPath)),
+                    cancellationToken: ct).ConfigureAwait(false);
+            }
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Telegram voice reply: failed to send voice/audio");
+        }
+        finally
+        {
+            TryDeleteQuietly(oggPath);
+            // Leave the original wav in place (owned by TTS tool root directory); pruning handled elsewhere.
+        }
+    }
+
+    private static async Task<bool> TryConvertToOggOpusAsync(string inputWavPath, string outputOggPath, CancellationToken ct)
+    {
+        try
+        {
+            if (IOFile.Exists(outputOggPath))
+            {
+                IOFile.Delete(outputOggPath);
+            }
+
+            var psi = new ProcessStartInfo
+            {
+                FileName = "ffmpeg",
+                RedirectStandardError = true,
+                RedirectStandardOutput = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+
+            psi.ArgumentList.Add("-y");
+            psi.ArgumentList.Add("-i");
+            psi.ArgumentList.Add(inputWavPath);
+            psi.ArgumentList.Add("-c:a");
+            psi.ArgumentList.Add("libopus");
+            psi.ArgumentList.Add("-b:a");
+            psi.ArgumentList.Add("32k");
+            psi.ArgumentList.Add(outputOggPath);
+
+            using var process = Process.Start(psi);
+            if (process is null)
+            {
+                return false;
+            }
+
+            using var reg = ct.Register(() =>
+            {
+                try
+                {
+                    if (!process.HasExited)
+                    {
+                        process.Kill(entireProcessTree: true);
+                    }
+                }
+                catch
+                {
+                    // Ignore.
+                }
+            });
+
+            await process.WaitForExitAsync(ct).ConfigureAwait(false);
+
+            return process.ExitCode == 0 && IOFile.Exists(outputOggPath);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static void TryDeleteQuietly(string path)
+    {
+        try
+        {
+            if (IOFile.Exists(path))
+            {
+                IOFile.Delete(path);
+            }
+        }
+        catch
+        {
+            // Ignore.
         }
     }
 }

@@ -24,6 +24,12 @@ public sealed class TelegramOptionsValidator : IValidateOptions<TelegramOptions>
                 "⚠️ Telegram:AllowedUserIds is empty. All users will be able to interact with the bot (not recommended for production).");
         }
 
+        if (options.StartupNotificationChatId == 0 && options.AllowedUserIds.Length != 1)
+        {
+            _logger.LogInformation(
+                "Telegram startup notification is not configured. Set Telegram:StartupNotificationChatId (or configure exactly one AllowedUserIds for private-chat notification).");
+        }
+
         return ValidateOptionsResult.Success;
     }
 }

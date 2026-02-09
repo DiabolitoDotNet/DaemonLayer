@@ -49,6 +49,9 @@ public class AgentOrchestrator : BackgroundService
 
             _logger.LogInformation("✅ {MainAgent} is now active and listening", _options.MainAgentName);
 
+            // Bootstrap council/supervisor agents so delegation is possible immediately.
+            await BootstrapAgentsAsync(stoppingToken);
+
             // Keep the orchestrator running
             await Task.Delay(Timeout.Infinite, stoppingToken);
         }
@@ -168,6 +171,64 @@ public class AgentOrchestrator : BackgroundService
 
         await base.StopAsync(cancellationToken);
     }
+
+    private async Task BootstrapAgentsAsync(CancellationToken ct)
+    {
+        if (_options.BootstrapCouncilAgents != true)
+        {
+            return;
+        }
+
+        var bootstrap = _options.BootstrapAgents ?? new List<BootstrapAgentOptions>();
+        if (bootstrap.Count == 0)
+        {
+            return;
+        }
+
+        var parentId = _mainAgent?.Id;
+        var existingByName = _agentFactory
+            .GetAllAgents()
+            .GroupBy(a => a.Name, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+
+        var started = 0;
+        foreach (var spec in bootstrap)
+        {
+            ct.ThrowIfCancellationRequested();
+
+            if (spec is null || string.IsNullOrWhiteSpace(spec.Name))
+            {
+                continue;
+            }
+
+            if (existingByName.ContainsKey(spec.Name))
+            {
+                continue;
+            }
+
+            try
+            {
+                _logger.LogInformation("🜂 Summoning bootstrap agent: {Name} ({Rank})...", spec.Name, spec.Rank);
+                var agent = await _agentFactory.CreateAgentAsync(spec.Name, spec.Rank, parentId, ct);
+                await agent.StartAsync(ct);
+                started++;
+            }
+            catch (InvalidOperationException ex)
+            {
+                // Persona not found, or factory validation failure.
+                _logger.LogWarning(ex, "Bootstrap agent '{Name}' could not be created", spec.Name);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Bootstrap agent '{Name}' failed to start", spec.Name);
+            }
+        }
+
+        if (started > 0)
+        {
+            _logger.LogInformation("✅ Bootstrap complete | started={Started}", started);
+        }
+    }
 }
 
 public class HierarchyOptions
@@ -175,4 +236,33 @@ public class HierarchyOptions
     public int MaxAgentDepth { get; set; } = 4;
     public string MainAgentName { get; set; } = "Lucifer";
     public string MainAgentPersonaPath { get; set; } = "souls/lucifer.json";
+
+    /// <summary>
+    /// When enabled, the orchestrator will summon additional council/supervisor agents on startup
+    /// so the Supreme agent can delegate immediately.
+    /// </summary>
+    public bool BootstrapCouncilAgents { get; set; } = true;
+
+    /// <summary>
+    /// Logical name of the supervisor agent persona. Used by projection services to forward telemetry.
+    /// </summary>
+    public string SupervisorAgentName { get; set; } = "Orobas";
+
+    /// <summary>
+    /// Agents to summon at startup.
+    /// Defaults establish a council (Baal/Asmodeus/Vassago) plus Orobas for supervision.
+    /// </summary>
+    public List<BootstrapAgentOptions> BootstrapAgents { get; set; } = new()
+    {
+        new BootstrapAgentOptions { Name = "Baal", Rank = AgentRank.Prince },
+        new BootstrapAgentOptions { Name = "Asmodeus", Rank = AgentRank.Prince },
+        new BootstrapAgentOptions { Name = "Vassago", Rank = AgentRank.Duke },
+        new BootstrapAgentOptions { Name = "Orobas", Rank = AgentRank.Duke }
+    };
+}
+
+public sealed class BootstrapAgentOptions
+{
+    public string Name { get; set; } = string.Empty;
+    public AgentRank Rank { get; set; } = AgentRank.Worker;
 }

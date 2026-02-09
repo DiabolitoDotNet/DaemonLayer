@@ -26,7 +26,11 @@ public class BaseAgentTests
                 PublishedMessages.Add(message);
             }
 
-            FirstPublish.TrySetResult(message);
+            // Broadcast messages (ToAgentId == null) are noise for most unit tests.
+            if (!string.IsNullOrEmpty(message.ToAgentId))
+            {
+                FirstPublish.TrySetResult(message);
+            }
             return Task.CompletedTask;
         }
 

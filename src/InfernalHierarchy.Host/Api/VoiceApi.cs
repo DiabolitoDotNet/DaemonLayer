@@ -160,7 +160,19 @@ internal static class VoiceApi
                 return Results.StatusCode(StatusCodes.Status404NotFound);
             }
 
-            var req = await ctx.Request.ReadFromJsonAsync<VoiceCopilotRequest>(cancellationToken: ct);
+            VoiceCopilotRequest? req;
+            try
+            {
+                req = await ctx.Request.ReadFromJsonAsync<VoiceCopilotRequest>(cancellationToken: ct);
+            }
+            catch (System.Text.Json.JsonException)
+            {
+                return Results.BadRequest(new { error = "Invalid JSON body" });
+            }
+            catch (InvalidOperationException)
+            {
+                return Results.BadRequest(new { error = "Invalid JSON body" });
+            }
             if (req is null || string.IsNullOrWhiteSpace(req.Text))
             {
                 return Results.BadRequest(new { error = "Missing request body: text" });

@@ -46,4 +46,22 @@ public sealed class TelegramSendToolTests
         result.Metadata!["chat_id"].Should().Be(123L);
         result.Metadata["text"].Should().Be("hello");
     }
+
+    [Fact]
+    public async Task ExecuteAsync_ShouldSucceed_WhenUsingAliasKeys()
+    {
+        var tool = new TelegramSendTool(Mock.Of<ILogger<TelegramSendTool>>());
+
+        var result = await tool.ExecuteAsync(new Dictionary<string, object>
+        {
+            ["telegram_chat_id"] = 123L,
+            ["message"] = "hello"
+        });
+
+        result.Success.Should().BeTrue();
+        result.Output.Should().Contain("123");
+        result.Metadata.Should().NotBeNull();
+        result.Metadata!["chat_id"].Should().Be(123L);
+        result.Metadata["text"].Should().Be("hello");
+    }
 }

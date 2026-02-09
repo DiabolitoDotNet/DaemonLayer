@@ -148,9 +148,10 @@ public class TemplateService : ITemplateService
 
             // Create agent from factory
             var agent = await _agentFactory.CreateAgentAsync(
-                agentName,
+                persona,
                 template.RecommendedRank,
                 parentAgentId,
+                personaPath: $"template:{templateId}",
                 ct);
 
             if (agent == null)

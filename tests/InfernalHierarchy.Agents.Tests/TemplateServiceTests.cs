@@ -267,7 +267,12 @@ public sealed class TemplateServiceTests
 
         var agentFactory = new Mock<IAgentFactory>();
         agentFactory
-            .Setup(f => f.CreateAgentAsync("agent", AgentRank.Duke, "parent", It.IsAny<CancellationToken>()))
+            .Setup(f => f.CreateAgentAsync(
+                It.Is<Persona>(p => p.Name == "agent"),
+                AgentRank.Duke,
+                "parent",
+                "template:t1",
+                It.IsAny<CancellationToken>()))
             .ReturnsAsync(agent.Object);
 
         var skillTree = new Mock<ISkillTreeService>();

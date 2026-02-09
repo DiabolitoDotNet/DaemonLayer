@@ -199,6 +199,7 @@ public class ToolExecutionTests
     {
         // Arrange
         var mockFactory = new Mock<IAgentFactory>();
+        var mockPersonaLoader = new Mock<IPersonaLoader>();
         var mockLogger = new Mock<ILogger<CreateSubAgentTool>>();
 
         var mockAgent = new Mock<IAgent>();
@@ -206,14 +207,24 @@ public class ToolExecutionTests
         mockAgent.SetupGet(x => x.Name).Returns("TestAgent");
         mockAgent.Setup(x => x.StartAsync(It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
 
+        mockPersonaLoader
+            .Setup(x => x.LoadPersonaAsync("TestAgent", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Persona
+            {
+                Name = "TestAgent",
+                DemonTitle = "Test",
+                SystemPrompt = "You are TestAgent",
+                AvailableTools = new List<string> { "read_memory" }
+            });
+
         mockFactory.Setup(x => x.CreateAgentAsync(
             It.IsAny<string>(),
             It.IsAny<AgentRank>(),
-            It.IsAny<string>(),
+            It.IsAny<string?>(),
             It.IsAny<CancellationToken>()))
             .ReturnsAsync(mockAgent.Object);
 
-        var tool = new CreateSubAgentTool(mockFactory.Object, mockLogger.Object);
+        var tool = new CreateSubAgentTool(mockFactory.Object, mockPersonaLoader.Object, mockLogger.Object);
 
         var parameters = new Dictionary<string, object>
         {
@@ -231,25 +242,103 @@ public class ToolExecutionTests
     }
 
     [Fact]
-    public async Task CreateSubAgentTool_WithMissingPersonaName_ReturnsError()
+    public async Task CreateSubAgentTool_WithPersonaNameAlias_CreatesAgent()
     {
         // Arrange
         var mockFactory = new Mock<IAgentFactory>();
+        var mockPersonaLoader = new Mock<IPersonaLoader>();
         var mockLogger = new Mock<ILogger<CreateSubAgentTool>>();
-        var tool = new CreateSubAgentTool(mockFactory.Object, mockLogger.Object);
+
+        var mockAgent = new Mock<IAgent>();
+        mockAgent.SetupGet(x => x.Id).Returns("new_agent_id");
+        mockAgent.SetupGet(x => x.Name).Returns("TestAgent");
+        mockAgent.Setup(x => x.StartAsync(It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+
+        mockPersonaLoader
+            .Setup(x => x.LoadPersonaAsync("TestAgent", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Persona
+            {
+                Name = "TestAgent",
+                DemonTitle = "Test",
+                SystemPrompt = "You are TestAgent",
+                AvailableTools = new List<string> { "read_memory" }
+            });
+
+        mockFactory.Setup(x => x.CreateAgentAsync(
+                It.IsAny<string>(),
+                It.IsAny<AgentRank>(),
+                It.IsAny<string?>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(mockAgent.Object);
+
+        var tool = new CreateSubAgentTool(mockFactory.Object, mockPersonaLoader.Object, mockLogger.Object);
 
         var parameters = new Dictionary<string, object>
         {
-            { "rank", "Worker" }
+            { "personaName", "TestAgent" },
+            { "rank", "Duke" },
+            { "parentId", "parent1" }
         };
 
         // Act
         var result = await tool.ExecuteAsync(parameters, CancellationToken.None);
 
         // Assert
-        Assert.False(result.Success);
-        Assert.Contains("persona_name", result.Error ?? string.Empty, StringComparison.Ordinal);
-        mockFactory.Verify(x => x.CreateAgentAsync(It.IsAny<string>(), It.IsAny<AgentRank>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+        Assert.True(result.Success);
+        mockFactory.Verify(x => x.CreateAgentAsync("TestAgent", AgentRank.Duke, "parent1", It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task CreateSubAgentTool_WithMissingPersonaName_ReturnsError()
+    {
+        // Arrange
+        var mockFactory = new Mock<IAgentFactory>();
+        var mockPersonaLoader = new Mock<IPersonaLoader>();
+        var mockLogger = new Mock<ILogger<CreateSubAgentTool>>();
+        var mockAgent = new Mock<IAgent>();
+        mockAgent.SetupGet(x => x.Id).Returns("new_agent_id");
+        mockAgent.SetupGet(x => x.Name).Returns("WeatherWorker");
+        mockAgent.Setup(x => x.StartAsync(It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+
+        mockPersonaLoader
+            .Setup(x => x.LoadPersonaAsync("WeatherWorker", It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Persona?)null);
+
+        mockPersonaLoader
+            .Setup(x => x.LoadPersonaAsync("generic_worker", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Persona
+            {
+                Name = "generic_worker",
+                DemonTitle = "Generic Worker",
+                SystemPrompt = "Base system prompt",
+                AvailableTools = new List<string> { "web_search" },
+                Specializations = new List<string> { "general" },
+                Personality = new PersonalityTraits { Tone = "Neutral", Approach = "Methodical", Verbosity = 5, UseDemonicTheme = false }
+            });
+
+        mockFactory
+            .Setup(x => x.CreateAgentAsync(
+                It.Is<Persona>(p => p.Name == "WeatherWorker"),
+                AgentRank.Worker,
+                It.IsAny<string?>(),
+                It.IsAny<string?>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(mockAgent.Object);
+
+        var tool = new CreateSubAgentTool(mockFactory.Object, mockPersonaLoader.Object, mockLogger.Object);
+
+        var parameters = new Dictionary<string, object>
+        {
+            { "rank", "Worker" },
+            { "role", "WeatherWorker" }
+        };
+
+        // Act
+        var result = await tool.ExecuteAsync(parameters, CancellationToken.None);
+
+        // Assert
+        Assert.True(result.Success);
+        Assert.Contains("new_agent_id", result.Output, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -257,8 +346,28 @@ public class ToolExecutionTests
     {
         // Arrange
         var mockFactory = new Mock<IAgentFactory>();
+        var mockPersonaLoader = new Mock<IPersonaLoader>();
         var mockLogger = new Mock<ILogger<CreateSubAgentTool>>();
-        var tool = new CreateSubAgentTool(mockFactory.Object, mockLogger.Object);
+        var mockAgent = new Mock<IAgent>();
+        mockAgent.SetupGet(x => x.Id).Returns("new_agent_id");
+        mockAgent.SetupGet(x => x.Name).Returns("TestAgent");
+        mockAgent.Setup(x => x.StartAsync(It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+
+        mockPersonaLoader
+            .Setup(x => x.LoadPersonaAsync("TestAgent", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Persona
+            {
+                Name = "TestAgent",
+                DemonTitle = "Test",
+                SystemPrompt = "You are TestAgent",
+                AvailableTools = new List<string> { "read_memory" }
+            });
+
+        mockFactory
+            .Setup(x => x.CreateAgentAsync("TestAgent", AgentRank.Worker, It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(mockAgent.Object);
+
+        var tool = new CreateSubAgentTool(mockFactory.Object, mockPersonaLoader.Object, mockLogger.Object);
 
         var parameters = new Dictionary<string, object>
         {
@@ -269,9 +378,8 @@ public class ToolExecutionTests
         var result = await tool.ExecuteAsync(parameters, CancellationToken.None);
 
         // Assert
-        Assert.False(result.Success);
-        Assert.Contains("rank", result.Error ?? string.Empty, StringComparison.Ordinal);
-        mockFactory.Verify(x => x.CreateAgentAsync(It.IsAny<string>(), It.IsAny<AgentRank>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+        Assert.True(result.Success);
+        mockFactory.Verify(x => x.CreateAgentAsync("TestAgent", AgentRank.Worker, null, It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -279,8 +387,9 @@ public class ToolExecutionTests
     {
         // Arrange
         var mockFactory = new Mock<IAgentFactory>();
+        var mockPersonaLoader = new Mock<IPersonaLoader>();
         var mockLogger = new Mock<ILogger<CreateSubAgentTool>>();
-        var tool = new CreateSubAgentTool(mockFactory.Object, mockLogger.Object);
+        var tool = new CreateSubAgentTool(mockFactory.Object, mockPersonaLoader.Object, mockLogger.Object);
 
         var parameters = new Dictionary<string, object>
         {
@@ -302,6 +411,7 @@ public class ToolExecutionTests
     {
         // Arrange
         var mockFactory = new Mock<IAgentFactory>();
+        var mockPersonaLoader = new Mock<IPersonaLoader>();
         var mockLogger = new Mock<ILogger<CreateSubAgentTool>>();
 
         var mockAgent = new Mock<IAgent>();
@@ -309,14 +419,24 @@ public class ToolExecutionTests
         mockAgent.SetupGet(x => x.Name).Returns("TestAgent");
         mockAgent.Setup(x => x.StartAsync(It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
 
+        mockPersonaLoader
+            .Setup(x => x.LoadPersonaAsync("TestAgent", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Persona
+            {
+                Name = "TestAgent",
+                DemonTitle = "Test",
+                SystemPrompt = "You are TestAgent",
+                AvailableTools = new List<string> { "read_memory" }
+            });
+
         mockFactory.Setup(x => x.CreateAgentAsync(
                 It.IsAny<string>(),
                 It.IsAny<AgentRank>(),
-                It.IsAny<string>(),
+                It.IsAny<string?>(),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(mockAgent.Object);
 
-        var tool = new CreateSubAgentTool(mockFactory.Object, mockLogger.Object);
+        var tool = new CreateSubAgentTool(mockFactory.Object, mockPersonaLoader.Object, mockLogger.Object);
 
         var parameters = new Dictionary<string, object>
         {
@@ -337,16 +457,27 @@ public class ToolExecutionTests
     {
         // Arrange
         var mockFactory = new Mock<IAgentFactory>();
+        var mockPersonaLoader = new Mock<IPersonaLoader>();
         var mockLogger = new Mock<ILogger<CreateSubAgentTool>>();
+
+        mockPersonaLoader
+            .Setup(x => x.LoadPersonaAsync("TestAgent", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Persona
+            {
+                Name = "TestAgent",
+                DemonTitle = "Test",
+                SystemPrompt = "You are TestAgent",
+                AvailableTools = new List<string> { "read_memory" }
+            });
 
         mockFactory.Setup(x => x.CreateAgentAsync(
                 It.IsAny<string>(),
                 It.IsAny<AgentRank>(),
-                It.IsAny<string>(),
+                It.IsAny<string?>(),
                 It.IsAny<CancellationToken>()))
             .ThrowsAsync(new InvalidOperationException("factory failed"));
 
-        var tool = new CreateSubAgentTool(mockFactory.Object, mockLogger.Object);
+        var tool = new CreateSubAgentTool(mockFactory.Object, mockPersonaLoader.Object, mockLogger.Object);
 
         var parameters = new Dictionary<string, object>
         {
@@ -367,6 +498,7 @@ public class ToolExecutionTests
     {
         // Arrange
         var mockFactory = new Mock<IAgentFactory>();
+        var mockPersonaLoader = new Mock<IPersonaLoader>();
         var mockLogger = new Mock<ILogger<CreateSubAgentTool>>();
 
         var mockAgent = new Mock<IAgent>();
@@ -375,14 +507,24 @@ public class ToolExecutionTests
         mockAgent.Setup(x => x.StartAsync(It.IsAny<CancellationToken>()))
             .ThrowsAsync(new InvalidOperationException("start failed"));
 
+        mockPersonaLoader
+            .Setup(x => x.LoadPersonaAsync("TestAgent", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Persona
+            {
+                Name = "TestAgent",
+                DemonTitle = "Test",
+                SystemPrompt = "You are TestAgent",
+                AvailableTools = new List<string> { "read_memory" }
+            });
+
         mockFactory.Setup(x => x.CreateAgentAsync(
                 It.IsAny<string>(),
                 It.IsAny<AgentRank>(),
-                It.IsAny<string>(),
+                It.IsAny<string?>(),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(mockAgent.Object);
 
-        var tool = new CreateSubAgentTool(mockFactory.Object, mockLogger.Object);
+        var tool = new CreateSubAgentTool(mockFactory.Object, mockPersonaLoader.Object, mockLogger.Object);
 
         var parameters = new Dictionary<string, object>
         {
@@ -399,12 +541,77 @@ public class ToolExecutionTests
     }
 
     [Fact]
-    public async Task MemoryReadTool_WithMissingType_ReturnsError()
+    public async Task CreateSubAgentTool_WhenPersonaMissing_FallsBackToBasePersonaWithOverrides()
+    {
+        // Arrange
+        var mockFactory = new Mock<IAgentFactory>();
+        var mockPersonaLoader = new Mock<IPersonaLoader>();
+        var mockLogger = new Mock<ILogger<CreateSubAgentTool>>();
+
+        var basePersona = new Persona
+        {
+            Name = "generic_worker",
+            DemonTitle = "Generic Worker",
+            SystemPrompt = "Base system prompt",
+            AvailableTools = new List<string> { "web_search" },
+            Specializations = new List<string> { "general" },
+            Personality = new PersonalityTraits { Tone = "Neutral", Approach = "Methodical", Verbosity = 5, UseDemonicTheme = false }
+        };
+
+        var mockAgent = new Mock<IAgent>();
+        mockAgent.SetupGet(x => x.Id).Returns("new_agent_id");
+        mockAgent.SetupGet(x => x.Name).Returns("MeteoAgent");
+        mockAgent.Setup(x => x.StartAsync(It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+
+        mockPersonaLoader
+            .Setup(x => x.LoadPersonaAsync("MeteoAgent", It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Persona?)null);
+
+        mockPersonaLoader
+            .Setup(x => x.LoadPersonaAsync("generic_worker", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(basePersona);
+
+        mockFactory
+            .Setup(x => x.CreateAgentAsync(
+                It.Is<Persona>(p =>
+                    p.Name == "MeteoAgent" &&
+                    p.SystemPrompt != null &&
+                    p.SystemPrompt.Contains("Weather forecasting specialist", StringComparison.OrdinalIgnoreCase)),
+                AgentRank.Worker,
+                It.IsAny<string?>(),
+                It.Is<string?>(pp => pp != null && pp.Contains("souls/generic_worker.json", StringComparison.OrdinalIgnoreCase)),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(mockAgent.Object);
+
+        var tool = new CreateSubAgentTool(mockFactory.Object, mockPersonaLoader.Object, mockLogger.Object);
+
+        var parameters = new Dictionary<string, object>
+        {
+            { "persona_name", "MétéoAgent" },
+            { "rank", "Worker" },
+            { "base_persona", "generic_worker" },
+            { "role", "Weather forecasting specialist" }
+        };
+
+        // Act
+        var result = await tool.ExecuteAsync(parameters, CancellationToken.None);
+
+        // Assert
+        Assert.True(result.Success);
+        mockFactory.VerifyAll();
+    }
+
+    [Fact]
+    public async Task MemoryReadTool_WithMissingType_DefaultsToFacts()
     {
         // Arrange
         var mockMemory = new Mock<ISharedMemory>();
         var mockLogger = new Mock<ILogger<MemoryReadTool>>();
         var tool = new MemoryReadTool(mockMemory.Object, mockLogger.Object);
+
+        mockMemory
+            .Setup(x => x.GetVisibleFactsAsync("unknown", AgentRank.Worker, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Array.Empty<Fact>());
 
         var parameters = new Dictionary<string, object>();
 
@@ -412,8 +619,11 @@ public class ToolExecutionTests
         var result = await tool.ExecuteAsync(parameters, CancellationToken.None);
 
         // Assert
-        Assert.False(result.Success);
-        Assert.Contains("type", result.Error ?? string.Empty, StringComparison.Ordinal);
+        Assert.True(result.Success);
+        Assert.Contains("No facts", result.Output ?? string.Empty, StringComparison.OrdinalIgnoreCase);
+        Assert.NotNull(result.Metadata);
+        Assert.True(result.Metadata!.TryGetValue("type", out var typeObj));
+        Assert.Equal("facts", typeObj?.ToString());
     }
 
     [Fact]

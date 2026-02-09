@@ -1,6 +1,7 @@
 using InfernalHierarchy.Agents.Registry;
 using InfernalHierarchy.Agents.ReAct;
 using InfernalHierarchy.Tools;
+using InfernalHierarchy.Core.Utilities;
 
 namespace InfernalHierarchy.Agents;
 
@@ -187,12 +188,18 @@ public class AgentFactory : IAgentFactory
     {
         _logger.LogInformation("🔨 Creating agent: {PersonaName} with rank {Rank}", personaName, rank);
 
+        var personaKey = KeyNormalization.NormalizePersonaKey(personaName);
+
         // Load persona
         var persona = await _personaLoader.LoadPersonaAsync(personaName, ct);
         if (persona == null)
         {
             throw new InvalidOperationException($"Persona '{personaName}' not found");
         }
+
+        persona.Name = personaName;
+
+        return await CreateAgentAsync(persona, rank, parentId, personaPath: $"souls/{personaKey}.json", ct);
 
         // Create agent entity
         var agentEntity = new Agent
@@ -201,7 +208,7 @@ public class AgentFactory : IAgentFactory
             Name = personaName,
             Rank = rank,
             ParentAgentId = parentId,
-            PersonaPath = $"souls/{personaName.ToLower()}.json",
+            PersonaPath = $"souls/{personaKey}.json",
             Status = AgentStatus.Idle,
             CreatedAt = DateTime.UtcNow
         };
@@ -248,6 +255,69 @@ public class AgentFactory : IAgentFactory
         RegisterAgent(agent);
 
         return agent;
+    }
+
+    public Task<IAgent> CreateAgentAsync(Persona persona, AgentRank rank, string? parentId = null, string? personaPath = null, CancellationToken ct = default)
+    {
+        if (persona == null) throw new ArgumentNullException(nameof(persona));
+
+        var personaKey = KeyNormalization.NormalizePersonaKey(persona.Name);
+        var resolvedPersonaPath = string.IsNullOrWhiteSpace(personaPath)
+            ? $"souls/{personaKey}.json"
+            : personaPath;
+
+        _logger.LogInformation("🔨 Creating agent from dynamic persona: {PersonaName} with rank {Rank} (PersonaPath={PersonaPath})", persona.Name, rank, resolvedPersonaPath);
+
+        var agentEntity = new Agent
+        {
+            Id = Guid.NewGuid().ToString(),
+            Name = persona.Name,
+            Rank = rank,
+            ParentAgentId = parentId,
+            PersonaPath = resolvedPersonaPath,
+            Status = AgentStatus.Idle,
+            CreatedAt = DateTime.UtcNow
+        };
+
+        var agent = new ReActAgent(
+            agentEntity,
+            persona,
+            _messageBus,
+            _sharedMemory,
+            _toolRegistry,
+            this,
+            _ollamaClient,
+            _loggerFactory.CreateLogger<ReActAgent>(),
+            _eventSink,
+            _vectorMemory,
+            _ragOptions,
+            _reActOptions,
+            _critiqueOptions,
+            _tokenUsageTracker,
+            _multiModelLlmClient,
+            _collaborationService,
+            _actionParser,
+            _actionInputParser,
+            _actionExecutor,
+            _reportGenerator,
+            _promptBuilder,
+            _loopRunner,
+            _taskProcessor);
+
+        TryAppendAgentEvent(
+            agentEntity.Id,
+            EventType.AgentCreated,
+            $"Agent created: {agentEntity.Name} ({agentEntity.Rank})",
+            new Dictionary<string, object>
+            {
+                ["name"] = agentEntity.Name,
+                ["rank"] = agentEntity.Rank.ToString(),
+                ["parent_agent_id"] = agentEntity.ParentAgentId ?? string.Empty,
+                ["persona_path"] = agentEntity.PersonaPath
+            });
+
+        RegisterAgent(agent);
+        return Task.FromResult<IAgent>(agent);
     }
 
     public IAgent? GetAgent(string agentId) => _registry.GetAgent(agentId);

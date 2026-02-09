@@ -249,7 +249,7 @@ public class PromptAbTestTool : ITool
 
     public async Task<ToolResult> ExecuteAsync(Dictionary<string, object> parameters, CancellationToken ct = default)
     {
-        if (!TryGetString(parameters, "task", out var task) || string.IsNullOrWhiteSpace(task))
+        if (!TryGetStringAny(parameters, out var task, "task", "prompt", "instruction") || string.IsNullOrWhiteSpace(task))
         {
             return new ToolResult { Success = false, Error = "Missing required parameter: task" };
         }
@@ -310,6 +310,22 @@ public class PromptAbTestTool : ITool
                 ["trials"] = trials
             }
         };
+    }
+
+    private static bool TryGetStringAny(Dictionary<string, object> parameters, out string value, params string[] keys)
+    {
+        value = string.Empty;
+
+        foreach (var key in keys)
+        {
+            if (TryGetString(parameters, key, out var parsed) && !string.IsNullOrWhiteSpace(parsed))
+            {
+                value = parsed;
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private async Task<VariantResult> RunVariantAsync(

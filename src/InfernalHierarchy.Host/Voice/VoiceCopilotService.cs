@@ -26,11 +26,15 @@ public sealed class VoiceCopilotService
     private static readonly Regex MarkdownBulletsRegex = new("^(\\s*[-*+]\\s+)", RegexOptions.Compiled | RegexOptions.Multiline);
     private static readonly Regex MarkdownHeadingRegex = new("^(\\s*#{1,6}\\s+)", RegexOptions.Compiled | RegexOptions.Multiline);
     private static readonly Regex MultiWhitespaceRegex = new("\\s{2,}", RegexOptions.Compiled);
+    private static readonly Regex ReasoningLikeRegex = new(
+        "(\\bje dois\\b|\\bl'utilisateur\\b|\\bc'est clair\\b|\\bil veut\\b|\\bcontraintes?\\b|\\bréponse\\s+concise\\b|\\bje vais\\b|\\bje vais\\b|\\bje vais\\b)",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
     private readonly IOptions<VoiceCopilotOptions> _options;
     private readonly ILlmClient _llm;
     private readonly IStreamingLlmClient? _streamingLlm;
     private readonly ITunableLlmClient? _tunableLlm;
+    private readonly ILogger<VoiceCopilotService> _logger;
 
     private readonly ConcurrentDictionary<string, SessionState> _sessions = new();
     private DateTime _lastPruneUtc = DateTime.MinValue;
@@ -44,7 +48,7 @@ public sealed class VoiceCopilotService
         _llm = llm;
         _streamingLlm = llm as IStreamingLlmClient;
         _tunableLlm = llm as ITunableLlmClient;
-        _ = logger;
+        _logger = logger;
     }
 
     public async Task<VoiceCopilotResult> GetReplyAsync(
@@ -141,7 +145,26 @@ public sealed class VoiceCopilotService
             }
         }
 
-        return sb.ToString();
+        var streamed = sb.ToString();
+        if (!string.IsNullOrWhiteSpace(streamed))
+        {
+            return streamed;
+        }
+
+        // Some models/servers can stream only non-user-visible fields (e.g., reasoning) or otherwise produce
+        // no content chunks. Fall back to a non-streaming completion so we still return a usable reply.
+        _logger.LogWarning("Streaming completion yielded no content; falling back to non-streaming completion.");
+        if (_tunableLlm is null)
+        {
+            return await _llm.GetCompletionAsync(systemPrompt, userMessage, ct).ConfigureAwait(false);
+        }
+
+        return await _tunableLlm.GetCompletionWithOptionsAsync(
+            systemPrompt,
+            userMessage,
+            temperature: options.Temperature,
+            maxTokens: options.MaxTokens,
+            ct: ct).ConfigureAwait(false);
     }
 
     private static string BuildSystemPrompt(VoiceCopilotOptions options, List<(string Role, string Content)> history)
@@ -178,13 +201,30 @@ public sealed class VoiceCopilotService
         var t = raw ?? string.Empty;
         t = t.Trim();
 
+        if (string.IsNullOrWhiteSpace(t))
+        {
+            return "Peux-tu préciser ?";
+        }
+
+        // Avoid returning model "thinking" / meta commentary (common with reasoning models).
+        // We prefer a safe, user-facing, short question over leaking chain-of-thought.
+        if (LooksLikeReasoningOrMeta(t))
+        {
+            return "Bonjour ! Comment puis-je t’aider ?";
+        }
+
         // Keep it short.
         if (options.MaxReplyChars > 0 && t.Length > options.MaxReplyChars)
         {
-            t = t.Substring(0, options.MaxReplyChars).Trim();
+            t = TruncateAtWordBoundary(t, options.MaxReplyChars);
         }
 
         t = t.Trim('"', '\'', ' ', '\n', '\r', '\t');
+
+        if (string.IsNullOrWhiteSpace(t))
+        {
+            return "Peux-tu préciser ?";
+        }
 
         // Ensure it ends with a question.
         if (!t.EndsWith("?", StringComparison.Ordinal))
@@ -193,6 +233,27 @@ public sealed class VoiceCopilotService
         }
 
         return t;
+    }
+
+    private static bool LooksLikeReasoningOrMeta(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return false;
+        if (value.Contains("\n", StringComparison.Ordinal)) return true;
+        return ReasoningLikeRegex.IsMatch(value);
+    }
+
+    private static string TruncateAtWordBoundary(string value, int maxChars)
+    {
+        if (string.IsNullOrEmpty(value) || maxChars <= 0 || value.Length <= maxChars) return value;
+
+        var slice = value.Substring(0, maxChars);
+        var lastSpace = slice.LastIndexOf(' ');
+        if (lastSpace <= Math.Max(10, maxChars / 4))
+        {
+            return slice.Trim();
+        }
+
+        return slice.Substring(0, lastSpace).Trim();
     }
 
     private static string SanitizeForSpeech(string text, VoiceCopilotOptions options)

@@ -21,7 +21,7 @@ public sealed class DefaultActionParser : IActionParser
         }
 
         var thought = ExtractSection(response, "Thought");
-        var action = ExtractSection(response, "Action");
+        var action = NormalizeActionName(ExtractSection(response, "Action"));
         var actionInput = ExtractSection(response, "Action Input");
 
         if (string.IsNullOrWhiteSpace(action))
@@ -96,7 +96,7 @@ public sealed class DefaultActionParser : IActionParser
             }
 
             var root = doc.RootElement;
-            var action = root.TryGetProperty("action", out var actionProp) ? actionProp.GetString() : null;
+            var action = root.TryGetProperty("action", out var actionProp) ? NormalizeActionName(actionProp.GetString() ?? string.Empty) : null;
             if (string.IsNullOrWhiteSpace(action))
             {
                 return false;
@@ -107,7 +107,19 @@ public sealed class DefaultActionParser : IActionParser
             string actionInputText = string.Empty;
             Dictionary<string, object>? actionInputObject = null;
 
-            if (root.TryGetProperty("actionInput", out var inputProp))
+            if (!TryGetAnyProperty(root, out var inputProp,
+                    "actionInput",
+                    "action_input",
+                    "actionInputText",
+                    "action_input_text",
+                    "finalAnswer",
+                    "final_answer",
+                    "answer"))
+            {
+                inputProp = default;
+            }
+
+            if (inputProp.ValueKind != JsonValueKind.Undefined)
             {
                 if (inputProp.ValueKind == JsonValueKind.Object)
                 {
@@ -136,5 +148,71 @@ public sealed class DefaultActionParser : IActionParser
         {
             return false;
         }
+    }
+
+    private static string NormalizeActionName(string action)
+    {
+        if (string.IsNullOrWhiteSpace(action))
+        {
+            return string.Empty;
+        }
+
+        var trimmed = action.Trim();
+        trimmed = trimmed.Trim('`', '*', '_', '-', '>', '"', '\'', ' ', '\t');
+
+        if (string.IsNullOrWhiteSpace(trimmed))
+        {
+            return string.Empty;
+        }
+
+        var tokens = trimmed
+            .Split(new[] { ' ', '\t', '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(t => t.Trim('`', '*', '_', '-', '>', '"', '\'', '.', ':', ';', ',', '!', '?', '(', ')', '[', ']', '{', '}'))
+            .Where(t => !string.IsNullOrWhiteSpace(t))
+            .ToArray();
+
+        if (tokens.Length == 0)
+        {
+            return string.Empty;
+        }
+
+        // Prefer an identifier-like token that matches our tool naming convention (underscored).
+        foreach (var token in tokens)
+        {
+            if (token.Equals("FINAL_ANSWER", StringComparison.OrdinalIgnoreCase))
+            {
+                return "FINAL_ANSWER";
+            }
+
+            if (token.Contains('_', StringComparison.Ordinal) && Regex.IsMatch(token, "^[A-Za-z][A-Za-z0-9_]*$"))
+            {
+                return token;
+            }
+        }
+
+        // Fallback: first identifier-ish token.
+        foreach (var token in tokens)
+        {
+            if (Regex.IsMatch(token, "^[A-Za-z][A-Za-z0-9_]*$"))
+            {
+                return token;
+            }
+        }
+
+        return tokens[0];
+    }
+
+    private static bool TryGetAnyProperty(JsonElement root, out JsonElement value, params string[] names)
+    {
+        foreach (var name in names)
+        {
+            if (root.TryGetProperty(name, out value))
+            {
+                return true;
+            }
+        }
+
+        value = default;
+        return false;
     }
 }

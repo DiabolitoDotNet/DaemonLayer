@@ -17,6 +17,17 @@ public interface IAgentFactory
     Task<IAgent> CreateAgentAsync(string personaName, AgentRank rank, string? parentId = null, CancellationToken ct = default);
 
     /// <summary>
+    /// Creates an agent instance from an in-memory persona (no <c>souls/*.json</c> file required).
+    /// This is used for dynamically specialized workers based on a generic persona template.
+    /// </summary>
+    /// <param name="persona">Persona to use for the agent instance (its <see cref="Persona.Name"/> is used as the agent display name).</param>
+    /// <param name="rank">Rank to assign to the agent instance.</param>
+    /// <param name="parentId">Optional parent agent id for hierarchical tracking.</param>
+    /// <param name="personaPath">Optional persona identifier to store on the agent identity model (for observability/migration).</param>
+    /// <param name="ct">Cancellation token.</param>
+    Task<IAgent> CreateAgentAsync(Persona persona, AgentRank rank, string? parentId = null, string? personaPath = null, CancellationToken ct = default);
+
+    /// <summary>
     /// Gets an active agent by id, if it exists.
     /// </summary>
     IAgent? GetAgent(string agentId);

@@ -8,9 +8,11 @@ using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
 using Serilog;
 using InfernalHierarchy.Host.Docs;
+using InfernalHierarchy.Host.Agents;
 using InfernalHierarchy.Host.Migration;
 using InfernalHierarchy.Host.Personas;
 using InfernalHierarchy.Host.Telegram;
+using InfernalHierarchy.Tools.Options;
 
 namespace InfernalHierarchy.Host.Infrastructure;
 
@@ -30,7 +32,11 @@ internal static class HostDependencyInjection
             .Enrich.With(toolContextEnricher)
             .CreateLogger();
 
-        builder.Services.AddSerilog();
+        // Avoid duplicate console log output by removing the default providers
+        // before adding Serilog as the sole logging pipeline.
+        builder.Logging.ClearProviders();
+
+        builder.Host.UseSerilog(Log.Logger, dispose: true);
 
         builder.Services.AddSingleton(agentContextEnricher);
         builder.Services.AddSingleton(messageContextEnricher);
@@ -43,6 +49,8 @@ internal static class HostDependencyInjection
         builder.Services.AddSingleton<IValidateOptions<TelegramOptions>, TelegramOptionsValidator>();
         builder.Services.AddSingleton<IPostConfigureOptions<TelegramOptions>, TelegramDockerSecretsPostConfigureOptions>();
         builder.Services.AddSingleton<IPostConfigureOptions<EmailNotificationOptions>, EmailDockerSecretsPostConfigureOptions>();
+        builder.Services.AddSingleton<IPostConfigureOptions<GitHubPublisherOptions>, GitHubPublisherDockerSecretsPostConfigureOptions>();
+        builder.Services.AddSingleton<IPostConfigureOptions<BraveSearchOptions>, BraveSearchDockerSecretsPostConfigureOptions>();
         builder.Services.AddSingleton<IValidateOptions<MemoryOptions>, MemoryOptionsValidator>();
         builder.Services.AddSingleton<IValidateOptions<HierarchyOptions>, HierarchyOptionsValidator>();
         builder.Services.AddSingleton<IValidateOptions<SearXNGOptions>, SearXngOptionsValidator>();
@@ -166,6 +174,7 @@ internal static class HostDependencyInjection
         builder.Services.AddSingleton<LiteDbSharedMemory>();
         builder.Services.AddSingleton<ISharedMemory>(sp => sp.GetRequiredService<LiteDbSharedMemory>());
         builder.Services.AddSingleton<IToolResultCacheStore>(sp => sp.GetRequiredService<LiteDbSharedMemory>());
+        builder.Services.AddSingleton<ICustomToolStore>(sp => sp.GetRequiredService<LiteDbSharedMemory>());
     }
 
     private static void AddPersonaAndDocsServices(WebApplicationBuilder builder)
@@ -180,6 +189,7 @@ internal static class HostDependencyInjection
     {
         builder.Services.AddSingleton<AgentRegistry>();
         builder.Services.AddSingleton<IAgentRegistry>(sp => sp.GetRequiredService<AgentRegistry>());
+        builder.Services.AddHostedService<AgentStatusChangeProjectionService>();
         // ReAct SRP services
         builder.Services.AddSingleton<IActionParser, DefaultActionParser>();
         builder.Services.AddSingleton<IActionInputParser>(sp =>
@@ -303,18 +313,26 @@ internal static class HostDependencyInjection
     private static void AddToolHttpClients(WebApplicationBuilder builder)
     {
         builder.Services.AddHttpClient(nameof(HttpRequestTool));
+        builder.Services.AddHttpClient(nameof(PublishCustomToolsToGitHubTool));
     }
 
     private static void AddToolImplementations(WebApplicationBuilder builder)
     {
+        builder.Services.AddSingleton<ICustomToolCompiler, RoslynCustomToolCompiler>();
+        builder.Services.AddSingleton<ICustomToolSecurityPolicy, DefaultCustomToolSecurityPolicy>();
+
         builder.Services.AddSingleton<ITool, CreateSubAgentTool>();
+        builder.Services.AddSingleton<ITool, GetAgentStatusTool>();
         builder.Services.AddSingleton<ITool, MemoryReadTool>();
         builder.Services.AddSingleton<ITool, MemoryWriteTool>();
         builder.Services.AddSingleton<ITool, RequestCollaborationTool>();
         builder.Services.AddSingleton<ITool, TelegramSendTool>();
+        builder.Services.AddSingleton<ITool, CreateCustomToolTool>();
+        builder.Services.AddSingleton<ITool, PublishCustomToolsToGitHubTool>();
         builder.Services.AddSingleton<ITool, CreateAgentFromTemplateTool>();
         builder.Services.AddSingleton<ITool, ListTemplatesTool>();
         builder.Services.AddSingleton<ITool, PromptAbTestTool>();
+        builder.Services.AddSingleton<ITool, SendAgentMessageTool>();
         builder.Services.AddSingleton<ITool, EmailNotificationTool>();
         builder.Services.AddSingleton<ITool, FileReadTool>();
         builder.Services.AddSingleton<ITool, FileWriteTool>();
@@ -331,6 +349,7 @@ internal static class HostDependencyInjection
         builder.Services.AddHostedService<TextToSpeechWarmupService>();
         builder.Services.AddHostedService<ToolCacheStartupService>();
         builder.Services.AddHostedService<ToolRegistrationService>();
+        builder.Services.AddHostedService<CustomToolsStartupService>();
         builder.Services.AddHostedService<ToolMarketplaceHostedService>();
     }
 

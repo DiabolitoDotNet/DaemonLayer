@@ -284,16 +284,15 @@ public sealed class PerformanceMonitorTests : IDisposable
         // Act
         var snapshot1 = _sut.GetCurrentSnapshot();
 
-        // Force some memory allocation
-        var largeArray = new byte[1024 * 1024 * 10]; // 10MB
+        // Update a deterministic input between calls.
+        // GC memory metrics are inherently non-deterministic across runs (GC may run and memory can decrease).
+        const double updatedCpuUsage = 42.42;
+        _metricsCollector.SetGauge("system.cpu.usage.percent", updatedCpuUsage);
 
         var snapshot2 = _sut.GetCurrentSnapshot();
 
-        // Assert - Managed memory should be higher in second snapshot
-        snapshot2.GcTotalMemoryMB.Should().BeGreaterThan(snapshot1.GcTotalMemoryMB);
-
-        // Cleanup
-        GC.KeepAlive(largeArray);
+        // Assert
+        snapshot2.CpuUsagePercent.Should().Be(updatedCpuUsage);
     }
 
     [Fact]

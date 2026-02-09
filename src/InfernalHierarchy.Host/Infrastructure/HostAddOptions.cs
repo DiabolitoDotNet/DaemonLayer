@@ -61,6 +61,12 @@ internal static class HostAddOptions
         builder.Services.AddOptions<ToolResultCacheOptions>()
             .Bind(builder.Configuration.GetSection("ToolCache"))
             .ValidateOnStart();
+        builder.Services.AddOptions<CustomToolsOptions>()
+            .Bind(builder.Configuration.GetSection("CustomTools"))
+            .ValidateOnStart();
+        builder.Services.AddOptions<GitHubPublisherOptions>()
+            .Bind(builder.Configuration.GetSection("GitHubPublisher"))
+            .ValidateOnStart();
         builder.Services.AddOptions<FileSystemToolOptions>()
             .Bind(builder.Configuration.GetSection("FileSystem"))
             .ValidateOnStart();

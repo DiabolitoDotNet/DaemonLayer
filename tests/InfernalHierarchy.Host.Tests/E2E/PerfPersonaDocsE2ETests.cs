@@ -228,8 +228,8 @@ public sealed class PerfPersonaDocsE2ETests
             overwritePersona = true,
         });
 
-        importRes.EnsureSuccessStatusCode();
         var importText = await importRes.Content.ReadAsStringAsync();
+        importRes.IsSuccessStatusCode.Should().BeTrue($"Import failed: {(int)importRes.StatusCode} {importRes.StatusCode} | {importText}");
         importText.Should().Contain("agentId");
         importText.Should().Contain("imported_test_agent");
     }

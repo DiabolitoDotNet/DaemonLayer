@@ -412,6 +412,60 @@ public class ReActAgentAdditionalCoverageTests
     }
 
     [Fact]
+    public async Task ProcessTaskAsync_WhenActionContainsMarkdown_NormalizesToToolName()
+    {
+        var agent = CreateAgent();
+        var persona = CreatePersona("web_search");
+
+        var memory = new Mock<ISharedMemory>();
+        memory.Setup(x => x.GetRecentDecisionsAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Array.Empty<Decision>());
+        memory.Setup(x => x.AddDecisionAsync(It.IsAny<Decision>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        var toolRegistry = new Mock<IToolRegistry>();
+        toolRegistry.Setup(x => x.GetTool("web_search")).Returns(Mock.Of<ITool>());
+        toolRegistry.Setup(x => x.ExecuteToolWithTrackingAsync(
+                "web_search",
+                It.IsAny<Dictionary<string, object>>(),
+                agent.Id,
+                agent.Rank.ToString(),
+                It.IsAny<string?>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ToolResult { Success = true, Output = "search ok" });
+
+        var llm = new Mock<ILlmClient>();
+        llm.SetupSequence(x => x.GetCompletionAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync("Thought: search\nAction: ** Use web_search with query\nAction Input: {\"query\":\"hello\"}")
+            .ReturnsAsync("Thought: done\nAction: FINAL_ANSWER\nAction Input: ok");
+
+        var sut = new ReActAgent(
+            agent,
+            persona,
+            Mock.Of<IMessageBus>(),
+            memory.Object,
+            toolRegistry.Object,
+            Mock.Of<IAgentFactory>(),
+            llm.Object,
+            Mock.Of<ILogger<ReActAgent>>(),
+            eventSink: null,
+            vectorMemory: null,
+            ragOptions: new RagOptions { Enabled = false },
+            reActOptions: new ReActOptions { UseJsonResponse = false });
+
+        var response = await sut.ProcessTaskAsync(new AgentMessage
+        {
+            FromAgentId = "sender",
+            ToAgentId = agent.Id,
+            Type = MessageType.Task,
+            Content = "do thing"
+        }, CancellationToken.None);
+
+        response.Content.Should().Be("ok");
+        toolRegistry.VerifyAll();
+    }
+
+    [Fact]
     public async Task ProcessTaskAsync_WhenJsonResponseInsideCodeFence_IsParsed()
     {
         var agent = CreateAgent();

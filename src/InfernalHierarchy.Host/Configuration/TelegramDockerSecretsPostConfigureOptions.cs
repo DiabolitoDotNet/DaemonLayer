@@ -8,6 +8,7 @@ public sealed class TelegramDockerSecretsPostConfigureOptions : IPostConfigureOp
     private const string DefaultDockerSecretsRoot = "/run/secrets";
     private const string BotTokenSecretName = "telegram_bot_token";
     private const string AllowedUserIdsSecretName = "telegram_user_ids";
+    private const string LuciferPreambleSecretName = "telegram_lucifer_preamble";
 
     private readonly IConfiguration _configuration;
     private readonly ILogger<TelegramDockerSecretsPostConfigureOptions> _logger;
@@ -41,6 +42,38 @@ public sealed class TelegramDockerSecretsPostConfigureOptions : IPostConfigureOp
         if (options.AllowedUserIds.Length == 0)
         {
             TryLoadAllowedUserIdsFromSecret(rootPath, options);
+        }
+
+        if (string.IsNullOrWhiteSpace(options.LuciferPreamble))
+        {
+            TryLoadLuciferPreambleFromSecret(rootPath, options);
+        }
+    }
+
+    private void TryLoadLuciferPreambleFromSecret(string rootPath, TelegramOptions options)
+    {
+        var path = Path.Combine(rootPath, LuciferPreambleSecretName);
+
+        if (!File.Exists(path))
+        {
+            return;
+        }
+
+        try
+        {
+            var preamble = File.ReadAllText(path).Trim();
+            if (string.IsNullOrWhiteSpace(preamble))
+            {
+                _logger.LogWarning("Docker secret {Path} exists but is empty", path);
+                return;
+            }
+
+            options.LuciferPreamble = preamble;
+            _logger.LogInformation("Loaded Telegram Lucifer preamble from docker secret {Path}", path);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to read Telegram Lucifer preamble from docker secret {Path}", path);
         }
     }
 

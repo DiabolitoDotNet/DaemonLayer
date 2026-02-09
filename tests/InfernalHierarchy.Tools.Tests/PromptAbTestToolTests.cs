@@ -108,6 +108,39 @@ public class PromptAbTestToolTests
     }
 
     [Fact]
+    public async Task ExecuteAsync_WithPromptAlias_UsesItAsTaskAsync()
+    {
+        var llm = new Mock<ILlmClient>();
+        llm.Setup(x => x.GetCompletionAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync("ok");
+
+        var personas = new Mock<IPersonaLoader>();
+        var logger = Mock.Of<ILogger<PromptAbTestTool>>();
+
+        var tool = new PromptAbTestTool(llm.Object, personas.Object, logger);
+
+        var variantsJson = "[" +
+                           "{\"name\":\"A\",\"system_prompt\":\"You are VariantA\"}," +
+                           "{\"name\":\"B\",\"system_prompt\":\"You are VariantB\"}" +
+                           "]";
+
+        var parameters = new Dictionary<string, object>
+        {
+            ["prompt"] = "Return a result",
+            ["trials"] = 1,
+            ["variants_json"] = variantsJson
+        };
+
+        var result = await tool.ExecuteAsync(parameters, CancellationToken.None);
+
+        result.Success.Should().BeTrue();
+
+        using var doc = JsonDocument.Parse(result.Output);
+        doc.RootElement.GetProperty("task").GetString().Should().Be("Return a result");
+        doc.RootElement.GetProperty("results").GetArrayLength().Should().Be(2);
+    }
+
+    [Fact]
     public async Task ExecuteAsync_WithVariantsAsJsonElement_ParsesArrayAsync()
     {
         var llm = new Mock<ILlmClient>();

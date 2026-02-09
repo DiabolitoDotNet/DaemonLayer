@@ -1,5 +1,6 @@
 using InfernalHierarchy.Agents.ReAct;
 using InfernalHierarchy.Agents.Registry;
+using InfernalHierarchy.Core.Utilities;
 
 namespace InfernalHierarchy.Agents.Factory;
 
@@ -150,6 +151,8 @@ public class AgentFactory : IAgentFactory
     {
         _logger.LogInformation("🔨 Creating agent: {PersonaName} with rank {Rank}", personaName, rank);
 
+        var personaKey = KeyNormalization.NormalizePersonaKey(personaName);
+
         // Load persona
         var persona = await _personaLoader.LoadPersonaAsync(personaName, ct);
         if (persona == null)
@@ -157,22 +160,45 @@ public class AgentFactory : IAgentFactory
             throw new InvalidOperationException($"Persona '{personaName}' not found");
         }
 
+        // Ensure persona name is consistent with requested name
+        persona.Name = personaName;
+
+        return CreateAgentFromPersona(persona, personaKey, rank, parentId);
+    }
+
+    public Task<IAgent> CreateAgentAsync(Persona persona, AgentRank rank, string? parentId = null, string? personaPath = null, CancellationToken ct = default)
+    {
+        if (persona == null) throw new ArgumentNullException(nameof(persona));
+
+        var personaKey = KeyNormalization.NormalizePersonaKey(persona.Name);
+        var resolvedPersonaPath = string.IsNullOrWhiteSpace(personaPath)
+            ? $"souls/{personaKey}.json"
+            : personaPath;
+
+        _logger.LogInformation("🔨 Creating agent from dynamic persona: {PersonaName} with rank {Rank} (PersonaPath={PersonaPath})", persona.Name, rank, resolvedPersonaPath);
+
+        return Task.FromResult(CreateAgentFromPersona(persona, personaKey, rank, parentId, resolvedPersonaPath));
+    }
+
+    private IAgent CreateAgentFromPersona(Persona persona, string personaKey, AgentRank rank, string? parentId, string? personaPathOverride = null)
+    {
+
         // Create agent entity
         // NOTE: Telegram routes messages to the main agent using a stable id ("lucifer").
         // If we generate a random GUID for Lucifer, messages will be published to an unconsumed channel.
         // For the Supreme/main agent we use a stable id derived from the persona name.
         var agentId = (rank == AgentRank.Supreme && parentId == null &&
-                       string.Equals(personaName, "Lucifer", StringComparison.OrdinalIgnoreCase))
-            ? personaName.ToLowerInvariant()
+                       string.Equals(personaKey, "lucifer", StringComparison.OrdinalIgnoreCase))
+            ? "lucifer"
             : Guid.NewGuid().ToString();
 
         var agentEntity = new Agent
         {
             Id = agentId,
-            Name = personaName,
+            Name = persona.Name,
             Rank = rank,
             ParentAgentId = parentId,
-            PersonaPath = $"souls/{personaName.ToLower()}.json",
+            PersonaPath = personaPathOverride ?? $"souls/{personaKey}.json",
             Status = AgentStatus.Idle,
             CreatedAt = DateTime.UtcNow
         };

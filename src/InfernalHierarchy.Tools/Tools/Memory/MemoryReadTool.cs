@@ -27,13 +27,14 @@ public class MemoryReadTool : ITool
 
     public async Task<ToolResult> ExecuteAsync(Dictionary<string, object> parameters, CancellationToken ct = default)
     {
-        if (!parameters.TryGetValue("type", out var typeObj) || typeObj is not string type)
+        string type;
+        if (!parameters.TryGetValue("type", out var typeObj) || typeObj is not string rawType || string.IsNullOrWhiteSpace(rawType))
         {
-            return new ToolResult
-            {
-                Success = false,
-                Error = "Missing required parameter: type (decisions/facts/tasks)"
-            };
+            type = "facts";
+        }
+        else
+        {
+            type = rawType;
         }
 
         // Extract agent context for visibility filtering

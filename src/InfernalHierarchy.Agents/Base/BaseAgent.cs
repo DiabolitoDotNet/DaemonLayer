@@ -1,6 +1,8 @@
 
 namespace InfernalHierarchy.Agents.Base;
 
+using System.Text.Json;
+
 /// <summary>
 /// Base abstract agent implementing common functionality
 /// </summary>
@@ -12,6 +14,8 @@ public abstract class BaseAgent : IAgent
     protected readonly IToolRegistry _toolRegistry;
     protected CancellationTokenSource? _cts;
     protected Task? _executionTask;
+
+    protected const string AgentStatusChangedEventName = "agent_status_changed";
 
     public string Id { get; }
     public string Name { get; }
@@ -48,7 +52,7 @@ public abstract class BaseAgent : IAgent
         _cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         _executionTask = RunExecutionLoopAsync(_cts.Token);
 
-        Status = AgentStatus.Idle;
+        await SetStatusAsync(AgentStatus.Idle, reason: "start", ct).ConfigureAwait(false);
         await Task.CompletedTask;
     }
 
@@ -56,7 +60,7 @@ public abstract class BaseAgent : IAgent
     {
         _logger.LogInformation("💀 {AgentName} shutting down...", Name);
 
-        Status = AgentStatus.Terminated;
+        await SetStatusAsync(AgentStatus.Terminated, reason: "stop", ct).ConfigureAwait(false);
         _cts?.Cancel();
 
         if (_executionTask != null)
@@ -81,7 +85,7 @@ public abstract class BaseAgent : IAgent
             return;
         }
 
-        Status = AgentStatus.Suspended;
+        await SetStatusAsync(AgentStatus.Suspended, reason: "suspend", ct).ConfigureAwait(false);
         _cts?.Cancel(); // Stop execution loop
 
         if (_executionTask != null)
@@ -106,7 +110,7 @@ public abstract class BaseAgent : IAgent
         _cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         _executionTask = RunExecutionLoopAsync(_cts.Token);
 
-        Status = AgentStatus.Idle;
+        await SetStatusAsync(AgentStatus.Idle, reason: "resume", ct).ConfigureAwait(false);
         _logger.LogInformation("✅ {AgentName} resumed successfully", Name);
 
         await Task.CompletedTask;
@@ -127,10 +131,14 @@ public abstract class BaseAgent : IAgent
             {
                 try
                 {
-                    if (message.Type == MessageType.Task ||
+                    var shouldProcess =
+                        message.Type == MessageType.Task ||
                         message.Type == MessageType.Query ||
                         message.Type == MessageType.Command ||
-                        message.Type == MessageType.CollaborationRequest)
+                        message.Type == MessageType.CollaborationRequest ||
+                        (Rank == AgentRank.Supreme && message.Type == MessageType.Notification);
+
+                    if (shouldProcess)
                     {
                         _logger.LogInformation("📨 {AgentName} received {MessageType}: {Content}",
                             Name, message.Type, message.Content);
@@ -191,7 +199,58 @@ public abstract class BaseAgent : IAgent
         catch (Exception ex)
         {
             _logger.LogError(ex, "💀 {AgentName} execution loop failed critically", Name);
-            Status = AgentStatus.Terminated;
+            SetStatus(AgentStatus.Terminated, reason: "execution_loop_failed");
+        }
+    }
+
+    protected void SetStatus(AgentStatus newStatus, string? reason = null)
+    {
+        _ = SetStatusAsync(newStatus, reason, CancellationToken.None);
+    }
+
+    protected async Task SetStatusAsync(AgentStatus newStatus, string? reason, CancellationToken ct)
+    {
+        if (Status == newStatus)
+        {
+            return;
+        }
+
+        var oldStatus = Status;
+        Status = newStatus;
+
+        try
+        {
+            var payload = new Dictionary<string, object>
+            {
+                ["event"] = AgentStatusChangedEventName,
+                ["agent_id"] = Id,
+                ["agent_name"] = Name,
+                ["agent_rank"] = Rank.ToString(),
+                ["from_status"] = oldStatus.ToString(),
+                ["to_status"] = newStatus.ToString(),
+                ["reason"] = reason ?? string.Empty,
+                ["utc"] = DateTime.UtcNow.ToString("O")
+            };
+
+            var message = new AgentMessage
+            {
+                FromAgentId = Id,
+                ToAgentId = null, // broadcast
+                Type = MessageType.Notification,
+                Content = $"[{AgentStatusChangedEventName}] {Name} ({Rank}) {oldStatus} -> {newStatus}",
+                Payload = payload,
+                Timestamp = DateTime.UtcNow
+            };
+
+            await _messageBus.PublishAsync(message, ct).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            // best-effort
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Failed to publish agent status changed event for {AgentName} ({AgentId})", Name, Id);
         }
     }
 

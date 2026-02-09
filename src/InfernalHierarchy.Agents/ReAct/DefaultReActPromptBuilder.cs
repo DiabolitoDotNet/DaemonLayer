@@ -35,6 +35,12 @@ public sealed class DefaultReActPromptBuilder : IReActPromptBuilder
                         Example final answer:
                         {\"thought\":\"I am done\",\"action\":\"FINAL_ANSWER\",\"actionInput\":\"<final answer text>\"}
 
+                        IMPORTANT:
+                        - When action=FINAL_ANSWER, actionInput MUST be the complete user-facing answer.
+                        - Do NOT reply with "research completed" or status updates.
+                        - If you used web_search or other tools, summarize the actual findings and include concrete details.
+                        - If you are uncertain, state assumptions and ask a clarifying question in the final answer.
+
                         Available tools: {{string.Join(", ", availableTools)}}
                         """;
         }
@@ -54,6 +60,10 @@ public sealed class DefaultReActPromptBuilder : IReActPromptBuilder
                         Thought: <your reasoning>
                         Action: <tool_name or FINAL_ANSWER>
                         Action Input: <tool parameters as JSON or final answer text>
+
+                        IMPORTANT:
+                        - If Action is FINAL_ANSWER, the Action Input must be the complete user-facing answer.
+                        - Do NOT output only status confirmations (e.g., "I did the research").
 
                         Available tools: {string.Join(", ", availableTools)}
                         """;

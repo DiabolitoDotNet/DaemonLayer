@@ -1,4 +1,4 @@
-using InfernalHierarchy.Agents.Base;
+using BaseAgentImpl = InfernalHierarchy.Agents.Base.BaseAgent;
 using System.Text;
 using System.Text.Json;
 
@@ -8,7 +8,7 @@ namespace InfernalHierarchy.Agents.ReAct;
 /// ReAct (Reasoning + Acting) agent implementation
 /// Implements the Thought → Action → Observation loop
 /// </summary>
-public class ReActAgent : BaseAgent
+public class ReActAgent : BaseAgentImpl
 {
     private readonly IVectorMemory? _vectorMemory;
     private readonly RagOptions _ragOptions;
@@ -116,7 +116,7 @@ public class ReActAgent : BaseAgent
             VectorMemory: _vectorMemory,
             CollaborationService: collaborationService,
             EventSink: eventSink,
-            SetStatus: s => Status = s,
+            SetStatus: s => this.SetStatus(s, reason: "react"),
             BuildBaseContextAsync: (message, token) => base.BuildContextAsync(message, token),
             Logger: _logger);
 

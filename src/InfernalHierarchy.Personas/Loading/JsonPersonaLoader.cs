@@ -1,4 +1,5 @@
 using System.Text.Json;
+using InfernalHierarchy.Core.Utilities;
 
 namespace InfernalHierarchy.Personas.Loading;
 
@@ -41,7 +42,11 @@ public class JsonPersonaLoader : IPersonaLoader
 
     public async Task<Persona?> LoadPersonaAsync(string name, CancellationToken ct = default)
     {
-        var normalizedName = name.ToLowerInvariant();
+        var normalizedName = KeyNormalization.NormalizePersonaKey(name);
+        if (string.IsNullOrWhiteSpace(normalizedName))
+        {
+            return null;
+        }
 
         var filePath = Path.Combine(_soulsDirectory, $"{normalizedName}.json");
 

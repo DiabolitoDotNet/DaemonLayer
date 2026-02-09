@@ -32,7 +32,7 @@ public sealed class TestPersonaLoader : IPersonaLoader
                 DemonTitle = "Prince",
                 SystemPrompt = "You are Baal (test persona).",
                 Specializations = new List<string> { "analysis" },
-                AvailableTools = new List<string>()
+                AvailableTools = new List<string> { "read_memory" }
             },
             "vassago" => new Persona
             {
@@ -40,7 +40,23 @@ public sealed class TestPersonaLoader : IPersonaLoader
                 DemonTitle = "Duke",
                 SystemPrompt = "You are Vassago (test persona).",
                 Specializations = new List<string> { "research" },
-                AvailableTools = new List<string>()
+                AvailableTools = new List<string> { "read_memory" }
+            },
+            "asmodeus" => new Persona
+            {
+                Name = "Asmodeus",
+                DemonTitle = "Prince",
+                SystemPrompt = "You are Asmodeus (test persona).",
+                Specializations = new List<string> { "execution" },
+                AvailableTools = new List<string> { "read_memory" }
+            },
+            "orobas" => new Persona
+            {
+                Name = "Orobas",
+                DemonTitle = "Duke",
+                SystemPrompt = "You are Orobas (test persona).",
+                Specializations = new List<string> { "supervision" },
+                AvailableTools = new List<string> { "read_memory" }
             },
             _ => new Persona
             {
@@ -48,7 +64,7 @@ public sealed class TestPersonaLoader : IPersonaLoader
                 DemonTitle = "Agent",
                 SystemPrompt = $"You are {normalized} (test persona).",
                 Specializations = new List<string> { "testing" },
-                AvailableTools = new List<string>()
+                AvailableTools = new List<string> { "read_memory" }
             }
         };
 

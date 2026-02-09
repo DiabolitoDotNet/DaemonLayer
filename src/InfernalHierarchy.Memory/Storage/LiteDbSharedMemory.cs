@@ -5,7 +5,7 @@ namespace InfernalHierarchy.Memory.Storage;
 /// <summary>
 /// LiteDB implementation of shared memory
 /// </summary>
-public sealed class LiteDbSharedMemory : ISharedMemory, IToolResultCacheStore, IDisposable
+public sealed class LiteDbSharedMemory : ISharedMemory, IToolResultCacheStore, ICustomToolStore, IDisposable
 {
     private readonly LiteDatabase _db;
     private readonly ILogger<LiteDbSharedMemory> _logger;
@@ -14,6 +14,7 @@ public sealed class LiteDbSharedMemory : ISharedMemory, IToolResultCacheStore, I
     private ILiteCollection<Fact> Facts => _db.GetCollection<Fact>("facts");
     private ILiteCollection<TaskEntry> Tasks => _db.GetCollection<TaskEntry>("tasks");
     private ILiteCollection<CachedToolResult> ToolCache => _db.GetCollection<CachedToolResult>("tool_cache");
+    private ILiteCollection<CustomToolDefinition> CustomTools => _db.GetCollection<CustomToolDefinition>("custom_tools");
 
     public LiteDbSharedMemory(IOptions<MemoryOptions> options, ILogger<LiteDbSharedMemory> logger)
     {
@@ -29,6 +30,7 @@ public sealed class LiteDbSharedMemory : ISharedMemory, IToolResultCacheStore, I
         var mapper = new BsonMapper();
         mapper.Entity<MemoryEntry>().Id(x => x.Id);
         mapper.Entity<CachedToolResult>().Id(x => x.InputKey);
+        mapper.Entity<CustomToolDefinition>().Id(x => x.Id);
 
         _db = new LiteDatabase(dbPath, mapper);
 
@@ -46,8 +48,64 @@ public sealed class LiteDbSharedMemory : ISharedMemory, IToolResultCacheStore, I
         ToolCache.EnsureIndex(nameof(CachedToolResult.ToolName));
         ToolCache.EnsureIndex(nameof(CachedToolResult.ExpiresAt));
 
+        CustomTools.EnsureIndex(nameof(CustomToolDefinition.ToolName));
+        CustomTools.EnsureIndex(nameof(CustomToolDefinition.CreatedAt));
+
         _logger.LogInformation("💾 LiteDB shared memory initialized at {Path}", dbPath);
     }
+
+    #region Custom Tools
+
+    public Task UpsertAsync(CustomToolDefinition tool, CancellationToken ct = default)
+    {
+        if (tool is null)
+        {
+            throw new ArgumentNullException(nameof(tool));
+        }
+
+        if (string.IsNullOrWhiteSpace(tool.Id))
+        {
+            tool.Id = Guid.NewGuid().ToString("n");
+        }
+
+        CustomTools.Upsert(tool);
+        return Task.CompletedTask;
+    }
+
+    public Task<CustomToolDefinition?> GetByIdAsync(string id, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(id))
+        {
+            return Task.FromResult<CustomToolDefinition?>(null);
+        }
+
+        var tool = CustomTools.FindById(id);
+        return Task.FromResult<CustomToolDefinition?>(tool);
+    }
+
+    public Task<CustomToolDefinition?> GetByNameAsync(string toolName, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(toolName))
+        {
+            return Task.FromResult<CustomToolDefinition?>(null);
+        }
+
+        var normalized = toolName.Trim();
+        var tool = CustomTools.FindOne(x => x.ToolName == normalized);
+        return Task.FromResult<CustomToolDefinition?>(tool);
+    }
+
+    public Task<IReadOnlyList<CustomToolDefinition>> GetAllAsync(CancellationToken ct = default)
+    {
+        var tools = CustomTools
+            .Query()
+            .OrderByDescending(x => x.CreatedAt)
+            .ToList();
+
+        return Task.FromResult<IReadOnlyList<CustomToolDefinition>>(tools);
+    }
+
+    #endregion
 
     #region Tool Result Cache
 

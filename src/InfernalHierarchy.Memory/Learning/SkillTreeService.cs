@@ -12,6 +12,10 @@ public class SkillTreeService : ISkillTreeService
     private readonly ISharedMemory _sharedMemory;
     private readonly ConcurrentDictionary<string, AgentSkillTree> _skillTreeCache = new();
     private const string SkillTreeCategory = "skill_tree";
+    private static readonly JsonSerializerOptions SkillTreeJsonOptions = new()
+    {
+        PropertyNameCaseInsensitive = true
+    };
 
     public SkillTreeService(
         ILogger<SkillTreeService> logger,
@@ -39,9 +43,32 @@ public class SkillTreeService : ISkillTreeService
         AgentSkillTree skillTree;
         if (fact != null)
         {
-            // Deserialize from stored fact
-            skillTree = JsonSerializer.Deserialize<AgentSkillTree>(fact.Content)
-                       ?? new AgentSkillTree { AgentId = agentId };
+            if (string.IsNullOrWhiteSpace(fact.Content))
+            {
+                _logger.LogWarning("Skill tree fact {FactId} for agent {AgentId} had empty content; resetting.", fact.Id, agentId);
+                skillTree = new AgentSkillTree { AgentId = agentId };
+                await TrySelfHealSkillTreeFactAsync(skillTree, fact, ct).ConfigureAwait(false);
+            }
+            else
+            {
+                // Deserialize from stored fact (best-effort; corrupt JSON should not break learning)
+                try
+                {
+                    skillTree = JsonSerializer.Deserialize<AgentSkillTree>(fact.Content, SkillTreeJsonOptions)
+                               ?? new AgentSkillTree { AgentId = agentId };
+                }
+                catch (JsonException ex)
+                {
+                    _logger.LogWarning(ex,
+                        "Failed to deserialize skill tree for agent {AgentId} from fact {FactId} (len={Length}); resetting.",
+                        agentId,
+                        fact.Id,
+                        fact.Content.Length);
+
+                    skillTree = new AgentSkillTree { AgentId = agentId };
+                    await TrySelfHealSkillTreeFactAsync(skillTree, fact, ct).ConfigureAwait(false);
+                }
+            }
         }
         else
         {
@@ -51,6 +78,25 @@ public class SkillTreeService : ISkillTreeService
 
         _skillTreeCache[agentId] = skillTree;
         return skillTree;
+    }
+
+    private async Task TrySelfHealSkillTreeFactAsync(AgentSkillTree skillTree, Fact existingFact, CancellationToken ct)
+    {
+        try
+        {
+            // Preserve the existing fact id, but ensure it remains categorized correctly.
+            existingFact.Category = SkillTreeCategory;
+            existingFact.Content = JsonSerializer.Serialize(skillTree, SkillTreeJsonOptions);
+            existingFact.LastModifiedAt = DateTime.UtcNow;
+            existingFact.LastModifiedBy = skillTree.AgentId;
+
+            await _sharedMemory.UpdateFactAsync(existingFact, "Reset corrupt/empty skill tree", ct).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            // Best-effort: do not fail agent operations if self-heal cannot persist.
+            _logger.LogDebug(ex, "Failed to self-heal skill tree fact {FactId} for agent {AgentId}", existingFact.Id, skillTree.AgentId);
+        }
     }
 
     /// <summary>

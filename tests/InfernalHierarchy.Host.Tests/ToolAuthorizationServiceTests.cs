@@ -15,6 +15,18 @@ namespace InfernalHierarchy.Host.Tests;
 public sealed class ToolAuthorizationServiceCoverageTests
 {
     [Fact]
+    public void IsAuthorized_DefaultPermissions_GetAgentStatus_ShouldBeSupremeOnly()
+    {
+        IConfiguration config = new ConfigurationBuilder().AddInMemoryCollection().Build();
+        var sut = new ToolAuthorizationService(NullLogger<ToolAuthorizationService>.Instance, config);
+
+        sut.IsAuthorized("a1", "lucifer", AgentRank.Supreme, "get_agent_status").IsAuthorized.Should().BeTrue();
+        sut.IsAuthorized("a2", "baal", AgentRank.Prince, "get_agent_status").IsAuthorized.Should().BeTrue();
+        sut.IsAuthorized("a3", "vassago", AgentRank.Duke, "get_agent_status").IsAuthorized.Should().BeTrue();
+        sut.IsAuthorized("a4", "worker", AgentRank.Worker, "get_agent_status").IsAuthorized.Should().BeFalse();
+    }
+
+    [Fact]
     public void IsAuthorized_WhenToolNotConfigured_ShouldAllowByDefault()
     {
         IConfiguration config = new ConfigurationBuilder().AddInMemoryCollection().Build();
@@ -24,6 +36,17 @@ public sealed class ToolAuthorizationServiceCoverageTests
 
         result.IsAuthorized.Should().BeTrue();
         result.Reason.Should().BeNull();
+    }
+
+    [Fact]
+    public void IsAuthorized_WhenCustomToolNotConfigured_ShouldBeSupremeOnly()
+    {
+        IConfiguration config = new ConfigurationBuilder().AddInMemoryCollection().Build();
+        var sut = new ToolAuthorizationService(NullLogger<ToolAuthorizationService>.Instance, config);
+
+        sut.IsAuthorized("a1", "lucifer", AgentRank.Supreme, "custom_xml_parser").IsAuthorized.Should().BeTrue();
+        sut.IsAuthorized("a2", "duke", AgentRank.Duke, "custom_xml_parser").IsAuthorized.Should().BeFalse();
+        sut.IsAuthorized("a3", "worker", AgentRank.Worker, "custom_xml_parser").IsAuthorized.Should().BeFalse();
     }
 
     [Fact]

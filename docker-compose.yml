@@ -17,6 +17,16 @@ services:
       - Ui__LocalOnly=false
       - WebSockets__LocalOnly=false
 
+      # Reduce log noise: disable OpenTelemetry console trace exporter
+      - OpenTelemetry__Exporters__Console__Enabled=false
+
+      # Telegram voice replies (agent reports -> Telegram voice note)
+      - TelegramVoice__Enabled=true
+      - TelegramVoice__ReplyWithVoice=true
+
+      # Telegram startup notification (set to your private chat id / user id)
+      - Telegram__StartupNotificationChatId=5879484069
+
       # Voice API (enabled by default in docker-compose)
       - Voice__Enabled=true
       - Voice__LocalOnly=false
@@ -69,6 +79,23 @@ services:
       # Ensure docker secrets are honored in container runs.
       - DockerSecrets__Enabled=true
       - DockerSecrets__RootPath=/run/secrets
+
+      # GitHub publisher (token + username come from docker secrets)
+      - GitHubPublisher__Enabled=true
+
+      # Web search fallback (api key comes from docker secrets)
+      - BraveSearch__Enabled=true
+
+      # Background services
+      - AgentSupervisor__Enabled=true
+      - MemoryLearningOptions__Enabled=true
+
+      # Local embeddings (falls back deterministically if model/tokenizer missing)
+      - OnnxEmbeddingOptions__Enabled=true
+      - OnnxEmbeddingOptions__ModelPath=/app/models/sentence-transformers/model.onnx
+      - OnnxEmbeddingOptions__TokenizerPath=/app/models/sentence-transformers/tokenizer.json
+      - OnnxEmbeddingOptions__EmbeddingDimension=384
+      - OnnxEmbeddingOptions__MaxSequenceLength=128
       - VectorMemoryOptions__Enabled=true
       - VectorMemoryOptions__QdrantUrl=http://qdrant:6333
     volumes:
@@ -77,6 +104,7 @@ services:
       - ./souls:/souls
       - ./templates:/app/templates:ro
       - ./models/hf:/models/hf
+      - ./models/sentence-transformers:/app/models/sentence-transformers:ro
     depends_on:
       - searxng
       - qdrant
@@ -88,7 +116,11 @@ services:
     secrets:
       - telegram_bot_token
       - telegram_user_ids
+      - telegram_lucifer_preamble
       - email_smtp_json
+      - github_publisher_token
+      - github_publisher_username
+      - brave_search_api_key
 
   # SearXNG - Local web search engine
   searxng:
@@ -129,8 +161,16 @@ secrets:
     file: ./secrets/telegram_bot_token.txt
   telegram_user_ids:
     file: ./secrets/telegram_user_ids.txt
+  telegram_lucifer_preamble:
+    file: ./secrets/telegram_lucifer_preamble.txt
   email_smtp_json:
     file: ./secrets/email_smtp.json
+  github_publisher_token:
+    file: ./secrets/github_publisher_token.txt
+  github_publisher_username:
+    file: ./secrets/github_publisher_username.txt
+  brave_search_api_key:
+    file: ./secrets/brave_search_api_key.txt
 
 # Usage:
 # docker-compose up -d

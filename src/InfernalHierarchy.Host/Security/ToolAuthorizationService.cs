@@ -28,6 +28,23 @@ public class ToolAuthorizationService : IToolAuthorizationService
         // Get tool permissions
         if (!_toolPermissions.TryGetValue(toolName, out var permissions))
         {
+            // Custom tools are powerful and should not be fail-open.
+            // By convention, dynamically generated tools are prefixed with "custom_".
+            if (toolName.StartsWith("custom_", StringComparison.OrdinalIgnoreCase))
+            {
+                if (rank != AgentRank.Supreme)
+                {
+                    _logger.LogWarning(
+                        "🚫 Agent {AgentName} ({Rank}) denied access to {Tool} - custom tools are Supreme-only by default",
+                        agentName,
+                        rank,
+                        toolName);
+                    return AuthorizationResult.Failure("Custom tools are Supreme-only by default. Configure ToolPermissions to delegate.");
+                }
+
+                return AuthorizationResult.Success();
+            }
+
             // Tool not in permissions list - allow by default (fail-open for extensibility)
             _logger.LogDebug("Tool {Tool} not in permissions list, allowing access", toolName);
             return AuthorizationResult.Success();
@@ -140,10 +157,31 @@ public class ToolAuthorizationService : IToolAuthorizationService
     {
         return new Dictionary<string, ToolPermissions>
         {
+            ["get_agent_status"] = new()
+            {
+                Enabled = true,
+                AllowedRanks = new() { AgentRank.Supreme, AgentRank.Prince, AgentRank.Duke },
+                WhitelistedAgents = new(),
+                BlacklistedAgents = new()
+            },
             ["create_sub_agent"] = new()
             {
                 Enabled = true,
                 AllowedRanks = new() { AgentRank.Supreme, AgentRank.Prince, AgentRank.Duke },
+                WhitelistedAgents = new(),
+                BlacklistedAgents = new()
+            },
+            ["create_custom_tool"] = new()
+            {
+                Enabled = true,
+                AllowedRanks = new() { AgentRank.Supreme },
+                WhitelistedAgents = new(),
+                BlacklistedAgents = new()
+            },
+            ["publish_custom_tools_github"] = new()
+            {
+                Enabled = true,
+                AllowedRanks = new() { AgentRank.Supreme },
                 WhitelistedAgents = new(),
                 BlacklistedAgents = new()
             },

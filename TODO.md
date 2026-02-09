@@ -74,6 +74,10 @@ _No additional Agent Capabilities backlog items currently tracked here._
 ### UI & Interfaces
 _No additional UI & Interfaces backlog items currently tracked here._
 
+- [ ] **Improve French TTS voice quality (accent/language)**
+  - Current TTS output reads French with an obvious US accent.
+  - Goal: select a French-capable voice/model (or swap TTS backend) so FR replies sound natural.
+
 ### Deployment & Operations
 - [ ] **Kubernetes deployment** - Helm charts/operators
 - [ ] **Horizontal scaling** - Multi-host scaling strategy

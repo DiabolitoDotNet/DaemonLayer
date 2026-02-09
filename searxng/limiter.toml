@@ -1,0 +1,5 @@
+# Intentionally minimal limiter/botdetection config.
+#
+# SearXNG's botdetection subsystem looks for /etc/searxng/limiter.toml and logs a warning if missing.
+# Providing an empty (but valid) TOML file suppresses that warning while keeping limiter disabled
+# via settings.yml (server.limiter: false).
