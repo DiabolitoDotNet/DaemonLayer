@@ -238,6 +238,18 @@ public class HierarchyOptions
     public string MainAgentPersonaPath { get; set; } = "souls/lucifer.json";
 
     /// <summary>
+    /// When enabled, agent status-change broadcasts are forwarded to Lucifer as notifications.
+    /// Leave disabled to avoid feedback loops; status changes are always projected to shared memory.
+    /// </summary>
+    public bool ForwardStatusChangesToLucifer { get; set; } = false;
+
+    /// <summary>
+    /// When enabled, agent status-change broadcasts are forwarded to the supervisor agent as notifications.
+    /// Leave disabled to avoid feedback loops; status changes are always projected to shared memory.
+    /// </summary>
+    public bool ForwardStatusChangesToSupervisor { get; set; } = false;
+
+    /// <summary>
     /// When enabled, the orchestrator will summon additional council/supervisor agents on startup
     /// so the Supreme agent can delegate immediately.
     /// </summary>

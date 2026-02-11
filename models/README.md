@@ -10,6 +10,13 @@ This directory contains ONNX models for sentence embeddings used by the VectorMe
 
 ### Download Instructions
 
+#### Quick Start (Windows PowerShell)
+
+```powershell
+# From repo root
+./scripts/prepare-onnx-embeddings.ps1
+```
+
 #### Option 1: Using Optimum CLI (Recommended)
 
 ```bash

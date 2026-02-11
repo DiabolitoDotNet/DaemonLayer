@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.Json;
 
 namespace InfernalHierarchy.Agents.ReAct;
 
@@ -13,6 +14,11 @@ public sealed class DefaultReActLoopRunner : IReActLoopRunner
         var iterations = 0;
         var consecutiveParseFailures = 0;
         const int maxParseFailures = 3;
+
+        string? lastToolName = null;
+        string? lastToolSignature = null;
+        string? lastObservation = null;
+        bool lastToolSucceeded = false;
 
         history.AppendLine($"Task: {context.Task}\n");
 
@@ -95,6 +101,20 @@ public sealed class DefaultReActLoopRunner : IReActLoopRunner
                         ToolCalls: toolCalls);
                 }
 
+                var toolSignature = BuildToolSignature(actionInput, actionInputObject);
+                if (lastToolSucceeded
+                    && string.Equals(action, lastToolName, StringComparison.OrdinalIgnoreCase)
+                    && string.Equals(toolSignature, lastToolSignature, StringComparison.Ordinal))
+                {
+                    // Avoid tight loops where the model repeats the exact same successful tool call.
+                    // Reuse the previous observation so the next LLM iteration has new context.
+                    var reused = lastObservation ?? "Observation: (duplicate tool call suppressed; previous observation unavailable)";
+                    history.AppendLine("Observation: Duplicate tool call suppressed; reusing previous observation.");
+                    history.AppendLine(reused);
+                    context.Logger.LogDebug("🔁 Suppressed duplicate tool call: {Tool}", action);
+                    continue;
+                }
+
                 try
                 {
                     context.SetStatus(AgentStatus.ActingWithTool);
@@ -127,6 +147,11 @@ public sealed class DefaultReActLoopRunner : IReActLoopRunner
 
                     history.AppendLine(exec.Observation);
                     context.Logger.LogInformation("👁️ {Observation}", exec.Observation);
+
+                    lastToolName = action;
+                    lastToolSignature = toolSignature;
+                    lastObservation = exec.Observation;
+                    lastToolSucceeded = exec.Success;
 
                     if (!exec.Success && exec.Error?.Contains("required", StringComparison.OrdinalIgnoreCase) == true)
                     {
@@ -162,5 +187,16 @@ public sealed class DefaultReActLoopRunner : IReActLoopRunner
             Reasoning: "Reached maximum iteration limit",
             Iterations: iterations,
             ToolCalls: toolCalls);
+    }
+
+    private static string BuildToolSignature(string actionInputText, Dictionary<string, object>? actionInputObject)
+    {
+        if (actionInputObject is not null)
+        {
+            // Stable-enough signature for duplicate detection within a single loop.
+            return JsonSerializer.Serialize(actionInputObject);
+        }
+
+        return actionInputText ?? string.Empty;
     }
 }

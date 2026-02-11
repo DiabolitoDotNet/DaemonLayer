@@ -53,6 +53,18 @@ public sealed class AgentStatusChangeProjectionService : BackgroundService
         }
     }
 
+    private static bool ShouldForwardStatusChange(AgentMessage message)
+    {
+        // Forwarding every status transition (Idle/Thinking/ActingWithTool) can easily create
+        // feedback loops where agents react to their own operational chatter.
+        // We only forward significant transitions; everything is still projected to shared memory.
+        var toStatus = TryGetPayloadString(message, "to_status");
+        var fromStatus = TryGetPayloadString(message, "from_status");
+
+        return string.Equals(toStatus, AgentStatus.Terminated.ToString(), StringComparison.OrdinalIgnoreCase)
+            || string.Equals(fromStatus, AgentStatus.Terminated.ToString(), StringComparison.OrdinalIgnoreCase);
+    }
+
     private static bool IsAgentStatusChanged(AgentMessage message)
     {
         if (message.Payload == null)
@@ -115,6 +127,16 @@ public sealed class AgentStatusChangeProjectionService : BackgroundService
     {
         try
         {
+            if (!_hierarchyOptions.ForwardStatusChangesToLucifer)
+            {
+                return;
+            }
+
+            if (!ShouldForwardStatusChange(message))
+            {
+                return;
+            }
+
             var lucifer = _agentRegistry
                 .GetAgentsByRank(AgentRank.Supreme)
                 .FirstOrDefault(a => string.Equals(a.Name, _hierarchyOptions.MainAgentName, StringComparison.OrdinalIgnoreCase));
@@ -159,6 +181,16 @@ public sealed class AgentStatusChangeProjectionService : BackgroundService
     {
         try
         {
+            if (!_hierarchyOptions.ForwardStatusChangesToSupervisor)
+            {
+                return;
+            }
+
+            if (!ShouldForwardStatusChange(message))
+            {
+                return;
+            }
+
             if (string.IsNullOrWhiteSpace(_hierarchyOptions.SupervisorAgentName))
             {
                 return;

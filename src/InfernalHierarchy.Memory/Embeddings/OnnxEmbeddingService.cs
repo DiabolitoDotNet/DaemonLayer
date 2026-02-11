@@ -67,7 +67,9 @@ public sealed class OnnxEmbeddingService : IDisposable
             // Check if model file exists
             if (!File.Exists(_options.ModelPath))
             {
-                _logger.LogWarning("⚠️ ONNX model not found at {Path} - will use fallback embeddings", _options.ModelPath);
+                _logger.LogWarning(
+                    "⚠️ ONNX model not found at {Path} - will use fallback embeddings. To enable ONNX embeddings, place model.onnx + tokenizer.json under models/sentence-transformers (see models/README.md) or run scripts/prepare-onnx-embeddings.ps1.",
+                    _options.ModelPath);
                 _initialized = true;
                 return;
             }

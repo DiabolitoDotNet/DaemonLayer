@@ -1,6 +1,40 @@
-# Docker Compose pour services locaux (SearXNG)
+# Docker Compose pour services locaux (Ollama + SearXNG + Qdrant)
 
 services:
+  # Ollama - Local LLM server (OpenAI-compatible API)
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    restart: unless-stopped
+    networks:
+      - infernal-network
+    ports:
+      - "127.0.0.1:11434:11434"
+    environment:
+      - OLLAMA_HOST=0.0.0.0
+      # Single model for the whole application
+      - OLLAMA_MODEL=qwen3:14b
+    volumes:
+      - ollama_data:/root/.ollama
+    command: ["serve"]
+
+  # One-shot init container: pulls the single configured model into the shared volume.
+  # Safe to re-run; Ollama will no-op if the model is already present.
+  ollama-init:
+    image: ollama/ollama:latest
+    container_name: ollama-init
+    networks:
+      - infernal-network
+    depends_on:
+      - ollama
+    restart: "no"
+    environment:
+      - OLLAMA_HOST=ollama:11434
+      - OLLAMA_MODEL=qwen3:14b
+    volumes:
+      - ollama_data:/root/.ollama
+    command: ["pull", "qwen3:14b"]
+
   # InfernalHierarchy .NET Worker Service
   infernal-hierarchy:
     build:
@@ -8,7 +42,8 @@ services:
       dockerfile: Dockerfile
     container_name: infernal-hierarchy
     environment:
-      - Ollama__BaseUrl=http://host.docker.internal:11434/v1
+      - Ollama__BaseUrl=http://ollama:11434/v1
+      - Ollama__DefaultModel=qwen3:14b
       - SearXNG__BaseUrl=http://searxng:8080
       - SearXNG__Enabled=true
       - Memory__DatabasePath=/app/data/infernal.db
@@ -106,6 +141,7 @@ services:
       - ./models/hf:/models/hf
       - ./models/sentence-transformers:/app/models/sentence-transformers:ro
     depends_on:
+      - ollama
       - searxng
       - qdrant
     restart: unless-stopped
@@ -155,6 +191,7 @@ networks:
 
 volumes:
   qdrant_data:
+  ollama_data:
 
 secrets:
   telegram_bot_token:
@@ -173,5 +210,5 @@ secrets:
     file: ./secrets/brave_search_api_key.txt
 
 # Usage:
-# docker-compose up -d
+# docker compose up -d
 # Accès: http://localhost:8080

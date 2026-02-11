@@ -171,7 +171,11 @@ Action Input: done
         _mockMemory.Setup(x => x.AddDecisionAsync(It.IsAny<Decision>(), It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
 
-        _mockOllama.Setup(x => x.GetCompletionAsync(
+        var criticJson = "{\"quality_score\":8,\"contradictions\":[],\"missing_sources\":[],\"recommendations\":[\"ok\"],\"should_rollback\":false,\"should_kill_branch\":false,\"improved_summary\":\"improved\"}";
+
+        // First completion = main agent draft; second completion = critic output (JSON).
+        _mockOllama
+            .SetupSequence(x => x.GetCompletionAsync(
                 It.IsAny<string>(),
                 It.IsAny<string>(),
                 It.IsAny<CancellationToken>()))
@@ -179,9 +183,9 @@ Action Input: done
 Thought: Draft answer.
 Action: FINAL_ANSWER
 Action Input: draft
-""");
+""")
+            .ReturnsAsync(criticJson);
 
-        var criticJson = "{\"quality_score\":8,\"contradictions\":[],\"missing_sources\":[],\"recommendations\":[\"ok\"],\"should_rollback\":false,\"should_kill_branch\":false,\"improved_summary\":\"improved\"}";
         var criticAgent = new StubAgent(
             id: "critic-1",
             name: "Orobas",

@@ -210,7 +210,25 @@ public class ReActAgent : BaseAgentImpl
                 }
             };
 
-            var critiqueResponse = await critic.ProcessTaskAsync(critiqueTask, ct).ConfigureAwait(false);
+            // IMPORTANT: Critique should be non-invasive.
+            // Running a full ReAct loop for the critic can cause tool spam, stalls, and feedback loops.
+            // Instead, we do a single completion using the critic persona's system prompt.
+            var critiqueText = await _processorContext.LlmClient
+                .GetCompletionAsync(critic.Persona.SystemPrompt, critiqueTask.Content, ct)
+                .ConfigureAwait(false);
+
+            var critiqueResponse = new AgentMessage
+            {
+                FromAgentId = critic.Id,
+                ToAgentId = Id,
+                Type = MessageType.Report,
+                Content = critiqueText,
+                Payload = new Dictionary<string, object>
+                {
+                    ["critic_persona"] = critic.Persona.Name,
+                    ["critic_rank"] = critic.Rank.ToString()
+                }
+            };
 
             var mergedPayload = new Dictionary<string, object>(response.Payload ?? new Dictionary<string, object>())
             {

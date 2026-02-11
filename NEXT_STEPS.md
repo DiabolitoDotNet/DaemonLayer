@@ -32,22 +32,22 @@ All advanced features have been **implemented and compile successfully**:
 
 ---
 
-### 2️⃣ **Start Ollama + Pull Models** (REQUIRED for LLM)
+### 2️⃣ **Start Ollama (Docker) + Pull Model** (REQUIRED for LLM)
 
-Open a terminal and run:
+This repo now runs Ollama via Docker Compose and automatically pulls a single model (`qwen3:14b`) on first start.
 
 ```bash
-# Pull all 4 configured models
-ollama pull llama3.1:8b      # Medium tasks (default)
-ollama pull gemma:2b          # Simple tasks
-ollama pull qwen:32b          # Complex tasks
-ollama pull deepseek-coder:6.7b  # Expert/code tasks
+docker compose up -d ollama
 ```
 
-**Time Required**: ~10-30 minutes depending on internet speed  
-**Disk Space**: ~25 GB total for all 4 models
+**Time Required**: ~5-15 minutes depending on internet speed  
+**Disk Space**: depends on quantization; expect multiple GB for `qwen3:14b`
 
-**Optional**: If you only want to test with one model initially, just pull `llama3.1:8b`.
+Verify:
+
+```bash
+curl http://localhost:11434/api/tags
+```
 
 ---
 

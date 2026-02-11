@@ -8,7 +8,7 @@ namespace InfernalHierarchy.Core.Configuration;
 /// and propose an improved synthesis.
 ///
 /// This is designed to be lightweight: enabled only under simple heuristics and
-/// uses a separate persona (default: Orobas).
+/// uses a separate persona (default: Foras).
 /// </summary>
 public sealed class CritiqueOptions
 {
@@ -21,7 +21,7 @@ public sealed class CritiqueOptions
     /// <summary>
     /// Persona name for the critic (maps to <c>souls/{name}.json</c>).
     /// </summary>
-    public string CriticPersonaName { get; set; } = "Orobas";
+    public string CriticPersonaName { get; set; } = "Foras";
 
     /// <summary>
     /// Rank assigned to the critic agent.
