@@ -51,13 +51,13 @@ InfernalHierarchy/
 ### Prérequis
 
 1. **.NET 10 SDK** - [Télécharger](https://dotnet.microsoft.com/download/dotnet/10.0)
-2. **Ollama** - [Installation](https://ollama.ai/)
-   ```bash
-   ollama pull deepseek-r1:8b
-   # ou
-   ollama pull qwen2.5:8b
-   ```
-3. **Docker & Docker Compose** (optionnel) - Pour SearXNG
+2. **Docker Desktop + Docker Compose** - Pour lancer Ollama/SearXNG/Qdrant en local
+  ```bash
+  docker compose up -d ollama
+  docker compose up --no-deps --abort-on-container-exit ollama-init
+  curl.exe -s http://localhost:11434/api/tags
+  ```
+3. **Ollama (optionnel)** - Si tu préfères exécuter Ollama hors Docker, pointe simplement `Ollama:BaseUrl` vers ton endpoint local.
 4. **Bot Telegram** - Créer via [@BotFather](https://t.me/BotFather)
 
 ### Installation
@@ -102,7 +102,7 @@ InfernalHierarchy/
 {
   "Ollama": {
     "BaseUrl": "http://localhost:11434/v1",
-    "DefaultModel": "deepseek-r1:8b",
+    "DefaultModel": "qwen3:14b",
     "Temperature": 0.7
   },
   "Hierarchy": {
@@ -222,7 +222,7 @@ Chaque agent suit le pattern ReAct (Reasoning + Acting) :
 
 Utilise le SDK OpenAI en mode compatible avec l'endpoint Ollama :
 - Base URL : `http://localhost:11434/v1`
-- Modèles recommandés : `deepseek-r1:8b`, `qwen2.5:8b`
+- Modèle par défaut (Docker) : `qwen3:14b`
 - Streaming supporté pour les réponses longues
 
 ## 🔧 Développement

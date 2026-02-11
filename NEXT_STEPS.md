@@ -46,7 +46,20 @@ docker compose up -d ollama
 Verify:
 
 ```bash
-curl http://localhost:11434/api/tags
+curl.exe http://localhost:11434/api/tags
+```
+
+**Change model (Docker)**:
+
+1) Update the model in `docker-compose.yml`:
+- `ollama.environment.OLLAMA_MODEL`
+- `ollama-init.command` (pulls the model)
+- `infernal-hierarchy.environment.Ollama__DefaultModel` (so the app uses it)
+
+2) Pull the new model into the Ollama volume:
+
+```bash
+docker compose up --no-deps --abort-on-container-exit ollama-init
 ```
 
 ---
@@ -55,10 +68,10 @@ curl http://localhost:11434/api/tags
 
 ```bash
 # Start Qdrant container
-docker-compose up -d qdrant
+docker compose up -d qdrant
 
 # Verify it's running
-curl http://localhost:6333/collections
+curl.exe http://localhost:6333/collections
 ```
 
 **Expected Response**: `{"result":{"collections":[]},"status":"ok","time":0.000...}`
@@ -70,7 +83,7 @@ curl http://localhost:6333/collections
 **Ready check** (after starting the Host):
 
 ```bash
-curl http://localhost:5080/health/ready
+curl.exe http://localhost:5080/health/ready
 ```
 
 Look for `qdrant` to be `Healthy`.
@@ -257,7 +270,7 @@ dotnet run --project src/InfernalHierarchy.Host
 ### Test Vector Search
 
 1. Enable `VectorMemoryOptions.Enabled = true`
-2. Start Qdrant: `docker-compose up -d qdrant`
+2. Start Qdrant: `docker compose up -d qdrant`
 3. Run the app
 4. Use Telegram or memory tools to store facts
 5. Query similar facts using the tool `read_memory` with a `query` (it will prefer semantic/vector search when vector memory is enabled).
@@ -276,12 +289,13 @@ dotnet test .\tests\InfernalHierarchy.Memory.Tests\InfernalHierarchy.Memory.Test
 
 ### Test Multi-Model LLM
 
-1. Pull Ollama models (see step 2)
+1. Ensure Ollama is running and the model is present:
+  - `docker compose up -d ollama`
+  - `docker compose up --no-deps --abort-on-container-exit ollama-init`
 2. Run the app
 3. Send tasks with different complexities
 4. Check logs for model selection:
-   - `"Using model gemma:2b for Simple task"`
-   - `"Using model llama3.1:8b for Medium task"`
+  - `"Using model qwen3:14b"`
 
 **Verification**: `TokenUsageTracker` will log usage statistics.
 
@@ -348,7 +362,7 @@ Console.WriteLine($"Estimated Cost: ${stats.EstimatedCost:F4}");
 
 ```bash
 # Query Qdrant directly
-curl http://localhost:6333/collections/infernal_facts
+curl.exe http://localhost:6333/collections/infernal_facts
 ```
 
 ### Check Event Logs
@@ -365,16 +379,17 @@ cat ./events/events_lucifer.jsonl | jq .
 ### Issue: "Qdrant connection failed"
 **Solution**: 
 ```bash
-docker-compose restart qdrant
+docker compose restart qdrant
 # Or
-docker-compose up -d qdrant
+docker compose up -d qdrant
 ```
 
 ### Issue: "Ollama model not found"
 **Solution**:
 ```bash
-ollama list  # Check available models
-ollama pull llama3.1:8b  # Pull missing model
+curl.exe -s http://localhost:11434/api/tags
+# Or pull again via compose init job
+docker compose up --no-deps --abort-on-container-exit ollama-init
 ```
 
 ### Issue: "StyleCop warnings everywhere"
@@ -411,11 +426,13 @@ If you're setting this up for the first time:
 
 1. ✅ Register services in Program.cs (step 1)
 2. ✅ Build and verify no errors: `dotnet build`
-3. ✅ Pull at least one Ollama model: `ollama pull llama3.1:8b`
+3. ✅ Start Ollama (Docker) + ensure model is pulled:
+   - `docker compose up -d ollama`
+   - `docker compose up --no-deps --abort-on-container-exit ollama-init`
 4. ✅ Start basic app: `dotnet run --project src/InfernalHierarchy.Host`
 5. ⏩ Enable Qdrant if you want vector search (steps 3-4)
 6. ⏩ Enable memory pruning if you want automatic cleanup (steps 4-5)
-7. ⏩ Pull additional models if you want complexity-based routing (step 2)
+7. (Optional) Re-enable complexity-based routing by configuring `LlmOptions.Models` with multiple models.
 
 ---
 
@@ -438,7 +455,7 @@ After completing these steps, you'll have:
 1. **Build issues**: Check `dotnet build` output for specific errors
 2. **Service issues**: Check Serilog logs in `./logs/` directory
 3. **Configuration issues**: Review `appsettings.json` against examples in `ADVANCED_FEATURES.md`
-4. **Docker issues**: Run `docker-compose logs qdrant` for Qdrant logs
+4. **Docker issues**: Run `docker compose logs qdrant` for Qdrant logs
 
 ---
 

@@ -387,10 +387,7 @@ Dynamic model selection based on task complexity with automatic fallback.
 - Supports all Ollama models
 
 **Task Complexity Levels:**
-- `Simple`: Quick responses (gemma:2b, mistral:7b) - 1024 tokens
-- `Medium`: Standard reasoning (llama3.1:8b) - 2048 tokens
-- `Complex`: Deep reasoning (qwen:32b, llama3.1:70b) - 4096 tokens
-- `Expert`: Specialized tasks (deepseek-coder, wizardlm) - 2048 tokens
+This feature supports routing to different models per complexity level. In the current Docker setup, the app runs with a single default model (`qwen3:14b`) unless you explicitly configure multiple entries under `LlmOptions.Models`.
 
 **Configuration:**
 ```json
@@ -398,20 +395,12 @@ Dynamic model selection based on task complexity with automatic fallback.
   "LlmOptions": {
     "Models": [
       {
-        "Name": "llama3.1:8b",
+        "Name": "qwen3:14b",
         "BaseUrl": "http://localhost:11434/v1",
         "Complexity": "Medium",
         "Priority": 1,
         "Temperature": 0.7,
         "MaxTokens": 2048
-      },
-      {
-        "Name": "gemma:2b",
-        "BaseUrl": "http://localhost:11434/v1",
-        "Complexity": "Simple",
-        "Priority": 1,
-        "Temperature": 0.5,
-        "MaxTokens": 1024
       }
     ]
   }
@@ -473,7 +462,7 @@ Comprehensive token usage analytics and cost estimation.
 // Automatic tracking on every LLM call
 tokenTracker.RecordUsage(new TokenUsageRecord
 {
-    ModelName = "llama3.1:8b",
+  ModelName = "qwen3:14b",
     AgentId = "agent_123",
     InputTokens = 150,
     OutputTokens = 300,
@@ -492,7 +481,7 @@ var agentStats = tokenTracker.GetAgentStats("agent_123");
 // Calculate costs
 var pricing = new Dictionary<string, ModelPricing>
 {
-    ["llama3.1:8b"] = new ModelPricing 
+  ["qwen3:14b"] = new ModelPricing 
     { 
         InputPricePerMillion = 0.0m,  // Local Ollama is free
         OutputPricePerMillion = 0.0m 
@@ -617,11 +606,11 @@ dotnet format
 
 ### 2. Start Qdrant for Vector Search
 ```powershell
-# Using docker-compose
-docker-compose up -d qdrant
+# Using docker compose
+docker compose up -d qdrant
 
 # Verify
-curl http://localhost:6333
+curl.exe http://localhost:6333
 ```
 
 Enable in `appsettings.json`:
@@ -632,15 +621,14 @@ Enable in `appsettings.json`:
 ```
 
 ### 3. Configure Multi-Model LLM
-Pull Ollama models:
+Start Ollama (Docker) and pull the default model:
 ```powershell
-ollama pull llama3.1:8b
-ollama pull gemma:2b
-ollama pull qwen:32b
-ollama pull deepseek-coder:6.7b
+docker compose up -d ollama
+docker compose up --no-deps --abort-on-container-exit ollama-init
+curl.exe -s http://localhost:11434/api/tags
 ```
 
-Models configured in `appsettings.json` under `LlmOptions.Models`.
+If you want complexity-based routing, add multiple entries under `LlmOptions.Models` in `appsettings.json`.
 
 ### 4. Enable Memory Pruning
 ```json
