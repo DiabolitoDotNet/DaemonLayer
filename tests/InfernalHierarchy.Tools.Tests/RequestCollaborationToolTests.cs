@@ -98,7 +98,7 @@ public class RequestCollaborationToolTests
         {
             CreateAgent("initiator", AgentRank.Duke, AgentStatus.Idle),
             CreateAgent("a", AgentRank.Worker, AgentStatus.Idle),
-            CreateAgent("b", AgentRank.Worker, AgentStatus.Thinking),
+            CreateAgent("b", AgentRank.Worker, AgentStatus.Idle),
             CreateAgent("c", AgentRank.Worker, AgentStatus.Suspended)
         });
 
@@ -134,7 +134,53 @@ public class RequestCollaborationToolTests
         captured.ParticipantAgentIds.Should().BeEquivalentTo(ExpectedParticipantsAandB);
         captured.MinimumParticipants.Should().Be(2);
         captured.MinimumConfidence.Should().Be(0.7);
-        captured.Timeout.Should().Be(TimeSpan.FromSeconds(30));
+        captured.Timeout.Should().Be(TimeSpan.FromSeconds(120));
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_WithIncludeThinkingEnabled_ShouldIncludeThinkingAgents()
+    {
+        var logger = new Mock<ILogger<RequestCollaborationTool>>();
+        var collaboration = new Mock<IAgentCollaborationService>();
+        var registry = new Mock<IAgentRegistry>();
+
+        registry.Setup(r => r.GetAllAgents()).Returns(new[]
+        {
+            CreateAgent("initiator", AgentRank.Duke, AgentStatus.Idle),
+            CreateAgent("a", AgentRank.Worker, AgentStatus.Idle),
+            CreateAgent("b", AgentRank.Worker, AgentStatus.Thinking),
+            CreateAgent("c", AgentRank.Worker, AgentStatus.Suspended)
+        });
+
+        CollaborationRequest? captured = null;
+        collaboration
+            .Setup(s => s.RequestCollaborationAsync(It.IsAny<CollaborationRequest>(), It.IsAny<CancellationToken>()))
+            .Callback<CollaborationRequest, CancellationToken>((req, _) => captured = req)
+            .ReturnsAsync(new CollaborationResult
+            {
+                Decision = "Ok",
+                Confidence = 0.91,
+                AgreementScore = 0.8,
+                ParticipantCount = 2,
+                Strategy = CollaborationStrategy.WeightedVoting,
+                AggregatedReasoning = "Reasoning"
+            });
+
+        var tool = new RequestCollaborationTool(logger.Object, collaboration.Object, registry.Object);
+
+        var result = await tool.ExecuteAsync(new Dictionary<string, object>
+        {
+            ["task"] = "Need consensus",
+            ["agent_id"] = "initiator",
+            ["include_thinking"] = true,
+            ["timeout_seconds"] = 45
+        });
+
+        result.Success.Should().BeTrue();
+
+        captured.Should().NotBeNull();
+        captured!.ParticipantAgentIds.Should().BeEquivalentTo(ExpectedParticipantsAandB);
+        captured.Timeout.Should().Be(TimeSpan.FromSeconds(45));
     }
 
     [Fact]

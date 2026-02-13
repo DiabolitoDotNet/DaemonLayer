@@ -8,12 +8,19 @@ services:
     restart: unless-stopped
     networks:
       - infernal-network
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
     ports:
       - "127.0.0.1:11434:11434"
     environment:
       - OLLAMA_HOST=0.0.0.0
       # Single model for the whole application
-      - OLLAMA_MODEL=qwen3:14b
+      - OLLAMA_MODEL=llama3.1:8b
     volumes:
       - ollama_data:/root/.ollama
     command: ["serve"]
@@ -30,10 +37,10 @@ services:
     restart: "no"
     environment:
       - OLLAMA_HOST=ollama:11434
-      - OLLAMA_MODEL=qwen3:14b
+      - OLLAMA_MODEL=llama3.1:8b
     volumes:
       - ollama_data:/root/.ollama
-    command: ["pull", "qwen3:14b"]
+    command: ["pull", "llama3.1:8b"]
 
   # InfernalHierarchy .NET Worker Service
   infernal-hierarchy:
@@ -43,7 +50,9 @@ services:
     container_name: infernal-hierarchy
     environment:
       - Ollama__BaseUrl=http://ollama:11434/v1
-      - Ollama__DefaultModel=qwen3:14b
+      - Ollama__DefaultModel=llama3.1:8b
+      - Ollama__AlternativeModel=qwen3:14b
+      - Ollama__RequestTimeoutSeconds=600
       - SearXNG__BaseUrl=http://searxng:8080
       - SearXNG__Enabled=true
       - Memory__DatabasePath=/app/data/infernal.db
@@ -105,9 +114,9 @@ services:
       - TextToSpeech__Arguments__3=--output
       - TextToSpeech__Arguments__4={output}
       - TextToSpeech__Arguments__5=--voice
-      - TextToSpeech__Arguments__6=af_heart
+      - TextToSpeech__Arguments__6=ff_siwis
       - TextToSpeech__Arguments__7=--lang_code
-      - TextToSpeech__Arguments__8=a
+      - TextToSpeech__Arguments__8=f
       - TextToSpeech__Arguments__9=--sample_rate
       - TextToSpeech__Arguments__10=24000
 

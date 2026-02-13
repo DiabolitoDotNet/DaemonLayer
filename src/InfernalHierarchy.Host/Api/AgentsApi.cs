@@ -1,5 +1,6 @@
 using InfernalHierarchy.Host.Migration;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
 
 namespace InfernalHierarchy.Host.Api;
 
@@ -51,7 +52,7 @@ internal static class AgentsApi
 
         app.MapPost("/api/agents/import", async (
             HttpContext ctx,
-            AgentImportRequest req,
+            [FromBody] AgentImportRequest req,
             AgentMigrationService migration,
             CancellationToken ct) =>
         {

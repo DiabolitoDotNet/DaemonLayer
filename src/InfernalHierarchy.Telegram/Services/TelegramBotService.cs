@@ -1,6 +1,8 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using System.Globalization;
 using System.Diagnostics;
+using System.Text;
 using Telegram.Bot;
 using Telegram.Bot.Exceptions;
 using Telegram.Bot.Polling;
@@ -18,6 +20,24 @@ namespace InfernalHierarchy.Telegram.Services;
 public class TelegramBotService : BackgroundService
 {
     private const string TelegramAgentId = "telegram";
+    private static readonly HashSet<string> PresencePingMessages = new(StringComparer.OrdinalIgnoreCase)
+    {
+        // Canonical (lowercase, no accents, no punctuation, collapsed spaces)
+        "are you there",
+        "still there",
+        "you there",
+        "tu es la",
+        "t'es la",
+        "toujours la",
+        "encore la",
+        "tu es encore la",
+        "t'es encore la",
+        "es tu la",
+        "allo",
+        "ping",
+        "test"
+    };
+
     private readonly ILogger<TelegramBotService> _logger;
     private readonly IMessageBus _messageBus;
     private readonly TelegramOptions _options;
@@ -310,6 +330,53 @@ public class TelegramBotService : BackgroundService
         return $"{p}\n\n---\nDemande utilisateur (Telegram):\n{userText}";
     }
 
+    private static bool IsPresencePing(string messageText)
+    {
+        if (string.IsNullOrWhiteSpace(messageText))
+        {
+            return false;
+        }
+
+        var canonical = CanonicalizePresencePing(messageText);
+        return PresencePingMessages.Contains(canonical);
+    }
+
+    private static string CanonicalizePresencePing(string messageText)
+    {
+        var normalized = messageText.Trim();
+
+        // Normalize apostrophes/hyphens first so we can collapse whitespace consistently.
+        normalized = normalized.Replace('’', '\'');
+        normalized = normalized.Replace('–', '-');
+        normalized = normalized.Replace('—', '-');
+        normalized = normalized.Replace('-', ' ');
+
+        // Drop accents (e.g., "là" -> "la", "allô" -> "allo").
+        normalized = normalized.Normalize(NormalizationForm.FormD);
+        var sb = new System.Text.StringBuilder(normalized.Length);
+        foreach (var ch in normalized)
+        {
+            if (CharUnicodeInfo.GetUnicodeCategory(ch) != UnicodeCategory.NonSpacingMark)
+            {
+                sb.Append(ch);
+            }
+        }
+
+        normalized = sb
+            .ToString()
+            .Normalize(NormalizationForm.FormC)
+            .ToLowerInvariant();
+
+        // Remove common trailing punctuation and any stray punctuation characters.
+        normalized = Regex.Replace(normalized, @"[\?\!\.,;:]+", " ");
+
+        // Collapse whitespace.
+        normalized = Regex.Replace(normalized, @"\s+", " ");
+        normalized = normalized.Trim();
+
+        return normalized;
+    }
+
     internal async Task HandleUpdateAsync(ITelegramBotClient botClient, Update update, CancellationToken ct)
     {
         if (update.Message is not { } message || message.Text is not { } messageText)
@@ -326,6 +393,13 @@ public class TelegramBotService : BackgroundService
         }
 
         _logger.LogInformation("📩 Telegram message from {UserId}: {Text}", userId, messageText);
+
+        if (!messageText.StartsWith('/') && IsPresencePing(messageText))
+        {
+            _logger.LogInformation("⚡ Fast-path presence ping for chat {ChatId}", chatId);
+            await botClient.SendMessage(chatId, "Oui. Je suis là.", cancellationToken: ct);
+            return;
+        }
 
         try
         {

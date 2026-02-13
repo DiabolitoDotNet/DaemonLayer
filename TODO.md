@@ -1,6 +1,6 @@
 # InfernalHierarchy – TODO (Pending Work Only)
 
-> **Last Updated:** February 6, 2026  
+> **Last Updated:** February 13, 2026  
 > **Scope:** This file lists only items that are **not yet implemented or not yet completed**.  
 > **Completed items moved to:** `COMPLETED.md`
 
@@ -17,7 +17,45 @@
 
 ## 🔴 NOW - Next Sprint
 
-_No items currently tracked for this section._
+- [ ] **Runbook: “Custom tools” end-to-end (create → policy → compile → register → invoke)**
+  - Documenter le pipeline complet:
+    - Meta-tool `create_custom_tool` (génération source C# → policy → compilation Roslyn → persistence LiteDB → registration `ToolRegistry`).
+    - Outil debug `custom_tool_get_source` (récupération tool_id, source_hash, code stocké, statut compile/policy).
+    - Overwrite/update: comment une régénération remplace bien l’implémentation d’un `custom_*` déjà existant.
+  - Inclure 2 recettes reproductibles:
+    - “Créer un HTTP GET JSON tool” (base_url + endpoint) + invocation qui renvoie du JSON réel.
+    - “Diagnostiquer un tool qui ne se met pas à jour” (hash, logs “Updated tool”, store vs registry).
+  - Capturer les pièges déjà rencontrés:
+    - /api/chat: schéma & binding (keys `Message`, `ToAgentId`, `TimeoutMs` en PascalCase).
+    - Forced invocation: format attendu “Invoke tool <name> {json}”.
+
+- [ ] **Runbook: Tool authorization debugging (incl. custom tools “Supreme-only”)**
+  - Expliquer clairement:
+    - Pourquoi `custom_*` est Supreme-only par défaut.
+    - Où et comment configurer `ToolPermissions` pour autoriser création/invocation à d’autres agents.
+    - Comment interpréter les deny reasons (policy vs permissions vs allowlist persona).
+  - Ajouter une checklist de triage (persona allowlist → ToolPermissions → policy → compilation → registry).
+
+- [ ] **Permissions: délégation contrôlée de création de tools à certains agents (opt-in)**
+  - Objectif: permettre à un Prince/Duke spécifique (ex: Asmodeus, Baal, Vassago) de créer des custom tools sans ouvrir globalement.
+  - Livrables:
+    - Paramétrage clair (config) + exemples.
+    - Tests couvrant: agent autorisé vs non autorisé, et scope (create_custom_tool vs invocation du tool créé).
+    - Logs structurés: “permission granted/denied” avec agent_id, tool_name, reason.
+
+- [ ] **Durcir la policy custom tools (réduire les faux positifs + précision)**
+  - Aujourd’hui: scan regex sur code “comment-stripped”.
+  - À faire:
+    - Ignorer aussi les *string literals* (ex: texte contenant “file”) ou basculer sur parsing Roslyn (tokens/syntax tree).
+    - Remplacer/compléter la règle “File/Directory APIs” par une détection plus sémantique (ex: `System.IO.*` + symboles connus) au lieu d’un simple mot-clé.
+    - Ajouter des tests de non-régression: “File” en string/comment ne doit pas bloquer; `System.IO.File` doit bloquer.
+
+- [ ] **Stabiliser la DX: nettoyer les warnings de build qui masquent les régressions**
+  - Traiter au minimum les warnings récurrents observés au build Docker:
+    - CS8619 (nullability mismatch) dans `DefaultToolExecutionPipeline`.
+    - CA2024 (EndOfStream en async) dans `OllamaClient`.
+    - CS0162 (unreachable code) dans `AgentFactory`.
+  - But: rendre les logs utiles et préparer un “analyzer gate”.
 
 
 ## 🔧 Active Gaps / Known Limitations
@@ -25,6 +63,12 @@ _No items currently tracked for this section._
 - [ ] **Add an opt-in analyzer gate** (CI job or local script)
   - Analyzer configuration already exists (off-by-default in `Directory.Build.props`).
   - Add a dedicated script (and/or CI job when CI is introduced) that runs analyzers explicitly for tightening quality gates.
+
+- [ ] **Clarifier et tester les comportements “stop-after-success / dedupe” pour toutes les tools à effets de bord**
+  - Déjà traité pour l’email (signature canonique + arrêt après succès).
+  - Reste à cadrer:
+    - Définir la liste des tools side-effect (réseau, notifications, écritures mémoire, filesystem/process) + stratégie dedupe.
+    - Ajouter quelques tests ciblés sur 1–2 tools réseau supplémentaires (même mécanique de canonicalization).
 
 - [ ] **Increase test coverage outside Telegram**
   - Prioritize: `InfernalHierarchy.Messaging` (non-ChannelMessageBus paths), `InfernalHierarchy.Agents` (Saga/CQRS), and `InfernalHierarchy.Core.CQRS`.
@@ -54,6 +98,12 @@ _No additional operational runbooks currently tracked here._
 - [ ] **Architecture diagrams (C4 + sequence)**
   - Add Mermaid diagrams for: container/component architecture, and the typical runtime sequence (Telegram update → validation → orchestrator → ReAct → tool pipeline → memory → response).
 
+- [ ] **Documenter /api/chat et la sémantique “forced invocation”**
+  - Ajouter une section courte mais précise dans la doc (ou un runbook):
+    - Schéma de requête/réponse.
+    - Casing des champs.
+    - Exemples PowerShell (construction JSON sûre) pour éviter les erreurs d’échappement.
+
 ---
 
 ## 💡 COULD HAVE - Future Enhancements
@@ -64,6 +114,11 @@ _No additional Memory & Learning backlog items currently tracked here._
 ### Tool Ecosystem
 - [ ] **API integration tools** - GraphQL-first client + auth helpers (REST covered by `http_request`)
 - [ ] **Database query tools** - SQL query execution (read-only)
+
+- [ ] **Meta tools complémentaires pour custom tools**
+  - `custom_tool_list` (liste: tool_name, tool_id, last_compiled_at, requires_manual_approval).
+  - `custom_tool_delete` (supprimer un tool + retirer du registry) avec garde-fous.
+  - Objectif: opérer les tools sans accéder à LiteDB à la main.
 
 ### Agent Capabilities
 _No additional Agent Capabilities backlog items currently tracked here._

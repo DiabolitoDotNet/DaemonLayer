@@ -18,6 +18,11 @@ public sealed class EmailNotificationOptionsValidator : IValidateOptions<EmailNo
         if (string.IsNullOrWhiteSpace(options.Password)) failures.Add("Email:Password is required when Email:Enabled=true");
         if (string.IsNullOrWhiteSpace(options.FromAddress)) failures.Add("Email:FromAddress is required when Email:Enabled=true");
 
+        if (!string.IsNullOrWhiteSpace(options.DefaultTo) && !options.DefaultTo.Contains('@'))
+        {
+            failures.Add("Email:DefaultTo must be a valid email address list (comma/semicolon separated)");
+        }
+
         return failures.Count == 0
             ? ValidateOptionsResult.Success
             : ValidateOptionsResult.Fail(failures);

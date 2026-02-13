@@ -84,7 +84,10 @@ internal sealed class CustomToolsStartupService : IHostedService
                 continue;
             }
 
-            if (policyDecision.RequiresManualApproval && !approved && !options.AllowUnsafeWithoutManualApproval)
+            var effectiveRequiresManualApproval = policyDecision.RequiresManualApproval
+                && !IsNetworkOnly(policyDecision.MatchedRules, options);
+
+            if (effectiveRequiresManualApproval && !approved && !options.AllowUnsafeWithoutManualApproval)
             {
                 blocked++;
                 _logger.LogWarning(
@@ -121,5 +124,35 @@ internal sealed class CustomToolsStartupService : IHostedService
     {
         return options.ApprovedToolIds.Any(id => string.Equals(id?.Trim(), def.Id, StringComparison.OrdinalIgnoreCase))
                || options.ApprovedToolNames.Any(n => string.Equals(n?.Trim(), def.ToolName, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static bool IsNetworkOnly(IReadOnlyList<string> matchedRules, CustomToolsOptions options)
+    {
+        if (!options.AllowNetworkWithoutManualApproval)
+        {
+            return false;
+        }
+
+        if (matchedRules is null || matchedRules.Count == 0)
+        {
+            return false;
+        }
+
+        foreach (var rule in matchedRules)
+        {
+            if (string.Equals(rule, "Network namespaces", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            if (string.Equals(rule, "HttpClient/WebRequest", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            return false;
+        }
+
+        return true;
     }
 }

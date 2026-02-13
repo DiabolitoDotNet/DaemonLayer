@@ -25,13 +25,17 @@ public class OllamaClient : ILlmClient
         _options = options.Value;
         _logger = logger;
 
+        var timeoutSeconds = _options.RequestTimeoutSeconds > 0
+            ? _options.RequestTimeoutSeconds
+            : 120;
+
         // IMPORTANT: Ollama exposes an OpenAI-compatible API at:
         //   {BaseUrl}/chat/completions
         // BaseUrl should typically be http://localhost:11434/v1 (or host.docker.internal:11434/v1 in Docker).
         _http = new HttpClient
         {
             BaseAddress = NormalizeBaseUrl(_options.BaseUrl),
-            Timeout = TimeSpan.FromSeconds(120)
+            Timeout = TimeSpan.FromSeconds(timeoutSeconds)
         };
 
         // Ollama does not require auth by default, but some reverse proxies might.
@@ -43,9 +47,11 @@ public class OllamaClient : ILlmClient
             DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
         };
 
-        _logger.LogInformation("🧠 Ollama client initialized: {BaseUrl} with model {Model}",
+        _logger.LogInformation(
+            "🧠 Ollama client initialized: {BaseUrl} | model={Model} | timeout={TimeoutSeconds}s",
             _http.BaseAddress?.ToString() ?? _options.BaseUrl.ToString(),
-            _options.DefaultModel);
+            _options.DefaultModel,
+            timeoutSeconds);
     }
 
     /// <summary>

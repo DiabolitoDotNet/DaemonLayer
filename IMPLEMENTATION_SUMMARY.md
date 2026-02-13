@@ -2,6 +2,29 @@
 
 ## ✅ All 6 Critical Features Implemented
 
+## Update (Feb 13, 2026)
+
+- Reliability hardening to reduce non-determinism and repeated side effects (tool-call dedupe + stop-after-success for side-effect tools).
+- Outbound email “spam” fixed by canonicalizing send signatures and stopping after first successful send; regression tests added.
+- SearXNG Startpage JSON decode errors stopped by disabling Startpage engines in `searxng/settings.yml`.
+- Custom tools pipeline hardened and proven end-to-end via `/api/chat` forced invocation:
+   - Deterministic fast-path executes explicit `Invoke tool <name> {json}` immediately and records tool calls.
+   - Forced invocation supports `create_custom_tool` for deterministic regenerate/overwrite.
+   - Tool registry now replaces existing `custom_*` tools at runtime (update instead of refusing duplicates).
+   - Added debug meta tool `custom_tool_get_source` to inspect persisted tool source/metadata.
+   - Fixed generated HTTP tool URL combining (`/get` no longer becomes `file:///get`).
+   - Security policy scan strips comments to avoid false positives from comment text; regression test added.
+
+**PowerShell example (forced invocation via /api/chat):**
+```powershell
+$toolParams = @{ base_url = 'https://httpbin.org'; endpoint = '/get' } | ConvertTo-Json -Compress -Depth 10
+$message = "Invoke tool custom_lacale_api $toolParams"
+$body = @{ Message = $message; ToAgentId = 'lucifer'; TimeoutMs = 120000 } | ConvertTo-Json -Compress -Depth 10
+
+Invoke-RestMethod -Method Post -Uri 'http://localhost:5080/api/chat' -ContentType 'application/json' -Body $body |
+   ConvertTo-Json -Depth 50
+```
+
 ### 1. Configuration Validation ✅
 **File:** `src/InfernalHierarchy.Host/ConfigurationValidator.cs`
 

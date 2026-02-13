@@ -78,7 +78,7 @@ public class CommandHandlerTests
             Name = "Lucifer",
             SystemPrompt = "You are Lucifer, the Supreme Commander.",
             Specializations = new List<string> { "command", "orchestration" },
-            AvailableTools = new List<string> { "telegram_send", "read_memory", "write_memory" }
+            AvailableTools = new List<string> { "send_telegram", "read_memory", "write_memory" }
         };
 
         return new ReActAgent(

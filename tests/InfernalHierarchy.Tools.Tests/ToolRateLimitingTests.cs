@@ -114,7 +114,7 @@ public sealed class ToolRateLimitingTests
             },
             Tools = new Dictionary<string, ToolRateLimitOverride>(StringComparer.OrdinalIgnoreCase)
             {
-                ["telegram_send"] = new ToolRateLimitOverride { Enabled = false }
+                ["send_telegram"] = new ToolRateLimitOverride { Enabled = false }
             }
         });
 
@@ -127,7 +127,7 @@ public sealed class ToolRateLimitingTests
             eventSink: null,
             rateLimiter: limiter);
 
-        var tool = new FakeTool("telegram_send");
+        var tool = new FakeTool("send_telegram");
         var context = new ToolExecutionContext(tool.Name, tool, new(), "agent-1", "Worker", CancellationToken.None);
 
         var r1 = await pipeline.ExecuteAsync(context);

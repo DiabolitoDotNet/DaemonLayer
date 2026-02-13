@@ -77,7 +77,8 @@ public sealed class CreateCustomToolToolTests
             new TestOptionsMonitor<CustomToolsOptions>(new CustomToolsOptions
             {
                 Enabled = true,
-                AllowUnsafeWithoutManualApproval = false
+                AllowUnsafeWithoutManualApproval = false,
+                AllowNetworkWithoutManualApproval = false
             }),
             NullLogger<CreateCustomToolTool>.Instance);
 
@@ -96,6 +97,98 @@ public sealed class CreateCustomToolToolTests
         var persisted = await store.GetByNameAsync("custom_http");
         persisted.Should().NotBeNull();
         persisted!.RequiresManualApproval.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_WithNetworkOnlyRiskyCode_ShouldRegisterWithoutManualApproval_ByDefault()
+    {
+        var store = new InMemoryCustomToolStore();
+        var registry = new ToolRegistry(NullLogger<ToolRegistry>.Instance);
+        var services = new ServiceCollection().BuildServiceProvider();
+
+        var llm = new StubLlmClient(RiskyToolSource("custom_http", "CustomHttpTool"));
+        var compiler = new AssertingCompiler((source, expectedName) =>
+        {
+            source.Should().Contain("System.Net.Http");
+            expectedName.Should().Be("custom_http");
+            return new HttpTool();
+        });
+
+        // Default options include AllowNetworkWithoutManualApproval=true.
+        var tool = new CreateCustomToolTool(
+            llm,
+            registry,
+            services,
+            compiler,
+            new DefaultCustomToolSecurityPolicy(),
+            store,
+            new TestOptionsMonitor<CustomToolsOptions>(new CustomToolsOptions { Enabled = true }),
+            NullLogger<CreateCustomToolTool>.Instance);
+
+        var result = await tool.ExecuteAsync(new Dictionary<string, object>
+        {
+            ["requirement"] = "Make an HTTP request",
+            ["tool_name"] = "custom_http",
+            ["agent_id"] = "lucifer",
+            ["agent_name"] = "Lucifer"
+        });
+
+        result.Success.Should().BeTrue();
+        registry.GetTool("custom_http").Should().NotBeNull();
+
+        var persisted = await store.GetByNameAsync("custom_http");
+        persisted.Should().NotBeNull();
+        persisted!.RequiresManualApproval.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_WithNetworkOnlyRiskyCode_AndFileMentionedInComment_ShouldStillRegisterByDefault()
+    {
+        var store = new InMemoryCustomToolStore();
+        var registry = new ToolRegistry(NullLogger<ToolRegistry>.Instance);
+        var services = new ServiceCollection().BuildServiceProvider();
+
+        var llm = new StubLlmClient(RiskyToolSourceWithCommentMentioningFile("custom_http", "CustomHttpTool"));
+        var compiler = new AssertingCompiler((source, expectedName) =>
+        {
+            source.Should().Contain("System.Net.Http");
+            expectedName.Should().Be("custom_http");
+            return new HttpTool();
+        });
+
+        // Default options include AllowNetworkWithoutManualApproval=true.
+        var tool = new CreateCustomToolTool(
+            llm,
+            registry,
+            services,
+            compiler,
+            new DefaultCustomToolSecurityPolicy(),
+            store,
+            new TestOptionsMonitor<CustomToolsOptions>(new CustomToolsOptions { Enabled = true }),
+            NullLogger<CreateCustomToolTool>.Instance);
+
+        var result = await tool.ExecuteAsync(new Dictionary<string, object>
+        {
+            ["requirement"] = "Make an HTTP request",
+            ["tool_name"] = "custom_http",
+            ["agent_id"] = "lucifer",
+            ["agent_name"] = "Lucifer"
+        });
+
+        result.Success.Should().BeTrue();
+        registry.GetTool("custom_http").Should().NotBeNull();
+
+        var persisted = await store.GetByNameAsync("custom_http");
+        persisted.Should().NotBeNull();
+        persisted!.RequiresManualApproval.Should().BeFalse();
+    }
+
+    private sealed class HttpTool : ITool
+    {
+        public string Name => "custom_http";
+        public string Description => "http";
+        public Task<ToolResult> ExecuteAsync(Dictionary<string, object> parameters, CancellationToken ct = default)
+            => Task.FromResult(new ToolResult { Success = true, Output = "ok" });
     }
 
     private sealed class HelloTool : ITool
@@ -208,6 +301,24 @@ public sealed class CreateCustomToolToolTests
         $"{{\n" +
         $"    public string Name => \"{toolName}\";\n" +
         $"    public string Description => \"risky\";\n" +
+        $"    public Task<ToolResult> ExecuteAsync(Dictionary<string, object> parameters, CancellationToken ct = default)\n" +
+        $"        => Task.FromResult(new ToolResult {{ Success = true, Output = \"ok\" }});\n" +
+        $"}}\n" +
+        $"```";
+
+    private static string RiskyToolSourceWithCommentMentioningFile(string toolName, string className) =>
+        $"```csharp\n" +
+        $"using InfernalHierarchy.Core.Interfaces;\n" +
+        $"using System.Net.Http;\n" +
+        $"\n" +
+        $"namespace InfernalHierarchy.CustomTools;\n" +
+        $"\n" +
+        $"public sealed class {className} : ITool\n" +
+        $"{{\n" +
+        $"    public string Name => \"{toolName}\";\n" +
+        $"    public string Description => \"risky\";\n" +
+        $"\n" +
+        $"    // Mentioning file here should not trigger File/Directory APIs policy.\n" +
         $"    public Task<ToolResult> ExecuteAsync(Dictionary<string, object> parameters, CancellationToken ct = default)\n" +
         $"        => Task.FromResult(new ToolResult {{ Success = true, Output = \"ok\" }});\n" +
         $"}}\n" +

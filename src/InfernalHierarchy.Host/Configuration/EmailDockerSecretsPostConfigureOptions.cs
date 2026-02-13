@@ -95,6 +95,11 @@ public sealed class EmailDockerSecretsPostConfigureOptions : IPostConfigureOptio
                 options.FromAddress = secret.FromAddress;
             }
 
+            if (!string.IsNullOrWhiteSpace(secret.DefaultTo) && string.IsNullOrWhiteSpace(options.DefaultTo))
+            {
+                options.DefaultTo = secret.DefaultTo;
+            }
+
             if (secret.FromName is not null && options.FromName is null)
             {
                 options.FromName = string.IsNullOrWhiteSpace(secret.FromName) ? null : secret.FromName;
@@ -122,6 +127,7 @@ public sealed class EmailDockerSecretsPostConfigureOptions : IPostConfigureOptio
         public string? Username { get; set; }
         public string? Password { get; set; }
         public string? FromAddress { get; set; }
+        public string? DefaultTo { get; set; }
         public string? FromName { get; set; }
         public int? TimeoutMs { get; set; }
     }

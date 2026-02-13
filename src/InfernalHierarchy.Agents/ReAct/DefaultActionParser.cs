@@ -5,6 +5,12 @@ namespace InfernalHierarchy.Agents.ReAct;
 
 public sealed class DefaultActionParser : IActionParser
 {
+    private static readonly JsonDocumentOptions JsonParseOptions = new()
+    {
+        AllowTrailingCommas = true,
+        CommentHandling = JsonCommentHandling.Skip
+    };
+
     public bool TryParse(string response, bool useJsonResponse, out ParsedAction parsed)
     {
         parsed = default;
@@ -77,19 +83,14 @@ public sealed class DefaultActionParser : IActionParser
             candidate = candidate.Trim();
         }
 
-        if (!candidate.StartsWith("{", StringComparison.Ordinal))
+        if (!TryExtractFirstJsonObject(candidate, out var json))
         {
-            var first = candidate.IndexOf('{');
-            var last = candidate.LastIndexOf('}');
-            if (first >= 0 && last > first)
-            {
-                candidate = candidate.Substring(first, last - first + 1);
-            }
+            return false;
         }
 
         try
         {
-            using var doc = JsonDocument.Parse(candidate);
+            using var doc = JsonDocument.Parse(json, JsonParseOptions);
             if (doc.RootElement.ValueKind != JsonValueKind.Object)
             {
                 return false;
@@ -150,6 +151,87 @@ public sealed class DefaultActionParser : IActionParser
         }
     }
 
+    private static bool TryExtractFirstJsonObject(string text, out string json)
+    {
+        json = string.Empty;
+
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return false;
+        }
+
+        var candidate = text.Trim();
+
+        if (candidate.StartsWith("{", StringComparison.Ordinal))
+        {
+            json = candidate;
+            return true;
+        }
+
+        // Walk the string and extract the first balanced {...} region.
+        // This is robust against leading prose and avoids the "first '{' .. last '}'" trap.
+        var start = -1;
+        var depth = 0;
+        var inString = false;
+        var escape = false;
+
+        for (var i = 0; i < candidate.Length; i++)
+        {
+            var c = candidate[i];
+
+            if (inString)
+            {
+                if (escape)
+                {
+                    escape = false;
+                    continue;
+                }
+
+                if (c == '\\')
+                {
+                    escape = true;
+                    continue;
+                }
+
+                if (c == '"')
+                {
+                    inString = false;
+                }
+
+                continue;
+            }
+
+            if (c == '"')
+            {
+                inString = true;
+                continue;
+            }
+
+            if (c == '{')
+            {
+                if (depth == 0)
+                {
+                    start = i;
+                }
+
+                depth++;
+                continue;
+            }
+
+            if (c == '}' && depth > 0)
+            {
+                depth--;
+                if (depth == 0 && start >= 0)
+                {
+                    json = candidate.Substring(start, i - start + 1);
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
     private static string NormalizeActionName(string action)
     {
         if (string.IsNullOrWhiteSpace(action))
@@ -176,10 +258,37 @@ public sealed class DefaultActionParser : IActionParser
             return string.Empty;
         }
 
+        if (tokens.Length == 1)
+        {
+            var token = tokens[0];
+            if (token.Equals("FINAL_ANSWER", StringComparison.OrdinalIgnoreCase) || token.Equals("FINAL", StringComparison.OrdinalIgnoreCase) || token.Equals("final", StringComparison.OrdinalIgnoreCase) || token.Equals("finalanswer", StringComparison.OrdinalIgnoreCase) || token.Equals("finalresponse", StringComparison.OrdinalIgnoreCase))
+            {
+                return "FINAL_ANSWER";
+            }
+        }
+
+        if (tokens.Any(t => t.Equals("FINAL_ANSWER", StringComparison.OrdinalIgnoreCase)))
+        {
+            return "FINAL_ANSWER";
+        }
+
+        // Map "Final Answer" / "final response" style actions to FINAL_ANSWER.
+        if (tokens.Any(t => t.Equals("final", StringComparison.OrdinalIgnoreCase))
+            && (tokens.Any(t => t.Equals("answer", StringComparison.OrdinalIgnoreCase))
+                || tokens.Any(t => t.Equals("response", StringComparison.OrdinalIgnoreCase))))
+        {
+            return "FINAL_ANSWER";
+        }
+
         // Prefer an identifier-like token that matches our tool naming convention (underscored).
         foreach (var token in tokens)
         {
             if (token.Equals("FINAL_ANSWER", StringComparison.OrdinalIgnoreCase))
+            {
+                return "FINAL_ANSWER";
+            }
+
+            if (token.Equals("FINAL", StringComparison.OrdinalIgnoreCase) || token.Equals("final", StringComparison.OrdinalIgnoreCase))
             {
                 return "FINAL_ANSWER";
             }

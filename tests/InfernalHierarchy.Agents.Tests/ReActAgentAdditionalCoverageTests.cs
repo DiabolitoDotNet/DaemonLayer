@@ -166,17 +166,17 @@ public class ReActAgentAdditionalCoverageTests
     public async Task ProcessTaskAsync_CommandUsage_WhenTrackerMissing_ReturnsWarning_AndSendsViaTelegram()
     {
         var agent = CreateAgent();
-        var persona = CreatePersona("telegram_send");
+        var persona = CreatePersona("send_telegram");
 
         var toolRegistry = new Mock<IToolRegistry>();
 
         var telegramTool = new Mock<ITool>();
-        telegramTool.SetupGet(x => x.Name).Returns("telegram_send");
+        telegramTool.SetupGet(x => x.Name).Returns("send_telegram");
         telegramTool.SetupGet(x => x.Description).Returns("send");
         telegramTool.Setup(x => x.ExecuteAsync(It.IsAny<Dictionary<string, object>>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new ToolResult { Success = true, Output = "ok" });
 
-        toolRegistry.Setup(x => x.GetTool("telegram_send")).Returns(telegramTool.Object);
+        toolRegistry.Setup(x => x.GetTool("send_telegram")).Returns(telegramTool.Object);
 
         var sut = new ReActAgent(
             agent,

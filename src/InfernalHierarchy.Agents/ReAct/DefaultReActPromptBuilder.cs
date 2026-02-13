@@ -37,6 +37,7 @@ public sealed class DefaultReActPromptBuilder : IReActPromptBuilder
 
                         IMPORTANT:
                         - When action=FINAL_ANSWER, actionInput MUST be the complete user-facing answer.
+                        - action MUST be either FINAL_ANSWER or one of the Available tools listed below.
                         - Do NOT reply with "research completed" or status updates.
                         - If you used web_search or other tools, summarize the actual findings and include concrete details.
                         - If you are uncertain, state assumptions and ask a clarifying question in the final answer.
@@ -63,6 +64,7 @@ public sealed class DefaultReActPromptBuilder : IReActPromptBuilder
 
                         IMPORTANT:
                         - If Action is FINAL_ANSWER, the Action Input must be the complete user-facing answer.
+                        - Action MUST be either FINAL_ANSWER or one of the Available tools listed below.
                         - Do NOT output only status confirmations (e.g., "I did the research").
 
                         Available tools: {string.Join(", ", availableTools)}

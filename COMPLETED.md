@@ -1,6 +1,6 @@
 # InfernalHierarchy – Completed Work Log
 
-> **Last Updated:** February 6, 2026
+> **Last Updated:** February 13, 2026
 >
 > This file contains items/features that are **implemented / completed** and were moved out of `TODO.md` to keep the TODO list focused on remaining work.
 >
@@ -206,6 +206,32 @@
 - ReActAgent SRP refactor (SOLID): moved command/collaboration/decision/event/RAG orchestration behind `IReAct*` services so `ReActAgent` remains a thin orchestrator.
   - Introduced `IReActTaskProcessor`, `IRagContextEnricher`, and `IAgentEventAppender` (DI-registered), preserving behavior via defaults.
   - Validated by full solution test run (`dotnet test` in Release): 479/479 passing.
+
+---
+
+## ✅ Reliability + Custom Tools Hardening (Feb 13, 2026)
+
+### Side-effects & Non-determinism ✅
+- Outbound email “spam” fixed: deduped send signatures (ignore timestamp/alias variance) + hard stop after first successful send; regression tests added and validated.
+
+### Web Search Stability ✅
+- SearXNG Startpage JSON decode errors stopped by disabling Startpage engines in `searxng/settings.yml`.
+
+### Custom Tools: approval, debug, and deterministic execution ✅
+- Manual approval relaxed for **network-only** custom tools via config (`CustomTools:AllowNetworkWithoutManualApproval=true`) while keeping manual approval for IO/process/reflection patterns.
+- Deterministic “forced invocation” fast-path in the ReAct loop: explicit `Invoke tool <name> {json}` bypasses the model and executes immediately (records tool calls reliably via `/api/chat`).
+- Forced invocation now supports `create_custom_tool` as well, enabling deterministic overwrite/regeneration without relying on model choice.
+- Tool registry supports replacing existing `custom_*` tools at runtime (updates existing entry instead of refusing duplicates).
+- Added meta debug tool `custom_tool_get_source` to fetch persisted custom tool definition + source code from LiteDB for diagnostics.
+
+### Custom Tool Template Fixes ✅
+- Fixed URL combining in generated HTTP GET JSON tool template so endpoints like `/get` no longer resolve to `file:///get` (only treats endpoint as absolute when scheme is HTTP/HTTPS).
+
+### Custom Tool Security Policy Robustness ✅
+- Security policy false-positive fixed: policy scanning strips C# comments before regex evaluation so comment text (e.g., the word “file”) doesn’t trigger File/Directory rules; regression test added.
+
+### End-to-End Proof ✅
+- Verified: `custom_lacale_api` can be deterministically overwritten and invoked via `/api/chat` and returns real JSON from `https://httpbin.org/get`.
 
 ---
 

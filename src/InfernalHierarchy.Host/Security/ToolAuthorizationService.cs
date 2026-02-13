@@ -206,7 +206,7 @@ public class ToolAuthorizationService : IToolAuthorizationService
                 WhitelistedAgents = new(),
                 BlacklistedAgents = new()
             },
-            ["telegram_send"] = new()
+            ["send_telegram"] = new()
             {
                 Enabled = true,
                 AllowedRanks = new() { AgentRank.Supreme, AgentRank.Prince, AgentRank.Duke, AgentRank.Worker },

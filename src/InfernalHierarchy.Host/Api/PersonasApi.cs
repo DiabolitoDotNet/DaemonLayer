@@ -1,5 +1,6 @@
 using InfernalHierarchy.Host.Personas;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
 
 namespace InfernalHierarchy.Host.Api;
 
@@ -49,7 +50,7 @@ internal static class PersonasApi
             });
         });
 
-        app.MapPut("/api/personas/{name}", async (HttpContext ctx, string name, PersonaRawUpdateRequest req, PersonaFileStore store, CancellationToken ct) =>
+        app.MapPut("/api/personas/{name}", async (HttpContext ctx, string name, [FromBody] PersonaRawUpdateRequest req, PersonaFileStore store, CancellationToken ct) =>
         {
             var forbid = LocalOnlyGuard.ForbidIfNotLoopback(ctx, uiOptions.LocalOnly);
             if (forbid is not null)
@@ -66,7 +67,7 @@ internal static class PersonasApi
             return Results.Ok(new { ok = true, path = result.path });
         });
 
-        app.MapPost("/api/personas/{name}/validate", (HttpContext ctx, string name, PersonaRawUpdateRequest req, PersonaFileStore store) =>
+        app.MapPost("/api/personas/{name}/validate", (HttpContext ctx, string name, [FromBody] PersonaRawUpdateRequest req, PersonaFileStore store) =>
         {
             var forbid = LocalOnlyGuard.ForbidIfNotLoopback(ctx, uiOptions.LocalOnly);
             if (forbid is not null)

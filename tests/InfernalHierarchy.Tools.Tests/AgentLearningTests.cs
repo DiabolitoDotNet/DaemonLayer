@@ -87,7 +87,7 @@ public class AgentLearningTests
     }
 
     [Theory]
-    [InlineData("Supreme", "telegram_send", 10, 9, 0.9)]
+    [InlineData("Supreme", "send_telegram", 10, 9, 0.9)]
     [InlineData("Prince", "create_sub_agent", 20, 16, 0.8)]
     [InlineData("Duke", "web_search", 15, 14, 0.933)]
     [InlineData("Worker", "read_memory", 5, 5, 1.0)]

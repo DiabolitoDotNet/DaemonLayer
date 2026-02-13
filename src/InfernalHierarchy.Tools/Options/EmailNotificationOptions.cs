@@ -4,6 +4,12 @@ public sealed class EmailNotificationOptions
 {
     public bool Enabled { get; set; } = false;
 
+    /// <summary>
+    /// Optional default recipient list (comma/semicolon separated) used by the email_send tool
+    /// when the caller does not provide a 'to' parameter.
+    /// </summary>
+    public string? DefaultTo { get; set; }
+
     public string Host { get; set; } = string.Empty;
     public int Port { get; set; } = 587;
 

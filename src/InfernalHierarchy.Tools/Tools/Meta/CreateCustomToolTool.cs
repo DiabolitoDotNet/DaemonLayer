@@ -72,43 +72,103 @@ public sealed class CreateCustomToolTool : ITool
         }
         className = "Custom" + className + "Tool";
 
-        if (_registry.GetTool(toolName) != null)
+        var overwrite = GetBool(parameters, "overwrite")
+                        || GetBool(parameters, "force")
+                        || GetBool(parameters, "overwrite_existing")
+                        || GetBool(parameters, "overwriteExisting");
+
+        if (_registry.GetTool(toolName) != null && !overwrite)
         {
             return new ToolResult
             {
-                Success = false,
-                Error = $"Tool '{toolName}' already exists in registry"
+                Success = true,
+                Output = $"Tool '{toolName}' already exists in registry (idempotent create)",
+                Metadata = new Dictionary<string, object>
+                {
+                    ["tool_name"] = toolName,
+                    ["already_exists"] = true
+                }
             };
         }
 
-        var systemPrompt = BuildSystemPrompt(toolName, className);
-        var userPrompt = BuildUserPrompt(requirement);
-
-        string raw;
-        try
+        CustomToolDefinition? existingDefinition = null;
+        if (overwrite)
         {
-            raw = await _llm.GetCompletionAsync(systemPrompt, userPrompt, ct).ConfigureAwait(false);
-        }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
-        {
-            throw;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "LLM failed to generate custom tool code");
-            return new ToolResult { Success = false, Error = ex.Message };
-        }
-
-        var source = ExtractCSharp(raw);
-        if (string.IsNullOrWhiteSpace(source))
-        {
-            return new ToolResult
+            try
             {
-                Success = false,
-                Error = "LLM output did not contain valid C# source code"
-            };
+                existingDefinition = await _store.GetByNameAsync(toolName, ct).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to load existing custom tool definition for overwrite: {ToolName}", toolName);
+            }
         }
 
+        var requestedTemplate = parameters.GetValueOrDefault("template")?.ToString();
+        var usedTemplate = false;
+        string source;
+
+        if (ShouldUseHttpGetJsonTemplate(requestedTemplate, toolName, requirement))
+        {
+            usedTemplate = true;
+            source = BuildHttpGetJsonToolSource(toolName, className);
+        }
+        else
+        {
+            var systemPrompt = BuildSystemPrompt(toolName, className);
+            var userPrompt = BuildUserPrompt(requirement);
+
+            string raw;
+            try
+            {
+                raw = await _llm.GetCompletionAsync(systemPrompt, userPrompt, ct).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "LLM failed to generate custom tool code");
+                return new ToolResult { Success = false, Error = ex.Message };
+            }
+
+            source = ExtractCSharp(raw);
+            if (string.IsNullOrWhiteSpace(source))
+            {
+                return new ToolResult
+                {
+                    Success = false,
+                    Error = "LLM output did not contain valid C# source code"
+                };
+            }
+        }
+
+        return await CompilePersistAndRegisterAsync(
+            parameters,
+            requirement,
+            toolName,
+            source,
+            usedTemplate,
+            overwrite,
+            existingDefinition,
+            ct).ConfigureAwait(false);
+    }
+
+    private async Task<ToolResult> CompilePersistAndRegisterAsync(
+        Dictionary<string, object> parameters,
+        string requirement,
+        string toolName,
+        string source,
+        bool usedTemplate,
+        bool overwrite,
+        CustomToolDefinition? existingDefinition,
+        CancellationToken ct)
+    {
         var policyDecision = _policy.Evaluate(source);
         if (!policyDecision.Allowed)
         {
@@ -119,16 +179,20 @@ public sealed class CreateCustomToolTool : ITool
                 Metadata = new Dictionary<string, object>
                 {
                     ["policy_rules"] = policyDecision.MatchedRules.ToArray(),
-                    ["tool_name"] = toolName
+                    ["tool_name"] = toolName,
+                    ["used_template"] = usedTemplate
                 }
             };
         }
 
-        var toolId = Guid.NewGuid().ToString("n");
+        var toolId = existingDefinition?.Id ?? Guid.NewGuid().ToString("n");
         var hash = Sha256Hex(source);
 
         var creatorId = parameters.GetValueOrDefault("agent_id")?.ToString() ?? "system";
         var creatorName = parameters.GetValueOrDefault("agent_name")?.ToString() ?? creatorId;
+
+        var effectiveRequiresManualApproval = policyDecision.RequiresManualApproval
+            && !IsNetworkOnly(policyDecision.MatchedRules, _options.CurrentValue);
 
         var definition = new CustomToolDefinition
         {
@@ -136,10 +200,10 @@ public sealed class CreateCustomToolTool : ITool
             ToolName = toolName,
             Description = requirement.Trim(),
             SourceCode = source,
-            CreatedByAgentId = creatorId,
-            CreatedByAgentName = creatorName,
-            CreatedAt = DateTimeOffset.UtcNow,
-            RequiresManualApproval = policyDecision.RequiresManualApproval,
+            CreatedByAgentId = existingDefinition?.CreatedByAgentId ?? creatorId,
+            CreatedByAgentName = existingDefinition?.CreatedByAgentName ?? creatorName,
+            CreatedAt = existingDefinition?.CreatedAt ?? DateTimeOffset.UtcNow,
+            RequiresManualApproval = effectiveRequiresManualApproval,
             SourceHash = hash
         };
 
@@ -161,7 +225,8 @@ public sealed class CreateCustomToolTool : ITool
                     ["tool_name"] = definition.ToolName,
                     ["source_hash"] = definition.SourceHash,
                     ["requires_manual_approval"] = true,
-                    ["policy_rules"] = policyDecision.MatchedRules.ToArray()
+                    ["policy_rules"] = policyDecision.MatchedRules.ToArray(),
+                    ["used_template"] = usedTemplate
                 }
             };
         }
@@ -182,7 +247,8 @@ public sealed class CreateCustomToolTool : ITool
                 {
                     ["tool_id"] = definition.Id,
                     ["tool_name"] = definition.ToolName,
-                    ["diagnostics"] = compile.Diagnostics.ToArray()
+                    ["diagnostics"] = compile.Diagnostics.ToArray(),
+                    ["used_template"] = usedTemplate
                 }
             };
         }
@@ -192,15 +258,247 @@ public sealed class CreateCustomToolTool : ITool
         return new ToolResult
         {
             Success = true,
-            Output = $"Created and registered tool '{compile.Tool.Name}'. Note: custom tools are Supreme-only by default unless ToolPermissions are configured.",
+            Output = overwrite
+                ? $"Overwrote and registered tool '{compile.Tool.Name}'. Note: custom tools are Supreme-only by default unless ToolPermissions are configured."
+                : $"Created and registered tool '{compile.Tool.Name}'. Note: custom tools are Supreme-only by default unless ToolPermissions are configured.",
             Metadata = new Dictionary<string, object>
             {
                 ["tool_id"] = definition.Id,
                 ["tool_name"] = compile.Tool.Name,
                 ["requires_manual_approval"] = definition.RequiresManualApproval,
-                ["source_hash"] = definition.SourceHash
+                ["source_hash"] = definition.SourceHash,
+                ["used_template"] = usedTemplate,
+                ["overwrote_existing"] = overwrite
             }
         };
+    }
+
+    private static bool GetBool(Dictionary<string, object> parameters, string key)
+    {
+        if (!parameters.TryGetValue(key, out var v) || v is null) return false;
+        if (v is bool b) return b;
+        return bool.TryParse(v.ToString(), out var parsed) && parsed;
+    }
+
+    private static bool ShouldUseHttpGetJsonTemplate(string? requestedTemplate, string toolName, string requirement)
+    {
+        if (!string.IsNullOrWhiteSpace(requestedTemplate)
+            && string.Equals(requestedTemplate.Trim(), "http_get_json", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        if (string.Equals(toolName, "custom_http_get_json", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(toolName, "custom_lacale_api", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        var r = requirement ?? string.Empty;
+        return r.Contains("httpclient", StringComparison.OrdinalIgnoreCase)
+               && r.Contains("get", StringComparison.OrdinalIgnoreCase)
+               && r.Contains("endpoint", StringComparison.OrdinalIgnoreCase)
+               && (r.Contains("base_url", StringComparison.OrdinalIgnoreCase)
+                   || r.Contains("base url", StringComparison.OrdinalIgnoreCase))
+               && r.Contains("json", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string BuildHttpGetJsonToolSource(string toolName, string className)
+    {
+        return $$"""
+using System;
+using System.Collections.Generic;
+using System.Net.Http;
+using System.Net.Http.Headers;
+using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
+using InfernalHierarchy.Core.Entities;
+using InfernalHierarchy.Core.Interfaces;
+
+namespace InfernalHierarchy.CustomTools;
+
+public sealed class {{className}} : ITool
+{
+    public string Name => "{{toolName}}";
+    public string Description => "HTTP GET JSON (raw) via HttpClient: base_url + endpoint + query_params";
+
+    public async Task<ToolResult> ExecuteAsync(Dictionary<string, object> parameters, CancellationToken ct = default)
+    {
+        if (parameters is null)
+        {
+            return new ToolResult { Success = false, Error = "Missing parameters" };
+        }
+
+        var baseUrl = GetString(parameters, "base_url") ?? GetString(parameters, "baseUrl");
+        if (string.IsNullOrWhiteSpace(baseUrl))
+        {
+            return new ToolResult { Success = false, Error = "Missing required parameter: base_url" };
+        }
+
+        var endpoint = GetString(parameters, "endpoint") ?? string.Empty;
+        var apiKey = GetString(parameters, "api_key") ?? GetString(parameters, "apiKey");
+        var apiKeyHeader = GetString(parameters, "api_key_header") ?? GetString(parameters, "apiKeyHeader") ?? "Authorization";
+        var bearer = GetBool(parameters, "bearer", defaultValue: true);
+        var query = TryGetQueryParams(parameters);
+
+        if (!Uri.TryCreate(baseUrl, UriKind.Absolute, out var baseUri))
+        {
+            return new ToolResult { Success = false, Error = "Invalid base_url (must be absolute URI)", Output = baseUrl };
+        }
+
+        var full = Combine(baseUri, endpoint);
+        if (query.Count > 0)
+        {
+            var ub = new UriBuilder(full);
+            ub.Query = BuildQueryString(query);
+            full = ub.Uri;
+        }
+
+        using var http = new HttpClient();
+        if (!string.IsNullOrWhiteSpace(apiKey))
+        {
+            if (string.Equals(apiKeyHeader, "Authorization", StringComparison.OrdinalIgnoreCase) && bearer)
+            {
+                http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+            }
+            else
+            {
+                http.DefaultRequestHeaders.Remove(apiKeyHeader);
+                http.DefaultRequestHeaders.Add(apiKeyHeader, apiKey);
+            }
+        }
+
+        HttpResponseMessage resp;
+        try
+        {
+            resp = await http.GetAsync(full, ct).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            return new ToolResult { Success = false, Error = "HTTP request failed", Output = $"{ex.Message}\nURL: {full}" };
+        }
+
+        string body;
+        try
+        {
+            body = await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            return new ToolResult { Success = false, Error = "Failed to read HTTP response", Output = ex.Message };
+        }
+
+        var meta = new Dictionary<string, object>
+        {
+            ["url"] = full.ToString(),
+            ["status_code"] = (int)resp.StatusCode
+        };
+
+        if (!resp.IsSuccessStatusCode)
+        {
+            return new ToolResult { Success = false, Error = $"HTTP {(int)resp.StatusCode} {resp.ReasonPhrase}", Output = body, Metadata = meta };
+        }
+
+        return new ToolResult { Success = true, Output = body, Metadata = meta };
+    }
+
+    private static string? GetString(Dictionary<string, object> p, string key)
+    {
+        if (!p.TryGetValue(key, out var v) || v is null) return null;
+        return v.ToString();
+    }
+
+    private static bool GetBool(Dictionary<string, object> p, string key, bool defaultValue)
+    {
+        if (!p.TryGetValue(key, out var v) || v is null) return defaultValue;
+        if (v is bool b) return b;
+        if (bool.TryParse(v.ToString(), out var parsed)) return parsed;
+        return defaultValue;
+    }
+
+    private static Dictionary<string, string> TryGetQueryParams(Dictionary<string, object> p)
+    {
+        var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        if (!p.TryGetValue("query_params", out var v) || v is null) return result;
+
+        if (v is Dictionary<string, object> dictObj)
+        {
+            foreach (var kv in dictObj)
+            {
+                if (kv.Value is null) continue;
+                result[kv.Key] = kv.Value.ToString() ?? string.Empty;
+            }
+            return result;
+        }
+
+        if (v is Dictionary<string, string> dictStr)
+        {
+            foreach (var kv in dictStr)
+            {
+                if (kv.Value is null) continue;
+                result[kv.Key] = kv.Value;
+            }
+            return result;
+        }
+
+        var s = v.ToString();
+        if (string.IsNullOrWhiteSpace(s)) return result;
+        foreach (var part in s.Split('&', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            var idx = part.IndexOf('=');
+            if (idx <= 0) continue;
+            var k = Uri.UnescapeDataString(part.Substring(0, idx));
+            var val = Uri.UnescapeDataString(part.Substring(idx + 1));
+            if (!string.IsNullOrWhiteSpace(k)) result[k] = val;
+        }
+
+        return result;
+    }
+
+    private static Uri Combine(Uri baseUri, string endpoint)
+    {
+        endpoint = endpoint?.Trim() ?? string.Empty;
+        if (endpoint.Length == 0) return baseUri;
+
+        // IMPORTANT: strings like "/get" are treated as absolute file URIs (file:///get).
+        // Only treat endpoint as absolute when it is a real HTTP/HTTPS URL.
+        if (Uri.TryCreate(endpoint, UriKind.Absolute, out var abs)
+            && (string.Equals(abs.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(abs.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)))
+        {
+            return abs;
+        }
+
+        if (!baseUri.AbsoluteUri.EndsWith("/", StringComparison.Ordinal) && !endpoint.StartsWith("/", StringComparison.Ordinal))
+        {
+            endpoint = "/" + endpoint;
+        }
+        return new Uri(baseUri, endpoint);
+    }
+
+    private static string BuildQueryString(Dictionary<string, string> query)
+    {
+        var sb = new StringBuilder();
+        foreach (var kv in query)
+        {
+            if (sb.Length > 0) sb.Append('&');
+            sb.Append(Uri.EscapeDataString(kv.Key));
+            sb.Append('=');
+            sb.Append(Uri.EscapeDataString(kv.Value ?? string.Empty));
+        }
+        return sb.ToString();
+    }
+}
+""";
     }
 
     private static string BuildSystemPrompt(string toolName, string className)
@@ -208,8 +506,9 @@ public sealed class CreateCustomToolTool : ITool
         return $"You generate a SINGLE C# file that compiles for .NET (modern C#). " +
                $"It MUST implement InfernalHierarchy.Core.Interfaces.ITool. " +
                $"Output ONLY code (no explanations). " +
-               $"Security constraints: do NOT use file IO, networking, process execution, environment access, reflection loading, unsafe code, P/Invoke. " +
-               $"Do NOT reference System.IO, System.Net, System.Sockets, System.Diagnostics.Process, System.Environment, System.Reflection, AssemblyLoadContext, DllImport, unsafe. " +
+               $"Security constraints: do NOT use file IO, process execution, environment access, reflection loading, unsafe code, P/Invoke. " +
+               $"Networking is allowed ONLY via HttpClient to call HTTPS APIs when required by the tool description. " +
+               $"Do NOT reference System.IO, System.Diagnostics.Process, System.Environment, System.Reflection, AssemblyLoadContext, DllImport, unsafe. " +
                $"Tool name MUST be exactly '{toolName}'. The class name MUST be exactly '{className}'. " +
                $"The tool should validate parameters defensively and return ToolResult with Success, Output, Error, Metadata.";
     }
@@ -219,21 +518,20 @@ public sealed class CreateCustomToolTool : ITool
            "Requirements:\n" +
            "- Implement ITool with Name/Description/ExecuteAsync\n" +
            "- Use only safe in-memory operations (string, json, xml parsing, etc.)\n" +
-           "- Do not use IO/network/process\n" +
+           "- Do not use IO/process\n" +
+           "- If you must call an external API, use HttpClient (HTTPS only)\n" +
            "- If parameters are missing, return Success=false with Error\n";
 
     private static string ExtractCSharp(string raw)
     {
         if (string.IsNullOrWhiteSpace(raw)) return string.Empty;
 
-        // Prefer fenced code block
         var fence = Regex.Match(raw, "```(?:csharp|cs)?\\s*(?<code>[\\s\\S]*?)```", RegexOptions.IgnoreCase);
         if (fence.Success)
         {
             return fence.Groups["code"].Value.Trim();
         }
 
-        // Otherwise assume the whole response is code
         return raw.Trim();
     }
 
@@ -242,7 +540,6 @@ public sealed class CreateCustomToolTool : ITool
         var baseName = !string.IsNullOrWhiteSpace(requested) ? requested! : fallback;
         baseName = baseName.Trim().ToLowerInvariant();
 
-        // slugify
         baseName = Regex.Replace(baseName, "[^a-z0-9]+", "_");
         baseName = baseName.Trim('_');
         if (baseName.Length > 48) baseName = baseName.Substring(0, 48).Trim('_');
@@ -294,6 +591,37 @@ public sealed class CreateCustomToolTool : ITool
                "Manual approval options:\n" +
                "1) Add the tool id to configuration: CustomTools:ApprovedToolIds\n" +
                "2) Or add the tool name to configuration: CustomTools:ApprovedToolNames\n" +
+               "3) Or set CustomTools:AllowUnsafeWithoutManualApproval=true to bypass approvals (broad).\n" +
                "Then restart the host (tools reload on startup).";
+    }
+
+    private static bool IsNetworkOnly(IReadOnlyList<string> matchedRules, CustomToolsOptions options)
+    {
+        if (!options.AllowNetworkWithoutManualApproval)
+        {
+            return false;
+        }
+
+        if (matchedRules is null || matchedRules.Count == 0)
+        {
+            return false;
+        }
+
+        foreach (var rule in matchedRules)
+        {
+            if (string.Equals(rule, "Network namespaces", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            if (string.Equals(rule, "HttpClient/WebRequest", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            return false;
+        }
+
+        return true;
     }
 }

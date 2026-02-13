@@ -49,9 +49,9 @@ services:
       - TextToSpeech__Arguments__3=--output
       - TextToSpeech__Arguments__4={output}
       - TextToSpeech__Arguments__5=--voice
-      - TextToSpeech__Arguments__6=af_heart
+      - TextToSpeech__Arguments__6=ff_siwis
       - TextToSpeech__Arguments__7=--lang_code
-      - TextToSpeech__Arguments__8=a
+      - TextToSpeech__Arguments__8=f
       - TextToSpeech__Arguments__9=--sample_rate
       - TextToSpeech__Arguments__10=24000
 

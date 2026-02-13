@@ -30,4 +30,13 @@ public sealed class CustomToolsOptions
     /// Default is false.
     /// </summary>
     public bool AllowUnsafeWithoutManualApproval { get; set; }
+
+    /// <summary>
+    /// When true, tools that are only flagged for network usage (e.g. HttpClient/System.Net)
+    /// do not require manual approval.
+    /// This keeps the "manual approval" guardrail for more dangerous categories (IO/process/etc)
+    /// while allowing API-integration tools to be created and used without operator intervention.
+    /// Default is true.
+    /// </summary>
+    public bool AllowNetworkWithoutManualApproval { get; set; } = true;
 }

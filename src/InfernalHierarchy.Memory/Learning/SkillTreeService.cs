@@ -223,7 +223,7 @@ public class SkillTreeService : ISkillTreeService
                 "read_memory",
                 "write_memory",
                 "web_search",
-                "telegram_send"
+                        "send_telegram"
             },
             AgentRank.Prince => new List<string>
             {

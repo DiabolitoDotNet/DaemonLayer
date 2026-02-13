@@ -34,6 +34,11 @@ public sealed class OllamaOptionsValidator : IValidateOptions<OllamaOptions>
             errors.Add("Ollama:MaxTokens must be greater than 0");
         }
 
+        if (options.RequestTimeoutSeconds <= 0)
+        {
+            errors.Add("Ollama:RequestTimeoutSeconds must be greater than 0");
+        }
+
         if (options.Temperature < 0 || options.Temperature > 2)
         {
             _logger.LogWarning(

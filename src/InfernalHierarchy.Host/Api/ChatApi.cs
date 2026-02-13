@@ -1,5 +1,6 @@
 using InfernalHierarchy.Core.Entities;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
 
 namespace InfernalHierarchy.Host.Api;
 
@@ -8,7 +9,7 @@ internal static class ChatApi
     public static void Map(WebApplication app)
     {
         app.MapPost("/api/chat", async (
-            ChatRequest request,
+            [FromBody] ChatRequest request,
             IMessageBus messageBus,
             CancellationToken ct) =>
         {

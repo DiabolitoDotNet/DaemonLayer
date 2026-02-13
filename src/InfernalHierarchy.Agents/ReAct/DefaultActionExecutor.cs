@@ -14,6 +14,18 @@ public sealed class DefaultActionExecutor : IActionExecutor
     public async Task<ActionExecutionResult> ExecuteAsync(ActionExecutionContext context)
     {
         var toolName = context.ToolName.Trim();
+
+        if (!context.AvailableTools.Contains(toolName, StringComparer.OrdinalIgnoreCase))
+        {
+            var availableTools = string.Join(", ", context.AvailableTools);
+            return new ActionExecutionResult(
+                ToolFound: false,
+                Success: false,
+                Observation: $"Observation: Tool '{toolName}' is not allowed. Available tools: {availableTools}",
+                ToolCall: null,
+                Error: "Tool not allowed");
+        }
+
         var tool = context.ToolRegistry.GetTool(toolName);
 
         if (tool == null)
@@ -64,9 +76,32 @@ public sealed class DefaultActionExecutor : IActionExecutor
             toolCall = $"{toolName}({context.ActionInputText})";
         }
 
+        static string Truncate(string? value, int maxLen)
+        {
+            if (string.IsNullOrEmpty(value)) return string.Empty;
+            if (value.Length <= maxLen) return value;
+            return value.Substring(0, maxLen) + "\n…(truncated)";
+        }
+
         var toolObservation = toolResult.Success
-            ? $"Observation: {toolResult.Output}"
-            : $"Observation: Tool execution failed - {toolResult.Error}";
+            ? $"Observation: {Truncate(toolResult.Output, 4000)}"
+            : BuildFailureObservation(toolResult);
+
+        static string BuildFailureObservation(ToolResult result)
+        {
+            var sb = new System.Text.StringBuilder();
+            sb.Append("Observation: Tool execution failed - ");
+            sb.Append(result.Error);
+
+            var details = Truncate(result.Output, 6000);
+            if (!string.IsNullOrWhiteSpace(details))
+            {
+                sb.Append("\nDetails:\n");
+                sb.Append(details);
+            }
+
+            return sb.ToString();
+        }
 
         return new ActionExecutionResult(
             ToolFound: true,

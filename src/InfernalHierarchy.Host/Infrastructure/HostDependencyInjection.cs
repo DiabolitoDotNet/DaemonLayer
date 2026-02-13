@@ -328,6 +328,7 @@ internal static class HostDependencyInjection
         builder.Services.AddSingleton<ITool, RequestCollaborationTool>();
         builder.Services.AddSingleton<ITool, TelegramSendTool>();
         builder.Services.AddSingleton<ITool, CreateCustomToolTool>();
+        builder.Services.AddSingleton<ITool, GetCustomToolSourceTool>();
         builder.Services.AddSingleton<ITool, PublishCustomToolsToGitHubTool>();
         builder.Services.AddSingleton<ITool, CreateAgentFromTemplateTool>();
         builder.Services.AddSingleton<ITool, ListTemplatesTool>();

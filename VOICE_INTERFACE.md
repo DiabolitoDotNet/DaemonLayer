@@ -56,7 +56,7 @@ Example:
     "Enabled": true,
     "UsePiperNet": false,
     "ExecutablePath": "python",
-    "Arguments": ["C:/path/to/kokoro_tts.py", "--text", "{text}", "--output", "{output}", "--voice", "af_heart", "--lang_code", "a", "--sample_rate", "24000"],
+    "Arguments": ["C:/path/to/kokoro_tts.py", "--text", "{text}", "--output", "{output}", "--voice", "ff_siwis", "--lang_code", "f", "--sample_rate", "24000"],
     "RootDirectory": "data/voice",
     "OutputExtension": ".wav"
   }

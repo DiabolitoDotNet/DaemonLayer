@@ -17,16 +17,18 @@ public sealed class DefaultReActTaskProcessor : IReActTaskProcessor
 
     public async Task<AgentMessage> ProcessAsync(ReActTaskProcessorContext context, AgentMessage task, CancellationToken ct)
     {
+        var effectiveContext = context with { Persona = BuildEffectivePersonaForTask(context.Persona, task) };
+
         _eventAppender.TryAppendTaskEvent(context.EventSink, context.AgentId, context.AgentRank, task, EventType.TaskReceived, "Task received");
 
         if (IsCollaborationRequest(task))
         {
-            return await HandleCollaborationRequestAsync(context, task, ct).ConfigureAwait(false);
+            return await HandleCollaborationRequestAsync(effectiveContext, task, ct).ConfigureAwait(false);
         }
 
         if (TryGetTelegramCommand(task, out var command) && (command == "usage" || command == "models"))
         {
-            return await HandleTelegramCommandAsync(context, command, task, ct).ConfigureAwait(false);
+            return await HandleTelegramCommandAsync(effectiveContext, command, task, ct).ConfigureAwait(false);
         }
 
         var effectiveTaskContent = task.Content;
@@ -35,40 +37,125 @@ public sealed class DefaultReActTaskProcessor : IReActTaskProcessor
             effectiveTaskContent = BuildSupervisorReplanTaskContent(task);
         }
 
-        context.SetStatus(AgentStatus.Thinking);
-        context.Logger.LogInformation("🔥 {AgentName} processing task: {Content}", context.AgentName, effectiveTaskContent);
+        if (IsSupervisorReplan(task))
+        {
+            effectiveContext.SetStatus(AgentStatus.Thinking);
+            effectiveContext.Logger.LogInformation("🔥 {AgentName} processing supervisor replan request", effectiveContext.AgentName);
+
+            try
+            {
+                _eventAppender.TryAppendTaskEvent(
+                    effectiveContext.EventSink,
+                    effectiveContext.AgentId,
+                    effectiveContext.AgentRank,
+                    task,
+                    EventType.TaskStarted,
+                    "Supervisor replan started");
+
+                var response = effectiveContext.LlmClient is ITunableLlmClient tunable
+                    ? await tunable.GetCompletionWithOptionsAsync(
+                        effectiveContext.Persona.SystemPrompt,
+                        effectiveTaskContent,
+                        temperature: 0.2,
+                        maxTokens: 512,
+                        ct).ConfigureAwait(false)
+                    : await effectiveContext.LlmClient.GetCompletionAsync(
+                        effectiveContext.Persona.SystemPrompt,
+                        effectiveTaskContent,
+                        ct).ConfigureAwait(false);
+
+                _eventAppender.TryAppendTaskEvent(
+                    effectiveContext.EventSink,
+                    effectiveContext.AgentId,
+                    effectiveContext.AgentRank,
+                    task,
+                    EventType.TaskCompleted,
+                    "Supervisor replan completed",
+                    new Dictionary<string, object>
+                    {
+                        ["mode"] = "one_shot",
+                        ["max_tokens"] = 512
+                    });
+
+                effectiveContext.SetStatus(AgentStatus.Idle);
+
+                return new AgentMessage
+                {
+                    FromAgentId = effectiveContext.AgentId,
+                    ToAgentId = task.FromAgentId,
+                    Type = MessageType.Report,
+                    Content = response
+                };
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                effectiveContext.Logger.LogError(ex, "Failed to process supervisor replan task");
+                effectiveContext.SetStatus(AgentStatus.Idle);
+
+                _eventAppender.TryAppendTaskEvent(
+                    effectiveContext.EventSink,
+                    effectiveContext.AgentId,
+                    effectiveContext.AgentRank,
+                    task,
+                    EventType.TaskFailed,
+                    "Supervisor replan failed",
+                    new Dictionary<string, object>
+                    {
+                        ["error"] = ex.Message,
+                        ["exception_type"] = ex.GetType().Name
+                    });
+
+                return new AgentMessage
+                {
+                    FromAgentId = effectiveContext.AgentId,
+                    ToAgentId = task.FromAgentId,
+                    Type = MessageType.Report,
+                    Content = $"❌ Error: {ex.Message}",
+                    Payload = new Dictionary<string, object>(task.Payload ?? new Dictionary<string, object>())
+                };
+            }
+        }
+
+        effectiveContext.SetStatus(AgentStatus.Thinking);
+        effectiveContext.Logger.LogInformation("🔥 {AgentName} processing task: {Content}", effectiveContext.AgentName, effectiveTaskContent);
 
         try
         {
-            _eventAppender.TryAppendTaskEvent(context.EventSink, context.AgentId, context.AgentRank, task, EventType.TaskStarted, "Task started");
+            _eventAppender.TryAppendTaskEvent(effectiveContext.EventSink, effectiveContext.AgentId, effectiveContext.AgentRank, task, EventType.TaskStarted, "Task started");
 
-            var baseContext = await context.BuildBaseContextAsync(task, ct).ConfigureAwait(false);
+            var baseContext = await effectiveContext.BuildBaseContextAsync(task, ct).ConfigureAwait(false);
             var systemContext = await _ragContextEnricher.EnrichAsync(
                 baseContext,
                 query: effectiveTaskContent,
-                agentId: context.AgentId,
-                agentRank: context.AgentRank,
-                vectorMemory: context.VectorMemory,
-                ragOptions: context.RagOptions,
-                logger: context.Logger,
+                agentId: effectiveContext.AgentId,
+                agentRank: effectiveContext.AgentRank,
+                vectorMemory: effectiveContext.VectorMemory,
+                ragOptions: effectiveContext.RagOptions,
+                logger: effectiveContext.Logger,
                 ct: ct).ConfigureAwait(false);
 
-            var result = await RunLoopAsync(context, systemContext, effectiveTaskContent, ct).ConfigureAwait(false);
+            systemContext = AppendRuntimeConstraints(systemContext, effectiveContext.Persona, task);
 
-            await context.SharedMemory.AddDecisionAsync(new Decision
+            var result = await RunLoopAsync(effectiveContext, systemContext, effectiveTaskContent, ct).ConfigureAwait(false);
+
+            await effectiveContext.SharedMemory.AddDecisionAsync(new Decision
             {
-                CreatedBy = context.AgentId,
+                CreatedBy = effectiveContext.AgentId,
                 Context = task.Content,
                 Action = result.FinalAnswer,
                 Reasoning = result.Reasoning
             }, ct).ConfigureAwait(false);
 
-            _eventAppender.TryAppendDecisionEvent(context.EventSink, context.AgentId, task, result.Iterations, result.Reasoning, result.FinalAnswer);
+            _eventAppender.TryAppendDecisionEvent(effectiveContext.EventSink, effectiveContext.AgentId, task, result.Iterations, result.Reasoning, result.FinalAnswer);
 
             _eventAppender.TryAppendTaskEvent(
-                context.EventSink,
-                context.AgentId,
-                context.AgentRank,
+                effectiveContext.EventSink,
+                effectiveContext.AgentId,
+                effectiveContext.AgentRank,
                 task,
                 EventType.TaskCompleted,
                 "Task completed",
@@ -78,7 +165,7 @@ public sealed class DefaultReActTaskProcessor : IReActTaskProcessor
                     ["tool_calls"] = result.ToolCalls.Count
                 });
 
-            context.SetStatus(AgentStatus.Idle);
+            effectiveContext.SetStatus(AgentStatus.Idle);
 
             var basePayload = task.Payload ?? new Dictionary<string, object>();
             var responsePayload = new Dictionary<string, object>(basePayload)
@@ -90,7 +177,7 @@ public sealed class DefaultReActTaskProcessor : IReActTaskProcessor
 
             return new AgentMessage
             {
-                FromAgentId = context.AgentId,
+                FromAgentId = effectiveContext.AgentId,
                 ToAgentId = task.FromAgentId,
                 Type = MessageType.Report,
                 Content = result.FinalAnswer,
@@ -103,13 +190,13 @@ public sealed class DefaultReActTaskProcessor : IReActTaskProcessor
         }
         catch (Exception ex)
         {
-            context.Logger.LogError(ex, "Failed to process task");
-            context.SetStatus(AgentStatus.Idle);
+            effectiveContext.Logger.LogError(ex, "Failed to process task");
+            effectiveContext.SetStatus(AgentStatus.Idle);
 
             _eventAppender.TryAppendTaskEvent(
-                context.EventSink,
-                context.AgentId,
-                context.AgentRank,
+                effectiveContext.EventSink,
+                effectiveContext.AgentId,
+                effectiveContext.AgentRank,
                 task,
                 EventType.TaskFailed,
                 "Task failed",
@@ -121,13 +208,140 @@ public sealed class DefaultReActTaskProcessor : IReActTaskProcessor
 
             return new AgentMessage
             {
-                FromAgentId = context.AgentId,
+                FromAgentId = effectiveContext.AgentId,
                 ToAgentId = task.FromAgentId,
                 Type = MessageType.Report,
                 Content = $"❌ Error: {ex.Message}",
                 Payload = new Dictionary<string, object>(task.Payload ?? new Dictionary<string, object>())
             };
         }
+    }
+
+    private static Persona BuildEffectivePersonaForTask(Persona persona, AgentMessage task)
+    {
+        var isHttp = task.Payload is not null
+            && task.Payload.TryGetValue("transport", out var transportObj)
+            && transportObj is not null
+            && string.Equals(transportObj.ToString(), "http", StringComparison.OrdinalIgnoreCase);
+
+        var tools = persona.AvailableTools.AsEnumerable();
+
+        if (persona.AvailableTools.Contains("send_telegram", StringComparer.OrdinalIgnoreCase))
+        {
+            // Only allow send_telegram when a concrete telegram_chat_id exists.
+            if (!TryGetTelegramChatId(task.Payload, out var chatId) || chatId == 0)
+            {
+                tools = tools.Where(t => !string.Equals(t, "send_telegram", StringComparison.OrdinalIgnoreCase));
+            }
+        }
+
+        if (isHttp)
+        {
+            // HTTP transport should not trigger internal agent-to-agent messaging.
+            tools = tools.Where(t => !string.Equals(t, "send_agent_message", StringComparison.OrdinalIgnoreCase));
+        }
+
+        var filtered = tools.ToArray();
+
+        if (filtered.SequenceEqual(persona.AvailableTools, StringComparer.OrdinalIgnoreCase))
+        {
+            return persona;
+        }
+
+        return new Persona
+        {
+            Name = persona.Name,
+            DemonTitle = persona.DemonTitle,
+            SystemPrompt = persona.SystemPrompt,
+            ModelOverride = persona.ModelOverride,
+            Personality = persona.Personality,
+            Specializations = persona.Specializations,
+            AvailableTools = filtered,
+            CustomInstructions = new Dictionary<string, string>(persona.CustomInstructions)
+        };
+    }
+
+    private static bool TryGetTelegramChatId(Dictionary<string, object>? payload, out long chatId)
+    {
+        chatId = 0;
+
+        if (payload is null || !payload.TryGetValue("telegram_chat_id", out var raw) || raw is null)
+        {
+            return false;
+        }
+
+        try
+        {
+            chatId = raw switch
+            {
+                long l => l,
+                int i => i,
+                string s when long.TryParse(s, out var parsed) => parsed,
+                _ => Convert.ToInt64(raw)
+            };
+
+            return chatId != 0;
+        }
+        catch
+        {
+            chatId = 0;
+            return false;
+        }
+    }
+
+    private static string AppendRuntimeConstraints(string systemContext, Persona persona, AgentMessage task)
+    {
+        var allowed = persona.AvailableTools.Count == 0
+            ? "(none)"
+            : string.Join(", ", persona.AvailableTools);
+
+        var hasTelegram = TryGetTelegramChatId(task.Payload, out var chatId) && chatId != 0;
+        var transport = task.Payload?.TryGetValue("transport", out var t) == true ? t?.ToString() : null;
+
+        var agentCountEmailRule = BuildAgentCountEmailRule(task, persona);
+
+        return $"""
+            {systemContext}
+
+            # Runtime Constraints (STRICT)
+            - Allowed tools for this task: {allowed}
+            - Action MUST be FINAL_ANSWER or one of the allowed tools above.
+            - Do NOT call send_telegram unless a real telegram_chat_id is present in the task payload.
+            {agentCountEmailRule}
+            - transport={transport ?? "(unknown)"} telegram_chat_id={(hasTelegram ? chatId.ToString() : "(none)")}
+            """;
+    }
+
+    private static string BuildAgentCountEmailRule(AgentMessage task, Persona persona)
+    {
+        var content = task.Content ?? string.Empty;
+
+        if (!content.Contains("mail", StringComparison.OrdinalIgnoreCase)
+            && !content.Contains("email", StringComparison.OrdinalIgnoreCase)
+            && !content.Contains("e-mail", StringComparison.OrdinalIgnoreCase))
+        {
+            return string.Empty;
+        }
+
+        if (!content.Contains("agent", StringComparison.OrdinalIgnoreCase))
+        {
+            return string.Empty;
+        }
+
+        if (!content.Contains("decompte", StringComparison.OrdinalIgnoreCase)
+            && !content.Contains("décompte", StringComparison.OrdinalIgnoreCase)
+            && !content.Contains("count", StringComparison.OrdinalIgnoreCase))
+        {
+            return string.Empty;
+        }
+
+        if (!persona.AvailableTools.Contains("get_agent_status", StringComparer.OrdinalIgnoreCase)
+            || !persona.AvailableTools.Contains("email_send", StringComparer.OrdinalIgnoreCase))
+        {
+            return string.Empty;
+        }
+
+        return "- For agent count emails: you MUST call get_agent_status first, then include numeric total_agents / occupied_agents / idle_agents in the email body before calling email_send (no templates like ${total_agents}).";
     }
 
     private static bool IsSupervisorReplan(AgentMessage task)
@@ -234,7 +448,7 @@ public sealed class DefaultReActTaskProcessor : IReActTaskProcessor
 
             if (chatId != 0)
             {
-                var telegramTool = context.ToolRegistry.GetTool("telegram_send");
+                var telegramTool = context.ToolRegistry.GetTool("send_telegram");
                 if (telegramTool != null)
                 {
                     await telegramTool.ExecuteAsync(new Dictionary<string, object>

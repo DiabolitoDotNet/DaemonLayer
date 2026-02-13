@@ -2013,18 +2013,21 @@ engines:
     categories: [general, web]
     additional_tests:
       rosebud: *test_rosebud
+    disabled: true
 
   - name: startpage news
     engine: startpage
     startpage_categ: news
     categories: [news, web]
     shortcut: spn
+    disabled: true
 
   - name: startpage images
     engine: startpage
     startpage_categ: images
     categories: [images, web]
     shortcut: spi
+    disabled: true
 
   - name: steam
     engine: steam

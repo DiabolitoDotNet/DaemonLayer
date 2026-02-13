@@ -41,8 +41,12 @@ public sealed class DefaultCustomToolSecurityPolicy : ICustomToolSecurityPolicy
                 MatchedRules: Array.Empty<string>());
         }
 
+        // Policy is intended to reason about executable code, not prose.
+        // Strip C# comments to avoid false positives from comment text.
+        var scanned = StripComments(sourceCode);
+
         var matchedDeny = DenyRules
-            .Where(r => r.Pattern.IsMatch(sourceCode))
+            .Where(r => r.Pattern.IsMatch(scanned))
             .Select(r => r.Rule)
             .ToList();
 
@@ -56,7 +60,7 @@ public sealed class DefaultCustomToolSecurityPolicy : ICustomToolSecurityPolicy
         }
 
         var matchedRisky = RiskyRules
-            .Where(r => r.Pattern.IsMatch(sourceCode))
+            .Where(r => r.Pattern.IsMatch(scanned))
             .Select(r => r.Rule)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
@@ -75,5 +79,157 @@ public sealed class DefaultCustomToolSecurityPolicy : ICustomToolSecurityPolicy
             RequiresManualApproval: false,
             Reason: "OK",
             MatchedRules: Array.Empty<string>());
+    }
+
+    private static string StripComments(string text)
+    {
+        if (string.IsNullOrEmpty(text)) return string.Empty;
+
+        var sb = new System.Text.StringBuilder(text.Length);
+
+        var i = 0;
+        var inLineComment = false;
+        var inBlockComment = false;
+        var inString = false;
+        var inVerbatimString = false;
+        var inChar = false;
+        var escape = false;
+
+        while (i < text.Length)
+        {
+            var c = text[i];
+            var next = i + 1 < text.Length ? text[i + 1] : '\0';
+
+            if (inLineComment)
+            {
+                if (c == '\n')
+                {
+                    inLineComment = false;
+                    sb.Append(c);
+                }
+
+                i++;
+                continue;
+            }
+
+            if (inBlockComment)
+            {
+                if (c == '*' && next == '/')
+                {
+                    inBlockComment = false;
+                    i += 2;
+                    continue;
+                }
+
+                i++;
+                continue;
+            }
+
+            if (inString)
+            {
+                sb.Append(c);
+                if (escape)
+                {
+                    escape = false;
+                }
+                else if (c == '\\')
+                {
+                    escape = true;
+                }
+                else if (c == '"')
+                {
+                    inString = false;
+                }
+
+                i++;
+                continue;
+            }
+
+            if (inVerbatimString)
+            {
+                sb.Append(c);
+                if (c == '"')
+                {
+                    if (next == '"')
+                    {
+                        sb.Append(next);
+                        i += 2;
+                        continue;
+                    }
+
+                    inVerbatimString = false;
+                }
+
+                i++;
+                continue;
+            }
+
+            if (inChar)
+            {
+                sb.Append(c);
+                if (escape)
+                {
+                    escape = false;
+                }
+                else if (c == '\\')
+                {
+                    escape = true;
+                }
+                else if (c == '\'')
+                {
+                    inChar = false;
+                }
+
+                i++;
+                continue;
+            }
+
+            // Not in a string/char/comment
+            if (c == '/' && next == '/')
+            {
+                inLineComment = true;
+                i += 2;
+                continue;
+            }
+
+            if (c == '/' && next == '*')
+            {
+                inBlockComment = true;
+                i += 2;
+                continue;
+            }
+
+            if (c == '@' && next == '"')
+            {
+                sb.Append(c);
+                sb.Append(next);
+                inVerbatimString = true;
+                i += 2;
+                continue;
+            }
+
+            if (c == '"')
+            {
+                sb.Append(c);
+                inString = true;
+                escape = false;
+                i++;
+                continue;
+            }
+
+            if (c == '\'')
+            {
+                sb.Append(c);
+                inChar = true;
+                escape = false;
+                i++;
+                continue;
+            }
+
+            sb.Append(c);
+            i++;
+        }
+
+        return sb.ToString();
     }
 }

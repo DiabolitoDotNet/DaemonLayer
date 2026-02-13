@@ -26,7 +26,8 @@ public class RequestCollaborationTool : ITool
     public string Description => "Request collaboration and consensus from multiple agents for complex decisions. " +
         "Use when you need input from other agents or want to reach consensus. " +
         "Parameters: task (string, required), strategy (voting/weighted/consensus/highest_confidence/hierarchical, default: weighted), " +
-        "min_participants (int, default: 2), min_confidence (double, default: 0.7), participant_ranks (comma-separated ranks, optional).";
+        "min_participants (int, default: 2), min_confidence (double, default: 0.7), participant_ranks (comma-separated ranks, optional), " +
+        "timeout_seconds (int, default: 120), include_thinking (bool, default: false).";
 
     public async Task<ToolResult> ExecuteAsync(
         Dictionary<string, object> parameters,
@@ -97,6 +98,40 @@ public class RequestCollaborationTool : ITool
 
             minConfidence = Math.Max(0.0, Math.Min(1.0, minConfidence)); // Clamp 0-1
 
+            // Extract collaboration timeout
+            var timeoutSeconds = 120;
+            if (parameters.TryGetValue("timeout_seconds", out var timeoutSecondsObj))
+            {
+                if (timeoutSecondsObj is int timeoutSecondsInt)
+                {
+                    timeoutSeconds = timeoutSecondsInt;
+                }
+                else if (int.TryParse(timeoutSecondsObj?.ToString(), out var parsed))
+                {
+                    timeoutSeconds = parsed;
+                }
+            }
+
+            // Clamp: avoid tiny timeouts that always fail and huge timeouts that block forever.
+            timeoutSeconds = Math.Max(5, Math.Min(600, timeoutSeconds));
+
+            // Select participants: by default only pick Idle agents.
+            var includeThinking = false;
+            if (parameters.TryGetValue("include_thinking", out var includeThinkingObj) && includeThinkingObj != null)
+            {
+                if (includeThinkingObj is bool includeThinkingBool)
+                {
+                    includeThinking = includeThinkingBool;
+                }
+                else if (bool.TryParse(includeThinkingObj.ToString(), out var parsed))
+                {
+                    includeThinking = parsed;
+                }
+            }
+
+            bool IsEligible(IAgent agent)
+                => agent.Status == AgentStatus.Idle || (includeThinking && agent.Status == AgentStatus.Thinking);
+
             // Extract initiator agent ID from parameters or context
             var initiatorAgentId = parameters.GetValueOrDefault("agent_id", "system")?.ToString() ?? "system";
 
@@ -123,7 +158,7 @@ public class RequestCollaborationTool : ITool
                     if (rank.HasValue)
                     {
                         var agentsOfRank = _agentRegistry.GetAgentsByRank(rank.Value);
-                        participants.AddRange(agentsOfRank.Select(a => a.Id));
+                        participants.AddRange(agentsOfRank.Where(IsEligible).Select(a => a.Id));
                     }
                 }
             }
@@ -133,7 +168,7 @@ public class RequestCollaborationTool : ITool
             {
                 var allAgents = _agentRegistry.GetAllAgents();
                 participants = allAgents
-                    .Where(a => a.Status == AgentStatus.Idle || a.Status == AgentStatus.Thinking)
+                    .Where(IsEligible)
                     .Where(a => a.Id != initiatorAgentId)
                     .Take(5) // Limit to 5 agents by default
                     .Select(a => a.Id)
@@ -163,7 +198,7 @@ public class RequestCollaborationTool : ITool
                 MinimumConfidence = minConfidence,
                 MinimumParticipants = minParticipants,
                 ParticipantAgentIds = participants,
-                Timeout = TimeSpan.FromSeconds(30)
+                Timeout = TimeSpan.FromSeconds(timeoutSeconds)
             };
 
             // Request collaboration

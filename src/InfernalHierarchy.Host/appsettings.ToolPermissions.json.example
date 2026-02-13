@@ -24,7 +24,7 @@
       "WhitelistedAgents": [],
       "BlacklistedAgents": []
     },
-    "telegram_send": {
+    "send_telegram": {
       "Enabled": true,
       "AllowedRanks": "Supreme,Prince,Duke,Worker",
       "WhitelistedAgents": [],

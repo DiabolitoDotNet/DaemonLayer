@@ -121,6 +121,25 @@ public abstract class BaseAgent : IAgent
         const int maxConsecutiveErrors = 5;
         const int errorBackoffMs = 1000;
 
+        static void PropagateReplyPayload(AgentMessage request, AgentMessage reply)
+        {
+            if (request.Payload is null || request.Payload.Count == 0)
+            {
+                return;
+            }
+
+            if (reply.Payload is null)
+            {
+                return;
+            }
+
+            foreach (var kvp in request.Payload)
+            {
+                // Preserve any explicit payload set by the agent; only fill missing keys.
+                reply.Payload.TryAdd(kvp.Key, kvp.Value);
+            }
+        }
+
         try
         {
             await foreach (var message in _messageBus.SubscribeAsync(Id, ct))
@@ -136,6 +155,7 @@ public abstract class BaseAgent : IAgent
                             Name, message.Type, message.Content);
 
                         var response = await ProcessTaskAsync(message, ct);
+                        PropagateReplyPayload(message, response);
                         await _messageBus.PublishAsync(response, ct);
 
                         // Reset error counter on success
@@ -161,6 +181,8 @@ public abstract class BaseAgent : IAgent
                         Type = MessageType.Report,
                         Content = $"❌ Error processing task: {ex.Message}"
                     };
+
+                    PropagateReplyPayload(message, errorResponse);
 
                     try
                     {

@@ -12,4 +12,11 @@ public class ReActOptions
     /// Parsing remains backward-compatible with the legacy Thought/Action/Action Input format.
     /// </summary>
     public bool UseJsonResponse { get; set; } = true;
+
+    /// <summary>
+    /// List of tool names that, when executed successfully, should immediately stop the ReAct loop.
+    /// This prevents post-success hallucinations and duplicate tool invocations (e.g., sending the
+    /// same email multiple times).
+    /// </summary>
+        public string[] TerminalTools { get; set; } = ["email_send", "send_telegram", "create_custom_tool"];
 }

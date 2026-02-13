@@ -35,6 +35,25 @@ public class ToolRegistry : IToolRegistry
     public void RegisterTool(ITool tool)
     {
         var normalizedName = tool.Name.ToLowerInvariant();
+        // Custom tools are dynamic and may be regenerated/overwritten at runtime.
+        // For these, we must allow replacing the existing implementation.
+        if (normalizedName.StartsWith("custom_", StringComparison.OrdinalIgnoreCase))
+        {
+            var existed = _tools.ContainsKey(normalizedName);
+            _tools[normalizedName] = tool;
+
+            if (existed)
+            {
+                _logger.LogInformation("🔁 Updated tool: {ToolName}", tool.Name);
+            }
+            else
+            {
+                _logger.LogInformation("🔧 Registered tool: {ToolName}", tool.Name);
+            }
+
+            return;
+        }
+
         if (_tools.TryAdd(normalizedName, tool))
         {
             _logger.LogInformation("🔧 Registered tool: {ToolName}", tool.Name);

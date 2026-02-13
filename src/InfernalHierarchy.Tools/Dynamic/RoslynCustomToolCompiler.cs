@@ -111,28 +111,33 @@ public sealed class RoslynCustomToolCompiler : ICustomToolCompiler
     {
         var refs = new List<MetadataReference>();
 
+        // Reference the platform assemblies provided by the current runtime.
+        // This avoids brittle hand-curated reference lists (e.g., missing System.Runtime)
+        // and makes dynamic compilation behave consistently across .NET versions.
+        var tpa = AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES") as string;
+        if (!string.IsNullOrWhiteSpace(tpa))
+        {
+            foreach (var path in tpa.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            {
+                if (File.Exists(path))
+                {
+                    refs.Add(MetadataReference.CreateFromFile(path));
+                }
+            }
+        }
+
         void AddAssembly(Assembly assembly)
         {
             if (string.IsNullOrWhiteSpace(assembly.Location)) return;
             refs.Add(MetadataReference.CreateFromFile(assembly.Location));
         }
 
-        // Core
-        AddAssembly(typeof(object).Assembly);
-        AddAssembly(typeof(Task).Assembly);
-        AddAssembly(typeof(Enumerable).Assembly);
-        AddAssembly(typeof(Dictionary<,>).Assembly);
-        AddAssembly(typeof(StringBuilder).Assembly);
-
-        // InfernalHierarchy abstractions
+        // Ensure our own assemblies are present even if not part of TPA.
         AddAssembly(typeof(ITool).Assembly);
-
-        // Common helper libs often needed by tools
         AddAssembly(typeof(System.Text.Json.JsonSerializer).Assembly);
         AddAssembly(typeof(Microsoft.Extensions.Logging.ILogger).Assembly);
         AddAssembly(typeof(Microsoft.Extensions.DependencyInjection.ActivatorUtilities).Assembly);
-
-        // XML parsing (safe, non-IO)
+        AddAssembly(typeof(System.Net.Http.HttpClient).Assembly);
         AddAssembly(typeof(System.Xml.Linq.XDocument).Assembly);
 
         // Deduplicate by path

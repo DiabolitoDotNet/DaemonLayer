@@ -106,6 +106,32 @@ public sealed class EmailNotificationToolTests
     }
 
     [Fact]
+    public async Task ExecuteAsync_WhenInvalidToAndDefaultToConfigured_FallsBackToDefaultToAndSends()
+    {
+        var options = MsOptions.Create(new EmailNotificationOptions
+        {
+            Enabled = true,
+            FromAddress = "from@example.com",
+            DefaultTo = "default@x.com"
+        });
+
+        var sender = new CapturingSender();
+        var tool = new EmailNotificationTool(options, sender, NullLogger<EmailNotificationTool>.Instance);
+
+        var result = await tool.ExecuteAsync(new Dictionary<string, object>
+        {
+            ["to"] = "http-req-123",
+            ["subject"] = "s",
+            ["body"] = "b"
+        });
+
+        result.Success.Should().BeTrue();
+        sender.LastMessage.Should().NotBeNull();
+        sender.LastMessage!.To.Should().HaveCount(1);
+        sender.LastMessage.To[0].Address.Should().Be("default@x.com");
+    }
+
+    [Fact]
     public async Task ExecuteAsync_WhenSuccess_SendsMailMessage_WithHtmlAndCcBcc()
     {
         var options = MsOptions.Create(new EmailNotificationOptions
@@ -143,6 +169,85 @@ public sealed class EmailNotificationToolTests
         msg.To.Should().HaveCount(2);
         msg.CC.Should().HaveCount(1);
         msg.Bcc.Should().HaveCount(1);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_WhenUsingRecipientAndMessageAliases_Succeeds()
+    {
+        var options = MsOptions.Create(new EmailNotificationOptions
+        {
+            Enabled = true,
+            FromAddress = "from@example.com"
+        });
+
+        var sender = new CapturingSender();
+        var tool = new EmailNotificationTool(options, sender, NullLogger<EmailNotificationTool>.Instance);
+
+        var result = await tool.ExecuteAsync(new Dictionary<string, object>
+        {
+            ["recipient"] = "a@b.com",
+            ["subject"] = "s",
+            ["message"] = "b"
+        });
+
+        result.Success.Should().BeTrue();
+        sender.LastMessage.Should().NotBeNull();
+        sender.LastMessage!.To.Should().HaveCount(1);
+        sender.LastMessage.To[0].Address.Should().Be("a@b.com");
+        sender.LastMessage.Subject.Should().Be("s");
+        sender.LastMessage.Body.Should().Be("b");
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_WhenRecipientIsPlaceholder_UsesDefaultTo()
+    {
+        var options = MsOptions.Create(new EmailNotificationOptions
+        {
+            Enabled = true,
+            FromAddress = "from@example.com",
+            DefaultTo = "default@x.com"
+        });
+
+        var sender = new CapturingSender();
+        var tool = new EmailNotificationTool(options, sender, NullLogger<EmailNotificationTool>.Instance);
+
+        var result = await tool.ExecuteAsync(new Dictionary<string, object>
+        {
+            ["recipient"] = "USER_EMAIL",
+            ["title"] = "hello",
+            ["message"] = "body"
+        });
+
+        result.Success.Should().BeTrue();
+        sender.LastMessage.Should().NotBeNull();
+        sender.LastMessage!.To.Should().HaveCount(1);
+        sender.LastMessage.To[0].Address.Should().Be("default@x.com");
+        sender.LastMessage.Subject.Should().Be("hello");
+        sender.LastMessage.Body.Should().Be("body");
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_WhenBodyContainsTemplatePlaceholders_ReturnsFailureAndDoesNotSend()
+    {
+        var options = MsOptions.Create(new EmailNotificationOptions
+        {
+            Enabled = true,
+            FromAddress = "from@example.com"
+        });
+
+        var sender = new CapturingSender();
+        var tool = new EmailNotificationTool(options, sender, NullLogger<EmailNotificationTool>.Instance);
+
+        var result = await tool.ExecuteAsync(new Dictionary<string, object>
+        {
+            ["to"] = "a@b.com",
+            ["subject"] = "s",
+            ["body"] = "There are ${total_agents} agents"
+        });
+
+        result.Success.Should().BeFalse();
+        result.Error.Should().Contain("placeholder");
+        sender.LastMessage.Should().BeNull();
     }
 
     [Fact]
