@@ -10,8 +10,7 @@ public class MetricsCollector
 {
     private readonly ConcurrentDictionary<string, long> _counters = new();
     private readonly ConcurrentDictionary<string, double> _gauges = new();
-    private readonly ConcurrentDictionary<string, List<double>> _histograms = new();
-    private readonly object _lock = new();
+    private readonly ConcurrentDictionary<string, HistogramBuffer> _histograms = new();
 
     // Counters
     public void IncrementCounter(string name, long value = 1)
@@ -38,61 +37,44 @@ public class MetricsCollector
     // Histograms (for tracking distributions like latency)
     public void RecordValue(string name, double value)
     {
-        lock (_lock)
-        {
-            if (!_histograms.TryGetValue(name, out var values))
-            {
-                values = new List<double>();
-                _histograms[name] = values;
-            }
-            values.Add(value);
-
-            // Keep only last 1000 values
-            if (values.Count > 1000)
-            {
-                values.RemoveAt(0);
-            }
-        }
+        var buffer = _histograms.GetOrAdd(name, static _ => new HistogramBuffer(1000));
+        buffer.Add(value);
     }
 
     public HistogramStats GetHistogramStats(string name)
     {
-        lock (_lock)
+        if (!_histograms.TryGetValue(name, out var buffer))
         {
-            if (!_histograms.TryGetValue(name, out var values) || values.Count == 0)
-            {
-                return new HistogramStats();
-            }
-
-            var sorted = values.OrderBy(x => x).ToList();
-            return new HistogramStats
-            {
-                Count = sorted.Count,
-                Min = sorted.First(),
-                Max = sorted.Last(),
-                Mean = sorted.Average(),
-                P50 = GetPercentile(sorted, 0.50),
-                P95 = GetPercentile(sorted, 0.95),
-                P99 = GetPercentile(sorted, 0.99)
-            };
+            return new HistogramStats();
         }
+
+        var values = buffer.Snapshot();
+        if (values.Count == 0)
+        {
+            return new HistogramStats();
+        }
+
+        var sorted = values.OrderBy(x => x).ToList();
+        return new HistogramStats
+        {
+            Count = sorted.Count,
+            Min = sorted.First(),
+            Max = sorted.Last(),
+            Mean = sorted.Average(),
+            P50 = GetPercentile(sorted, 0.50),
+            P95 = GetPercentile(sorted, 0.95),
+            P99 = GetPercentile(sorted, 0.99)
+        };
     }
 
     public IReadOnlyList<string> GetHistogramNames()
     {
-        lock (_lock)
-        {
-            return _histograms.Keys.OrderBy(k => k, StringComparer.OrdinalIgnoreCase).ToList();
-        }
+        return _histograms.Keys.OrderBy(k => k, StringComparer.OrdinalIgnoreCase).ToList();
     }
 
     public Dictionary<string, HistogramStats> GetAllHistogramStats()
     {
-        List<string> names;
-        lock (_lock)
-        {
-            names = _histograms.Keys.ToList();
-        }
+        var names = _histograms.Keys.ToList();
 
         var result = new Dictionary<string, HistogramStats>(StringComparer.OrdinalIgnoreCase);
         foreach (var name in names.OrderBy(n => n, StringComparer.OrdinalIgnoreCase))
@@ -138,9 +120,55 @@ public class MetricsCollector
     {
         _counters.Clear();
         _gauges.Clear();
-        lock (_lock)
+        _histograms.Clear();
+    }
+
+    private sealed class HistogramBuffer
+    {
+        private readonly double[] _values;
+        private readonly object _gate = new();
+        private int _count;
+        private int _nextIndex;
+
+        public HistogramBuffer(int capacity)
         {
-            _histograms.Clear();
+            _values = new double[Math.Max(1, capacity)];
+        }
+
+        public void Add(double value)
+        {
+            lock (_gate)
+            {
+                _values[_nextIndex] = value;
+                _nextIndex = (_nextIndex + 1) % _values.Length;
+                if (_count < _values.Length)
+                {
+                    _count++;
+                }
+            }
+        }
+
+        public IReadOnlyList<double> Snapshot()
+        {
+            lock (_gate)
+            {
+                if (_count == 0)
+                {
+                    return Array.Empty<double>();
+                }
+
+                var snapshot = new double[_count];
+                if (_count < _values.Length)
+                {
+                    Array.Copy(_values, snapshot, _count);
+                    return snapshot;
+                }
+
+                var tailLength = _values.Length - _nextIndex;
+                Array.Copy(_values, _nextIndex, snapshot, 0, tailLength);
+                Array.Copy(_values, 0, snapshot, tailLength, _nextIndex);
+                return snapshot;
+            }
         }
     }
 }

@@ -146,14 +146,24 @@ internal static class HostDependencyInjection
 
     public static void AddCoreServices(WebApplicationBuilder builder)
     {
+        var voiceOptions = builder.Configuration.GetSection("Voice").Get<VoiceInterfaceOptions>() ?? new VoiceInterfaceOptions();
+        var voiceCopilotOptions = builder.Configuration.GetSection("VoiceCopilot").Get<VoiceCopilotOptions>() ?? new VoiceCopilotOptions();
+        var vectorMemoryOptions = builder.Configuration.GetSection("VectorMemoryOptions").Get<VectorMemoryOptions>() ?? new VectorMemoryOptions();
+        var memoryPruningOptions = builder.Configuration.GetSection("MemoryPruningOptions").Get<MemoryPruningOptions>() ?? new MemoryPruningOptions();
+        var memoryLearningOptions = builder.Configuration.GetSection("MemoryLearningOptions").Get<MemoryLearningOptions>() ?? new MemoryLearningOptions();
+
         AddMessagingAndMemory(builder);
         AddPersonaAndDocsServices(builder);
         AddAgentSystem(builder);
         AddToolExecutionPipeline(builder);
         AddLlmAndLearning(builder);
-        AddVoiceCopilot(builder);
+        if (voiceOptions.Enabled || voiceCopilotOptions.Enabled)
+        {
+            AddVoiceCopilot(builder);
+        }
+
         AddNotifications(builder);
-        AddAdvancedMemory(builder);
+        AddAdvancedMemory(builder, vectorMemoryOptions.Enabled, memoryPruningOptions.Enabled, memoryLearningOptions.Enabled);
         AddCollaboration(builder);
         AddTemplates(builder);
         AddEventSourcing(builder);
@@ -224,7 +234,12 @@ internal static class HostDependencyInjection
 
     private static void AddLlmAndLearning(WebApplicationBuilder builder)
     {
-        builder.Services.AddSingleton<ILlmClient, OllamaClient>();
+        builder.Services.AddHttpClient(nameof(OllamaClient));
+        builder.Services.AddSingleton<ILlmClient>(sp =>
+            new OllamaClient(
+                sp.GetRequiredService<IHttpClientFactory>(),
+                sp.GetRequiredService<IOptionsMonitor<OllamaOptions>>(),
+                sp.GetRequiredService<ILogger<OllamaClient>>()));
 
         builder.Services.AddSingleton<MultiModelLlmClient>();
         builder.Services.AddSingleton<TokenUsageTracker>();
@@ -236,14 +251,31 @@ internal static class HostDependencyInjection
         builder.Services.AddSingleton<IEmailSender, SmtpEmailSender>();
     }
 
-    private static void AddAdvancedMemory(WebApplicationBuilder builder)
+    private static void AddAdvancedMemory(
+        WebApplicationBuilder builder,
+        bool vectorMemoryEnabled,
+        bool memoryPruningEnabled,
+        bool memoryLearningEnabled)
     {
         builder.Services.AddSingleton<OnnxEmbeddingService>();
         builder.Services.AddHttpClient<IVectorMemory, VectorMemoryService>();
-        builder.Services.AddHostedService<VectorMemoryInitializationService>();
+
+        if (vectorMemoryEnabled)
+        {
+            builder.Services.AddHostedService<VectorMemoryInitializationService>();
+        }
+
         builder.Services.AddSingleton<ISkillTreeService, SkillTreeService>();
-        builder.Services.AddHostedService<MemoryPruningService>();
-        builder.Services.AddHostedService<MemoryLearningService>();
+
+        if (memoryPruningEnabled)
+        {
+            builder.Services.AddHostedService<MemoryPruningService>();
+        }
+
+        if (memoryLearningEnabled)
+        {
+            builder.Services.AddHostedService<MemoryLearningService>();
+        }
     }
 
     private static void AddCollaboration(WebApplicationBuilder builder)
@@ -263,7 +295,12 @@ internal static class HostDependencyInjection
             var logger = sp.GetRequiredService<ILogger<TemplateService>>();
             var agentFactory = sp.GetRequiredService<IAgentFactory>();
             var skillTreeService = sp.GetRequiredService<ISkillTreeService>();
-            var templatesDirectory = Path.Combine(AppContext.BaseDirectory, "../../../../../../templates");
+            var configuredPath = builder.Configuration.GetValue<string>("Templates:RootPath");
+            var templatesDirectory = string.IsNullOrWhiteSpace(configuredPath)
+                ? Path.Combine(builder.Environment.ContentRootPath, "templates")
+                : (Path.IsPathRooted(configuredPath)
+                    ? configuredPath
+                    : Path.Combine(builder.Environment.ContentRootPath, configuredPath));
             return new TemplateService(logger, agentFactory, skillTreeService, templatesDirectory);
         });
     }
@@ -347,11 +384,17 @@ internal static class HostDependencyInjection
 
     private static void AddToolHostedServices(WebApplicationBuilder builder)
     {
+        var toolMarketplaceOptions = builder.Configuration.GetSection("ToolMarketplace").Get<ToolMarketplaceOptions>() ?? new ToolMarketplaceOptions();
+
         builder.Services.AddHostedService<TextToSpeechWarmupService>();
         builder.Services.AddHostedService<ToolCacheStartupService>();
         builder.Services.AddHostedService<ToolRegistrationService>();
         builder.Services.AddHostedService<CustomToolsStartupService>();
-        builder.Services.AddHostedService<ToolMarketplaceHostedService>();
+
+        if (toolMarketplaceOptions.Enabled)
+        {
+            builder.Services.AddHostedService<ToolMarketplaceHostedService>();
+        }
     }
 
     public static void AddConfigurationHostedServices(WebApplicationBuilder builder)

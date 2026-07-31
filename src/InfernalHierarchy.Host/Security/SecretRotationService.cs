@@ -17,6 +17,7 @@ public class SecretRotationService : BackgroundService
     private readonly IConfiguration _configuration;
     private readonly TelegramBotClientFactory _botFactory;
     private readonly TimeSpan _checkInterval = TimeSpan.FromMinutes(5);
+    private readonly List<IDisposable> _optionRegistrations = new();
 
     private string? _lastTelegramToken;
     private Uri? _lastOllamaUrl;
@@ -48,9 +49,9 @@ public class SecretRotationService : BackgroundService
         _logger.LogInformation("🔐 Secret rotation service started");
 
         // Register change callbacks
-        _telegramOptions.OnChange(OnTelegramOptionsChanged);
-        _ollamaOptions.OnChange(OnOllamaOptionsChanged);
-        _braveOptions.OnChange(OnBraveOptionsChanged);
+        AddRegistration(_telegramOptions.OnChange(OnTelegramOptionsChanged));
+        AddRegistration(_ollamaOptions.OnChange(OnOllamaOptionsChanged));
+        AddRegistration(_braveOptions.OnChange(OnBraveOptionsChanged));
 
         // Periodic check for configuration changes
         while (!stoppingToken.IsCancellationRequested)
@@ -76,6 +77,25 @@ public class SecretRotationService : BackgroundService
         }
 
         _logger.LogInformation("🔐 Secret rotation service stopped");
+    }
+
+    public override Task StopAsync(CancellationToken cancellationToken)
+    {
+        foreach (var registration in _optionRegistrations)
+        {
+            registration.Dispose();
+        }
+
+        _optionRegistrations.Clear();
+        return base.StopAsync(cancellationToken);
+    }
+
+    private void AddRegistration(IDisposable? registration)
+    {
+        if (registration is not null)
+        {
+            _optionRegistrations.Add(registration);
+        }
     }
 
     private void OnTelegramOptionsChanged(TelegramOptions newOptions, string? name)

@@ -53,10 +53,15 @@ InfernalHierarchy/
 1. **.NET 10 SDK** - [Télécharger](https://dotnet.microsoft.com/download/dotnet/10.0)
 2. **Docker Desktop + Docker Compose** - Pour lancer Ollama/SearXNG/Qdrant en local. Ollama tourne comme service séparé et l'application pointe simplement vers son endpoint OpenAI-compatible.
   ```bash
+  docker compose up -d
   docker compose up -d ollama
   docker compose up --no-deps --abort-on-container-exit ollama-init
   curl.exe -s http://localhost:11434/api/tags
   ```
+  Le profil `docker-compose.yml` reste minimal. Ajoute des overrides seulement si nécessaire:
+  - `docker-compose.voice.yml` pour STT/TTS et l'API voice
+  - `docker-compose.onnx.yml` pour les embeddings ONNX locaux
+  - `docker-compose.automation.yml` pour supervisor, memory learning, Brave fallback et GitHub publisher
 3. **Ollama (optionnel)** - Si tu préfères exécuter Ollama hors Docker, pointe simplement `Ollama:BaseUrl` vers ton endpoint local.
 4. **Bot Telegram** - Créer via [@BotFather](https://t.me/BotFather)
 

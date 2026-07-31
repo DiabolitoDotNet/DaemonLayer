@@ -8,6 +8,10 @@
 services:
   infernal-hierarchy:
     environment:
+      # Telegram voice replies (agent reports -> Telegram voice note)
+      - TelegramVoice__Enabled=true
+      - TelegramVoice__ReplyWithVoice=true
+
       - Voice__Enabled=true
       - Voice__LocalOnly=false
 
@@ -18,6 +22,7 @@ services:
       - VoiceCopilot__Temperature=0.4
       - VoiceCopilot__MaxTokens=140
 
+      # Shared Hugging Face cache for Faster-Whisper + Kokoro
       - HF_HOME=/models/hf
 
       # STT (Faster-Whisper: large-v3-turbo)
@@ -56,7 +61,8 @@ services:
       - TextToSpeech__Arguments__10=24000
     build:
       context: .
-      dockerfile: Dockerfile.voice
+      dockerfile: Dockerfile
+      target: runtime-voice
 
     volumes:
       - ./models/hf:/models/hf

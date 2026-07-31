@@ -194,10 +194,24 @@ For interactive/local usage, the recommended “optimized enough” setup is:
 docker compose -f docker-compose.yml up -d --build
 ```
 
-If you prefer keeping voice settings isolated, you can still use the override file:
+The base compose profile stays lean: no voice runtime, no ONNX local embeddings, and no optional automation workers.
+
+Enable voice when needed:
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.voice.yml up -d --build
+```
+
+Enable ONNX embeddings when needed:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.onnx.yml up -d
+```
+
+Enable optional automation/integration services when needed:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.automation.yml up -d
 ```
 
 3) Open the UI:
@@ -224,7 +238,7 @@ Optional: prefetch the models (best-effort; large downloads):
 docker compose exec infernal-hierarchy /opt/voice-venv/bin/python /app/voice/download_voice_models.py
 ```
 
-Edit `docker-compose.yml` / `docker-compose.voice.yml` and `Dockerfile.voice` if you want to change defaults:
+Edit `docker-compose.yml` / `docker-compose.voice.yml` and the `runtime-voice` target in `Dockerfile` if you want to change defaults:
 
 - STT model: `VoiceTranscription__Arguments__4` (default `large-v3-turbo`)
 - TTS voice: `TextToSpeech__Arguments__6` (default `af_heart`)

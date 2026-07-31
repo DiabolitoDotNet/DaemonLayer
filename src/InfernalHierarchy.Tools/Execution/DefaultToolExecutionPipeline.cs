@@ -491,7 +491,7 @@ public sealed class DefaultToolExecutionPipeline : IToolExecutionPipeline
             {
                 var sanitizedMetadata = result.Metadata.ToDictionary(
                     kvp => kvp.Key,
-                    kvp => (object?)(kvp.Value is null ? null : kvp.Value.ToString()));
+                    kvp => (object)(kvp.Value?.ToString() ?? string.Empty));
 
                 var sanitized = new ToolResult
                 {

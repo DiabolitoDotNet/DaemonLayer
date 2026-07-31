@@ -1,0 +1,17 @@
+# Optional override for background automation/integration features.
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.automation.yml up -d
+
+services:
+  infernal-hierarchy:
+    environment:
+      # GitHub publisher (token + username come from docker secrets)
+      - GitHubPublisher__Enabled=true
+
+      # Web search fallback (api key comes from docker secrets)
+      - BraveSearch__Enabled=true
+
+      # Background services
+      - AgentSupervisor__Enabled=true
+      - MemoryLearningOptions__Enabled=true

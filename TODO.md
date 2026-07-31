@@ -140,7 +140,7 @@ _No additional UI & Interfaces backlog items currently tracked here._
 - [ ] **Chaos engineering** - Resilience testing tools
 
 - [ ] **Voice sidecar services (later)** - long-lived STT + TTS services
-  - Note: the current **in-container/local** voice path is already implemented (Faster-Whisper + Kokoro-82M via Python helpers) via `Dockerfile.voice` + `docker-compose.voice.yml`.
+  - Note: the current **in-container/local** voice path is already implemented (Faster-Whisper + Kokoro-82M via Python helpers) via the `runtime-voice` target in `Dockerfile` + `docker-compose.voice.yml`.
   - Goal: keep STT/TTS models hot and isolate CPU/RAM usage from the Host, while still supporting the embedded UI voice endpoints.
   - Proposed containers:
     - `voice-stt` (Faster-Whisper) running as a long-lived service (model loaded once). Exposes an internal HTTP endpoint like `POST /transcribe` accepting an audio payload (or a shared-volume file path) and returning `{ transcript, segments, timings }`.

@@ -24,7 +24,7 @@ RUN dotnet publish -c Release -o /app --no-restore
 
 # Stage 2: Runtime
 # Host is an ASP.NET Core app (health/metrics endpoints), so we need Microsoft.AspNetCore.App
-FROM mcr.microsoft.com/dotnet/aspnet:10.0
+FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime-base
 WORKDIR /app
 
 # Copy build output
@@ -41,3 +41,27 @@ ENV ASPNETCORE_ENVIRONMENT=Production
 
 # Run the application
 ENTRYPOINT ["dotnet", "InfernalHierarchy.Host.dll"]
+
+# Stage 3: Voice-enabled runtime
+FROM runtime-base AS runtime-voice
+
+# Install voice dependencies only in the voice image.
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        ffmpeg \
+        python3 \
+        python3-pip \
+        python3-venv \
+        espeak-ng \
+        libsndfile1 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Voice helpers (Python)
+COPY scripts/voice /app/voice
+
+# Install Python deps into a dedicated venv (Ubuntu marks system Python as externally-managed)
+# Note: Torch CPU wheels are hosted on the official PyTorch index.
+RUN python3 -m venv /opt/voice-venv && \
+    /opt/voice-venv/bin/pip install --no-cache-dir --upgrade pip && \
+    /opt/voice-venv/bin/pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu torch && \
+    /opt/voice-venv/bin/pip install --no-cache-dir -r /app/voice/requirements.txt

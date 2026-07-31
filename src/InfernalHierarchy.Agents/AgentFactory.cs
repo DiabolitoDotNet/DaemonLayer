@@ -200,61 +200,6 @@ public class AgentFactory : IAgentFactory
         persona.Name = personaName;
 
         return await CreateAgentAsync(persona, rank, parentId, personaPath: $"souls/{personaKey}.json", ct);
-
-        // Create agent entity
-        var agentEntity = new Agent
-        {
-            Id = Guid.NewGuid().ToString(),
-            Name = personaName,
-            Rank = rank,
-            ParentAgentId = parentId,
-            PersonaPath = $"souls/{personaKey}.json",
-            Status = AgentStatus.Idle,
-            CreatedAt = DateTime.UtcNow
-        };
-
-        // Create the concrete agent instance
-        var agent = new ReActAgent(
-            agentEntity,
-            persona,
-            _messageBus,
-            _sharedMemory,
-            _toolRegistry,
-            this,
-            _ollamaClient,
-            _loggerFactory.CreateLogger<ReActAgent>(),
-            _eventSink,
-            _vectorMemory,
-            _ragOptions,
-            _reActOptions,
-            _critiqueOptions,
-            _tokenUsageTracker,
-            _multiModelLlmClient,
-            _collaborationService,
-            _actionParser,
-            _actionInputParser,
-            _actionExecutor,
-            _reportGenerator,
-            _promptBuilder,
-            _loopRunner,
-            _taskProcessor);
-
-        TryAppendAgentEvent(
-            agentEntity.Id,
-            EventType.AgentCreated,
-            $"Agent created: {agentEntity.Name} ({agentEntity.Rank})",
-            new Dictionary<string, object>
-            {
-                ["name"] = agentEntity.Name,
-                ["rank"] = agentEntity.Rank.ToString(),
-                ["parent_agent_id"] = agentEntity.ParentAgentId ?? string.Empty,
-                ["persona_path"] = agentEntity.PersonaPath
-            });
-
-        // Register it
-        RegisterAgent(agent);
-
-        return agent;
     }
 
     public Task<IAgent> CreateAgentAsync(Persona persona, AgentRank rank, string? parentId = null, string? personaPath = null, CancellationToken ct = default)

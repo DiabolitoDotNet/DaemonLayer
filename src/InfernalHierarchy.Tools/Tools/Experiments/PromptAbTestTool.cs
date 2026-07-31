@@ -411,6 +411,10 @@ public class PromptAbTestTool : ITool
                     return await NormalizeVariantsAsync(parsed, ct);
                 }
             }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw;
+            }
             catch (JsonException ex)
             {
                 // Fall back to Deserialize for callers who already match our CLR property names.
@@ -425,6 +429,10 @@ public class PromptAbTestTool : ITool
             {
                 var parsedFallback = JsonSerializer.Deserialize<List<VariantInput>>(json, _jsonOptions) ?? new();
                 return await NormalizeVariantsAsync(parsedFallback, ct);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw;
             }
             catch (Exception ex)
             {
@@ -458,6 +466,10 @@ public class PromptAbTestTool : ITool
                     var parsed = JsonSerializer.Deserialize<List<VariantInput>>(serialized, _jsonOptions) ?? new();
                     return await NormalizeVariantsAsync(parsed, ct);
                 }
+                catch (OperationCanceledException) when (ct.IsCancellationRequested)
+                {
+                    throw;
+                }
                 catch (Exception ex)
                 {
                     return (new List<PromptVariant>(), ex.Message);
@@ -470,6 +482,10 @@ public class PromptAbTestTool : ITool
                 {
                     var parsed = JsonSerializer.Deserialize<List<VariantInput>>(variantsString, _jsonOptions) ?? new();
                     return await NormalizeVariantsAsync(parsed, ct);
+                }
+                catch (OperationCanceledException) when (ct.IsCancellationRequested)
+                {
+                    throw;
                 }
                 catch (Exception ex)
                 {

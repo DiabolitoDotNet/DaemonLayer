@@ -65,81 +65,34 @@ services:
       - OpenTelemetry__Exporters__Console__Enabled=false
 
       # Telegram voice replies (agent reports -> Telegram voice note)
-      - TelegramVoice__Enabled=true
-      - TelegramVoice__ReplyWithVoice=true
+      - TelegramVoice__Enabled=false
+      - TelegramVoice__ReplyWithVoice=false
 
       # Telegram startup notification (set to your private chat id / user id)
       - Telegram__StartupNotificationChatId=5879484069
 
-      # Voice API (enabled by default in docker-compose)
-      - Voice__Enabled=true
-      - Voice__LocalOnly=false
-
-      # Voice Copilot (transcript -> short FR reply -> optional TTS fire-and-forget)
-      - VoiceCopilot__Enabled=true
-      - VoiceCopilot__SpeakByDefault=true
-      - VoiceCopilot__MaxHistoryMessages=6
-      - VoiceCopilot__Temperature=0.4
-      - VoiceCopilot__MaxTokens=140
-
-      # Shared Hugging Face cache for Faster-Whisper + Kokoro
-      - HF_HOME=/models/hf
-
-      # STT (Faster-Whisper: large-v3-turbo)
-      - VoiceTranscription__Enabled=true
-      - VoiceTranscription__ExecutablePath=/opt/voice-venv/bin/python
-      - VoiceTranscription__RootDirectory=/app/data/voice
-      - VoiceTranscription__DecoderExecutablePath=/usr/bin/ffmpeg
-      - VoiceTranscription__Arguments__0=/app/voice/faster_whisper_transcribe.py
-      - VoiceTranscription__Arguments__1=--input
-      - VoiceTranscription__Arguments__2={input}
-      - VoiceTranscription__Arguments__3=--model
-      - VoiceTranscription__Arguments__4=large-v3-turbo
-      - VoiceTranscription__Arguments__5=--device
-      - VoiceTranscription__Arguments__6=cpu
-      - VoiceTranscription__Arguments__7=--compute_type
-      - VoiceTranscription__Arguments__8=int8
-      - VoiceTranscription__Arguments__9=--language
-      - VoiceTranscription__Arguments__10=en
-
-      # TTS (Kokoro-82M via python)
-      - TextToSpeech__Enabled=true
-      - TextToSpeech__UsePiperNet=false
-      - TextToSpeech__RootDirectory=/app/data/voice
-      - TextToSpeech__OutputExtension=.wav
-      - TextToSpeech__ExecutablePath=/opt/voice-venv/bin/python
-      - TextToSpeech__Arguments__0=/app/voice/kokoro_tts.py
-      - TextToSpeech__Arguments__1=--text
-      - TextToSpeech__Arguments__2={text}
-      - TextToSpeech__Arguments__3=--output
-      - TextToSpeech__Arguments__4={output}
-      - TextToSpeech__Arguments__5=--voice
-      - TextToSpeech__Arguments__6=ff_siwis
-      - TextToSpeech__Arguments__7=--lang_code
-      - TextToSpeech__Arguments__8=f
-      - TextToSpeech__Arguments__9=--sample_rate
-      - TextToSpeech__Arguments__10=24000
+      # Voice features stay disabled in the base image/compose profile.
+      # Enable them with docker-compose.voice.yml (uses the runtime-voice target).
+      - Voice__Enabled=false
+      - Voice__LocalOnly=true
+      - VoiceCopilot__Enabled=false
 
       # Ensure docker secrets are honored in container runs.
       - DockerSecrets__Enabled=true
       - DockerSecrets__RootPath=/run/secrets
 
       # GitHub publisher (token + username come from docker secrets)
-      - GitHubPublisher__Enabled=true
+      - GitHubPublisher__Enabled=false
 
       # Web search fallback (api key comes from docker secrets)
-      - BraveSearch__Enabled=true
+      - BraveSearch__Enabled=false
 
       # Background services
-      - AgentSupervisor__Enabled=true
-      - MemoryLearningOptions__Enabled=true
+      - AgentSupervisor__Enabled=false
+      - MemoryLearningOptions__Enabled=false
 
-      # Local embeddings (falls back deterministically if model/tokenizer missing)
-      - OnnxEmbeddingOptions__Enabled=true
-      - OnnxEmbeddingOptions__ModelPath=/app/models/sentence-transformers/model.onnx
-      - OnnxEmbeddingOptions__TokenizerPath=/app/models/sentence-transformers/tokenizer.json
-      - OnnxEmbeddingOptions__EmbeddingDimension=384
-      - OnnxEmbeddingOptions__MaxSequenceLength=128
+      # ONNX embeddings are optional and enabled via docker-compose.onnx.yml.
+      - OnnxEmbeddingOptions__Enabled=false
       - VectorMemoryOptions__Enabled=true
       - VectorMemoryOptions__QdrantUrl=http://qdrant:6333
     volumes:
@@ -147,8 +100,6 @@ services:
       - ./logs:/app/logs
       - ./souls:/souls
       - ./templates:/app/templates:ro
-      - ./models/hf:/models/hf
-      - ./models/sentence-transformers:/app/models/sentence-transformers:ro
     depends_on:
       - ollama
       - searxng

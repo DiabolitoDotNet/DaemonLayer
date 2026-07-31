@@ -15,31 +15,17 @@ public class OllamaClient : ILlmClient
     , IStreamingLlmClient
     , ITunableLlmClient
 {
-    private readonly HttpClient _http;
     private readonly JsonSerializerOptions _json;
     private readonly ILogger<OllamaClient> _logger;
-    private readonly OllamaOptions _options;
+    private readonly IHttpClientFactory? _httpClientFactory;
+    private readonly IOptionsMonitor<OllamaOptions>? _optionsMonitor;
+    private readonly OllamaOptions? _staticOptions;
 
-    public OllamaClient(IOptions<OllamaOptions> options, ILogger<OllamaClient> logger)
+    public OllamaClient(IHttpClientFactory httpClientFactory, IOptionsMonitor<OllamaOptions> options, ILogger<OllamaClient> logger)
     {
-        _options = options.Value;
+        _httpClientFactory = httpClientFactory;
+        _optionsMonitor = options;
         _logger = logger;
-
-        var timeoutSeconds = _options.RequestTimeoutSeconds > 0
-            ? _options.RequestTimeoutSeconds
-            : 120;
-
-        // IMPORTANT: Ollama exposes an OpenAI-compatible API at:
-        //   {BaseUrl}/chat/completions
-        // BaseUrl should typically be http://localhost:11434/v1 (or host.docker.internal:11434/v1 in Docker).
-        _http = new HttpClient
-        {
-            BaseAddress = NormalizeBaseUrl(_options.BaseUrl),
-            Timeout = TimeSpan.FromSeconds(timeoutSeconds)
-        };
-
-        // Ollama does not require auth by default, but some reverse proxies might.
-        // We intentionally do not set Authorization headers here.
 
         _json = new JsonSerializerOptions
         {
@@ -47,11 +33,21 @@ public class OllamaClient : ILlmClient
             DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
         };
 
-        _logger.LogInformation(
-            "🧠 Ollama client initialized: {BaseUrl} | model={Model} | timeout={TimeoutSeconds}s",
-            _http.BaseAddress?.ToString() ?? _options.BaseUrl.ToString(),
-            _options.DefaultModel,
-            timeoutSeconds);
+        LogCurrentConfiguration(options.CurrentValue);
+    }
+
+    public OllamaClient(IOptions<OllamaOptions> options, ILogger<OllamaClient> logger)
+    {
+        _staticOptions = options.Value;
+        _logger = logger;
+
+        _json = new JsonSerializerOptions
+        {
+            PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+            DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+        };
+
+        LogCurrentConfiguration(_staticOptions);
     }
 
     /// <summary>
@@ -128,14 +124,16 @@ public class OllamaClient : ILlmClient
         int? maxTokens,
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct)
     {
+        var options = GetCurrentOptions();
+        using var http = CreateConfiguredHttpClient(options);
         using var request = new HttpRequestMessage(HttpMethod.Post, "chat/completions");
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("text/event-stream"));
 
         var payload = new ChatCompletionRequest
         {
-            Model = modelOverride ?? _options.DefaultModel,
-            Temperature = temperature ?? _options.Temperature,
-            MaxTokens = maxTokens ?? _options.MaxTokens,
+            Model = modelOverride ?? options.DefaultModel,
+            Temperature = temperature ?? options.Temperature,
+            MaxTokens = maxTokens ?? options.MaxTokens,
             Stream = true,
             Messages = new()
             {
@@ -149,7 +147,7 @@ public class OllamaClient : ILlmClient
         HttpResponseMessage? response = null;
         try
         {
-            response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
+            response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
             if (!response.IsSuccessStatusCode)
             {
                 var body = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
@@ -262,11 +260,13 @@ public class OllamaClient : ILlmClient
     {
         try
         {
+            var options = GetCurrentOptions();
+            using var http = CreateConfiguredHttpClient(options);
             var request = new ChatCompletionRequest
             {
-                Model = modelOverride ?? _options.DefaultModel,
-                Temperature = temperature ?? _options.Temperature,
-                MaxTokens = maxTokens ?? _options.MaxTokens,
+                Model = modelOverride ?? options.DefaultModel,
+                Temperature = temperature ?? options.Temperature,
+                MaxTokens = maxTokens ?? options.MaxTokens,
                 Stream = false,
                 Messages = new()
                 {
@@ -278,7 +278,7 @@ public class OllamaClient : ILlmClient
             var json = JsonSerializer.Serialize(request, _json);
             using var content = new StringContent(json, Encoding.UTF8, "application/json");
 
-            using var response = await _http.PostAsync("chat/completions", content, ct).ConfigureAwait(false);
+            using var response = await http.PostAsync("chat/completions", content, ct).ConfigureAwait(false);
             var responseText = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
 
             if (!response.IsSuccessStatusCode)
@@ -325,6 +325,29 @@ public class OllamaClient : ILlmClient
     public Task<string> GetSimpleCompletionAsync(string prompt, CancellationToken ct = default)
     {
         return GetCompletionAsync("You are a helpful AI assistant.", prompt, ct);
+    }
+
+    private OllamaOptions GetCurrentOptions() => _optionsMonitor?.CurrentValue ?? _staticOptions ?? new OllamaOptions();
+
+    private HttpClient CreateConfiguredHttpClient(OllamaOptions options)
+    {
+        var http = _httpClientFactory?.CreateClient(nameof(OllamaClient)) ?? new HttpClient();
+        http.BaseAddress = NormalizeBaseUrl(options.BaseUrl);
+        http.Timeout = TimeSpan.FromSeconds(options.RequestTimeoutSeconds > 0 ? options.RequestTimeoutSeconds : 120);
+        return http;
+    }
+
+    private void LogCurrentConfiguration(OllamaOptions options)
+    {
+        var timeoutSeconds = options.RequestTimeoutSeconds > 0
+            ? options.RequestTimeoutSeconds
+            : 120;
+
+        _logger.LogInformation(
+            "🧠 Ollama client initialized: {BaseUrl} | model={Model} | timeout={TimeoutSeconds}s",
+            NormalizeBaseUrl(options.BaseUrl).ToString(),
+            options.DefaultModel,
+            timeoutSeconds);
     }
 
     private static Uri NormalizeBaseUrl(Uri baseUrl)
