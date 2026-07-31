@@ -51,7 +51,7 @@ InfernalHierarchy/
 ### Prérequis
 
 1. **.NET 10 SDK** - [Télécharger](https://dotnet.microsoft.com/download/dotnet/10.0)
-2. **Docker Desktop + Docker Compose** - Pour lancer Ollama/SearXNG/Qdrant en local
+2. **Docker Desktop + Docker Compose** - Pour lancer Ollama/SearXNG/Qdrant en local. Ollama tourne comme service séparé et l'application pointe simplement vers son endpoint OpenAI-compatible.
   ```bash
   docker compose up -d ollama
   docker compose up --no-deps --abort-on-container-exit ollama-init
@@ -102,7 +102,7 @@ InfernalHierarchy/
 {
   "Ollama": {
     "BaseUrl": "http://localhost:11434/v1",
-    "DefaultModel": "qwen3:14b",
+    "DefaultModel": "qwen3:8b",
     "Temperature": 0.7
   },
   "Hierarchy": {
@@ -222,7 +222,7 @@ Chaque agent suit le pattern ReAct (Reasoning + Acting) :
 
 Utilise le SDK OpenAI en mode compatible avec l'endpoint Ollama :
 - Base URL : `http://localhost:11434/v1`
-- Modèle par défaut (Docker) : `qwen3:14b`
+- Modèle par défaut (Docker) : `qwen3:8b`
 - Streaming supporté pour les réponses longues
 
 ## 🔧 Développement

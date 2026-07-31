@@ -20,7 +20,7 @@ services:
     environment:
       - OLLAMA_HOST=0.0.0.0
       # Single model for the whole application
-      - OLLAMA_MODEL=llama3.1:8b
+      - OLLAMA_MODEL=qwen3:8b
     volumes:
       - ollama_data:/root/.ollama
     command: ["serve"]
@@ -37,10 +37,10 @@ services:
     restart: "no"
     environment:
       - OLLAMA_HOST=ollama:11434
-      - OLLAMA_MODEL=llama3.1:8b
+      - OLLAMA_MODEL=qwen3:8b
     volumes:
       - ollama_data:/root/.ollama
-    command: ["pull", "llama3.1:8b"]
+    command: ["pull", "qwen3:8b"]
 
   # InfernalHierarchy .NET Worker Service
   infernal-hierarchy:
@@ -50,8 +50,8 @@ services:
     container_name: infernal-hierarchy
     environment:
       - Ollama__BaseUrl=http://ollama:11434/v1
-      - Ollama__DefaultModel=llama3.1:8b
-      - Ollama__AlternativeModel=qwen3:14b
+      - Ollama__DefaultModel=qwen3:8b
+      - Ollama__AlternativeModel=dolphin3:8b
       - Ollama__RequestTimeoutSeconds=600
       - SearXNG__BaseUrl=http://searxng:8080
       - SearXNG__Enabled=true

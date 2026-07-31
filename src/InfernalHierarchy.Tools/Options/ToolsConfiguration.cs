@@ -6,8 +6,8 @@ namespace InfernalHierarchy.Tools.Options;
 public class OllamaOptions
 {
     public Uri BaseUrl { get; set; } = new Uri("http://localhost:11434/v1");
-    public string DefaultModel { get; set; } = "llama3.1:8b";
-    public string AlternativeModel { get; set; } = "qwen3:14b";
+    public string DefaultModel { get; set; } = "qwen3:8b";
+    public string AlternativeModel { get; set; } = "dolphin3:8b";
     public int RequestTimeoutSeconds { get; set; } = 600;
     public int MaxTokens { get; set; } = 4096;
     public double Temperature { get; set; } = 0.7;

@@ -54,6 +54,9 @@ services:
       - TextToSpeech__Arguments__8=f
       - TextToSpeech__Arguments__9=--sample_rate
       - TextToSpeech__Arguments__10=24000
+    build:
+      context: .
+      dockerfile: Dockerfile.voice
 
     volumes:
       - ./models/hf:/models/hf

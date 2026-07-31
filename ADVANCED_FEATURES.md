@@ -387,7 +387,7 @@ Dynamic model selection based on task complexity with automatic fallback.
 - Supports all Ollama models
 
 **Task Complexity Levels:**
-This feature supports routing to different models per complexity level. In the current Docker setup, the app runs with a single default model (`qwen3:14b`) unless you explicitly configure multiple entries under `LlmOptions.Models`.
+This feature supports routing to different models per complexity level. In the current Docker setup, the app runs with a single default model (`qwen3:8b`) unless you explicitly configure multiple entries under `LlmOptions.Models`.
 
 **Configuration:**
 ```json
@@ -395,7 +395,7 @@ This feature supports routing to different models per complexity level. In the c
   "LlmOptions": {
     "Models": [
       {
-        "Name": "qwen3:14b",
+        "Name": "qwen3:8b",
         "BaseUrl": "http://localhost:11434/v1",
         "Complexity": "Medium",
         "Priority": 1,
@@ -462,7 +462,7 @@ Comprehensive token usage analytics and cost estimation.
 // Automatic tracking on every LLM call
 tokenTracker.RecordUsage(new TokenUsageRecord
 {
-  ModelName = "qwen3:14b",
+  ModelName = "qwen3:8b",
     AgentId = "agent_123",
     InputTokens = 150,
     OutputTokens = 300,
@@ -481,7 +481,7 @@ var agentStats = tokenTracker.GetAgentStats("agent_123");
 // Calculate costs
 var pricing = new Dictionary<string, ModelPricing>
 {
-  ["qwen3:14b"] = new ModelPricing 
+  ["qwen3:8b"] = new ModelPricing
     { 
         InputPricePerMillion = 0.0m,  // Local Ollama is free
         OutputPricePerMillion = 0.0m 

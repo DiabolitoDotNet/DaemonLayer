@@ -34,14 +34,14 @@ All advanced features have been **implemented and compile successfully**:
 
 ### 2️⃣ **Start Ollama (Docker) + Pull Model** (REQUIRED for LLM)
 
-This repo now runs Ollama via Docker Compose and automatically pulls a single model (`qwen3:14b`) on first start.
+This repo now runs Ollama via Docker Compose and automatically pulls a single model (`qwen3:8b`) on first start.
 
 ```bash
 docker compose up -d ollama
 ```
 
 **Time Required**: ~5-15 minutes depending on internet speed  
-**Disk Space**: depends on quantization; expect multiple GB for `qwen3:14b`
+**Disk Space**: depends on quantization; expect a few GB for `qwen3:8b`
 
 Verify:
 
@@ -224,7 +224,7 @@ Optional: prefetch the models (best-effort; large downloads):
 docker compose exec infernal-hierarchy /opt/voice-venv/bin/python /app/voice/download_voice_models.py
 ```
 
-Edit `docker-compose.yml` / `docker-compose.voice.yml` if you want to change defaults:
+Edit `docker-compose.yml` / `docker-compose.voice.yml` and `Dockerfile.voice` if you want to change defaults:
 
 - STT model: `VoiceTranscription__Arguments__4` (default `large-v3-turbo`)
 - TTS voice: `TextToSpeech__Arguments__6` (default `af_heart`)
@@ -295,7 +295,7 @@ dotnet test .\tests\InfernalHierarchy.Memory.Tests\InfernalHierarchy.Memory.Test
 2. Run the app
 3. Send tasks with different complexities
 4. Check logs for model selection:
-  - `"Using model qwen3:14b"`
+  - "Using model qwen3:8b"
 
 **Verification**: `TokenUsageTracker` will log usage statistics.
 
