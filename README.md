@@ -232,15 +232,23 @@ Utilise le SDK OpenAI en mode compatible avec l'endpoint Ollama :
 
 ## 🔧 Développement
 
-### Prochaines Étapes d'Implémentation
+### État Actuel et Références
 
-1. **Memory Layer** - Implémentation LiteDB (InfernalHierarchy.Memory)
-2. **MessageBus** - Channel-based communication (InfernalHierarchy.Messaging)
-3. **Persona Loader** - Parsing JSON (InfernalHierarchy.Personas)
-4. **Tools** - Web search + autres outils (InfernalHierarchy.Tools)
-5. **Base Agent** - ReAct loop + LLM calls (InfernalHierarchy.Agents)
-6. **Telegram Service** - Bot handler (InfernalHierarchy.Telegram)
-7. **Agent Orchestrator** - Coordination principale (InfernalHierarchy.Host)
+Les composants principaux sont déjà implémentés et validés par les tests:
+
+- `InfernalHierarchy.Memory` : mémoire LiteDB + cache de tools
+- `InfernalHierarchy.Messaging` : bus inter-agents basé sur `System.Threading.Channels`
+- `InfernalHierarchy.Personas` : chargement de personas JSON
+- `InfernalHierarchy.Tools` : pipeline d'exécution, authorization, rate limiting, cache, tools dynamiques
+- `InfernalHierarchy.Agents` : boucle ReAct, collaboration, critique, factory/orchestration
+- `InfernalHierarchy.Telegram` : interface Telegram
+- `InfernalHierarchy.Host` : composition root, observabilité, endpoints HTTP/UI/voice
+
+Pour le backlog réel et les écarts encore ouverts:
+
+- Voir [TODO.md](TODO.md)
+- Voir [NEXT_STEPS.md](NEXT_STEPS.md)
+- Voir [Documentation/README.md](Documentation/README.md)
 
 ### Build et Tests
 

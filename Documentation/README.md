@@ -9,12 +9,19 @@ The repository root already contains detailed topic docs (security, observabilit
 - [Solution Architecture](Solution-Architecture.md)
 - [Features Catalog](Features.md)
 - [Capabilities & Use Cases](Capabilities.md)
+- [Runbooks](Runbooks/Custom-Tools.md)
 - [Architecture Decision Records (ADRs)](ADRs/README.md)
+
+## Runbooks
+
+- [Custom Tools Runbook](Runbooks/Custom-Tools.md)
+- [End-to-End Request Tracing](Runbooks/End-to-End-Request-Tracing.md)
+- [Tool Authorization Debugging](Runbooks/Tool-Authorization-Debugging.md)
 
 ## Related docs (repo root)
 
 - [README](../README.md) — quickstart, project map, operational notes (includes configuration examples for `AgentSupervisor`, `ToolCache`, and `Critique`)
-- [IMPLEMENTATION_SUMMARY](../IMPLEMENTATION_SUMMARY.md) — what’s implemented and why it matters
+- [IMPLEMENTATION_SUMMARY](../IMPLEMENTATION_SUMMARY.md) — historical implementation summary; prefer the structured docs and runbooks above for durable guidance
 - [ADVANCED_FEATURES](../ADVANCED_FEATURES.md) — higher-level/experimental features
 - [OBSERVABILITY](../OBSERVABILITY.md) and [OBSERVABILITY_SUMMARY](../OBSERVABILITY_SUMMARY.md)
 - [SECURITY_CONFIG](../SECURITY_CONFIG.md)

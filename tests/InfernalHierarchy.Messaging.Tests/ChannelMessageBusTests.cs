@@ -134,6 +134,72 @@ public class ChannelMessageBusTests
     }
 
     [Fact]
+    public async Task PublishAsync_ShouldKeepBroadcastAndTargetedSubscriptionsIsolated()
+    {
+        var targetedCts = new CancellationTokenSource(TimeSpan.FromMilliseconds(500));
+        var broadcastCts = new CancellationTokenSource(TimeSpan.FromMilliseconds(500));
+
+        var targetedMessages = new List<AgentMessage>();
+        var broadcastMessages = new List<AgentMessage>();
+
+        var targetedTask = Task.Run(async () =>
+        {
+            try
+            {
+                await foreach (var message in _messageBus.SubscribeAsync("agent-a", targetedCts.Token))
+                {
+                    targetedMessages.Add(message);
+                }
+            }
+            catch (OperationCanceledException)
+            {
+            }
+        });
+
+        var broadcastTask = Task.Run(async () =>
+        {
+            try
+            {
+                await foreach (var message in _messageBus.SubscribeToBroadcastsAsync(broadcastCts.Token))
+                {
+                    broadcastMessages.Add(message);
+                }
+            }
+            catch (OperationCanceledException)
+            {
+            }
+        });
+
+        await Task.Delay(100);
+
+        await _messageBus.PublishAsync(new AgentMessage
+        {
+            FromAgentId = "sender",
+            ToAgentId = "agent-a",
+            Type = MessageType.Task,
+            Content = "targeted"
+        });
+
+        await _messageBus.PublishAsync(new AgentMessage
+        {
+            FromAgentId = "sender",
+            ToAgentId = null,
+            Type = MessageType.Broadcast,
+            Content = "broadcast"
+        });
+
+        await Task.Delay(100);
+        targetedCts.Cancel();
+        broadcastCts.Cancel();
+        await Task.WhenAll(targetedTask, broadcastTask);
+
+        targetedMessages.Should().ContainSingle(m => m.Content == "targeted");
+        targetedMessages.Should().NotContain(m => m.Content == "broadcast");
+        broadcastMessages.Should().ContainSingle(m => m.Content == "broadcast");
+        broadcastMessages.Should().NotContain(m => m.Content == "targeted");
+    }
+
+    [Fact]
     public async Task CleanupAgent_ShouldCompleteAndRemoveChannel()
     {
         // Arrange

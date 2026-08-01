@@ -12,8 +12,8 @@ public sealed class DefaultCustomToolSecurityPolicy : ICustomToolSecurityPolicy
     // Any match here triggers manual approval.
     private static readonly (string Rule, Regex Pattern)[] RiskyRules = new[]
     {
-        ("System.IO namespace", new Regex(@"\bSystem\.IO\b", RegexOptions.IgnoreCase | RegexOptions.Compiled)),
-        ("File/Directory APIs", new Regex(@"\b(File|Directory|Path|FileInfo|DirectoryInfo)\b", RegexOptions.IgnoreCase | RegexOptions.Compiled)),
+        ("System.IO namespace", new Regex(@"\busing\s+System\.IO\s*;|\bSystem\.IO\.", RegexOptions.IgnoreCase | RegexOptions.Compiled)),
+        ("File/Directory APIs", new Regex(@"\b(File|Directory|Path)\s*\.|\bnew\s+(FileInfo|DirectoryInfo)\s*\(|\b(FileInfo|DirectoryInfo)\s*\.", RegexOptions.IgnoreCase | RegexOptions.Compiled)),
         ("Network namespaces", new Regex(@"\bSystem\.(Net|Sockets)\b", RegexOptions.IgnoreCase | RegexOptions.Compiled)),
         ("HttpClient/WebRequest", new Regex(@"\b(HttpClient|HttpRequestMessage|WebRequest|WebClient|Dns|Socket)\b", RegexOptions.IgnoreCase | RegexOptions.Compiled)),
         ("Process execution", new Regex(@"\b(System\.Diagnostics\.Process|ProcessStartInfo)\b", RegexOptions.IgnoreCase | RegexOptions.Compiled)),
@@ -41,9 +41,9 @@ public sealed class DefaultCustomToolSecurityPolicy : ICustomToolSecurityPolicy
                 MatchedRules: Array.Empty<string>());
         }
 
-        // Policy is intended to reason about executable code, not prose.
-        // Strip C# comments to avoid false positives from comment text.
-        var scanned = StripComments(sourceCode);
+        // Policy is intended to reason about executable code, not prose or string payloads.
+        // Strip C# comments and literals to avoid false positives from comment text and embedded strings.
+        var scanned = StripCommentsAndLiterals(sourceCode);
 
         var matchedDeny = DenyRules
             .Where(r => r.Pattern.IsMatch(scanned))
@@ -81,7 +81,7 @@ public sealed class DefaultCustomToolSecurityPolicy : ICustomToolSecurityPolicy
             MatchedRules: Array.Empty<string>());
     }
 
-    private static string StripComments(string text)
+    private static string StripCommentsAndLiterals(string text)
     {
         if (string.IsNullOrEmpty(text)) return string.Empty;
 
@@ -127,7 +127,6 @@ public sealed class DefaultCustomToolSecurityPolicy : ICustomToolSecurityPolicy
 
             if (inString)
             {
-                sb.Append(c);
                 if (escape)
                 {
                     escape = false;
@@ -147,12 +146,10 @@ public sealed class DefaultCustomToolSecurityPolicy : ICustomToolSecurityPolicy
 
             if (inVerbatimString)
             {
-                sb.Append(c);
                 if (c == '"')
                 {
                     if (next == '"')
                     {
-                        sb.Append(next);
                         i += 2;
                         continue;
                     }
@@ -166,7 +163,6 @@ public sealed class DefaultCustomToolSecurityPolicy : ICustomToolSecurityPolicy
 
             if (inChar)
             {
-                sb.Append(c);
                 if (escape)
                 {
                     escape = false;
@@ -201,8 +197,6 @@ public sealed class DefaultCustomToolSecurityPolicy : ICustomToolSecurityPolicy
 
             if (c == '@' && next == '"')
             {
-                sb.Append(c);
-                sb.Append(next);
                 inVerbatimString = true;
                 i += 2;
                 continue;
@@ -210,7 +204,6 @@ public sealed class DefaultCustomToolSecurityPolicy : ICustomToolSecurityPolicy
 
             if (c == '"')
             {
-                sb.Append(c);
                 inString = true;
                 escape = false;
                 i++;
@@ -219,7 +212,6 @@ public sealed class DefaultCustomToolSecurityPolicy : ICustomToolSecurityPolicy
 
             if (c == '\'')
             {
-                sb.Append(c);
                 inChar = true;
                 escape = false;
                 i++;

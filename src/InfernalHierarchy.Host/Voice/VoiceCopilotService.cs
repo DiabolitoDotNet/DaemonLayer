@@ -266,7 +266,10 @@ public sealed class VoiceCopilotService
         t = MarkdownHeadingRegex.Replace(t, string.Empty);
         t = MarkdownBulletsRegex.Replace(t, string.Empty);
 
-        t = t.Replace("**", string.Empty).Replace("__", string.Empty).Replace("*", string.Empty).Replace("_", string.Empty);
+        t = t.Replace("**", string.Empty, StringComparison.Ordinal)
+            .Replace("__", string.Empty, StringComparison.Ordinal)
+            .Replace("*", string.Empty, StringComparison.Ordinal)
+            .Replace("_", string.Empty, StringComparison.Ordinal);
         t = MultiWhitespaceRegex.Replace(t, " ");
         t = t.Trim();
 

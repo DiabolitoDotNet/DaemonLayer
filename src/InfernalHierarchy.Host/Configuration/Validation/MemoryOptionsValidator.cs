@@ -10,6 +10,12 @@ public sealed class MemoryOptionsValidator : IValidateOptions<MemoryOptions>
             return ValidateOptionsResult.Fail("Memory:DatabasePath is required");
         }
 
+        var directory = Path.GetDirectoryName(options.DatabasePath);
+        if (directory != null && directory.IndexOfAny(Path.GetInvalidPathChars()) >= 0)
+        {
+            return ValidateOptionsResult.Fail("Memory:DatabasePath contains invalid path characters");
+        }
+
         return ValidateOptionsResult.Success;
     }
 }

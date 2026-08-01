@@ -7,6 +7,7 @@ using Xunit;
 
 namespace InfernalHierarchy.Host.Tests.E2E;
 
+[Collection("Host E2E")]
 public sealed class ChatApiE2ETests
 {
     [Fact]

@@ -7,8 +7,13 @@ public sealed class DefaultReActLoopRunner : IReActLoopRunner
 {
     private const int MaxIterations = 5;
     private const string TerminalToolEmailSend = "email_send";
+    private const string TerminalToolTelegramSend = "send_telegram";
     private const string ToolGetAgentStatus = "get_agent_status";
     private const string ToolCreateCustomTool = "create_custom_tool";
+    private const string ToolWriteMemory = "write_memory";
+    private const string ToolFileWrite = "fs_write";
+    private const string ToolPythonExec = "python_exec";
+    private const string ToolNodeExec = "node_exec";
     private const int MaxFormatRepairAttempts = 2;
 
     public async Task<ReActLoopResult> RunAsync(ReActLoopContext context, CancellationToken ct)
@@ -590,8 +595,133 @@ public sealed class DefaultReActLoopRunner : IReActLoopRunner
             return StableKeyValueString(canonical);
         }
 
+        if (string.Equals(toolName, TerminalToolTelegramSend, StringComparison.OrdinalIgnoreCase))
+        {
+            var canonical = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
+
+            canonical["chat_id"] = FirstNonEmpty(parameters, "chat_id", "chatId", "telegram_chat_id", "telegramChatId") ?? string.Empty;
+            canonical["text"] = FirstNonEmpty(parameters, "text", "message", "content") ?? string.Empty;
+
+            return StableKeyValueString(canonical);
+        }
+
+        if (string.Equals(toolName, ToolWriteMemory, StringComparison.OrdinalIgnoreCase))
+        {
+            var canonical = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
+            var type = FirstNonEmpty(parameters, "type") ?? string.Empty;
+            canonical["type"] = type.Trim().ToLowerInvariant();
+            canonical["agent_id"] = FirstNonEmpty(parameters, "agent_id") ?? string.Empty;
+
+            if (type.Equals("decision", StringComparison.OrdinalIgnoreCase))
+            {
+                canonical["context"] = FirstNonEmpty(parameters, "context") ?? string.Empty;
+                canonical["action"] = FirstNonEmpty(parameters, "action") ?? string.Empty;
+                canonical["reasoning"] = FirstNonEmpty(parameters, "reasoning") ?? string.Empty;
+            }
+            else if (type.Equals("fact", StringComparison.OrdinalIgnoreCase))
+            {
+                canonical["category"] = FirstNonEmpty(parameters, "category") ?? "general";
+                canonical["content"] = FirstNonEmpty(parameters, "content") ?? string.Empty;
+                canonical["source"] = FirstNonEmpty(parameters, "source") ?? "agent";
+                canonical["confidence"] = StableValueString(parameters.TryGetValue("confidence", out var confidence) ? confidence : 1.0d);
+                canonical["visibility"] = FirstNonEmpty(parameters, "visibility") ?? "Private";
+                canonical["min_rank"] = FirstNonEmpty(parameters, "min_rank") ?? string.Empty;
+                canonical["shared_with"] = CanonicalizeDelimitedString(FirstNonEmpty(parameters, "shared_with"));
+            }
+            else if (type.Equals("task", StringComparison.OrdinalIgnoreCase))
+            {
+                canonical["description"] = FirstNonEmpty(parameters, "description") ?? string.Empty;
+                canonical["assigned_to"] = FirstNonEmpty(parameters, "assigned_to") ?? canonical["agent_id"].ToString() ?? string.Empty;
+            }
+
+            return StableKeyValueString(canonical);
+        }
+
+        if (string.Equals(toolName, ToolCreateCustomTool, StringComparison.OrdinalIgnoreCase))
+        {
+            var canonical = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["tool_name"] = FirstNonEmpty(parameters, "tool_name") ?? string.Empty,
+                ["requirement"] = FirstNonEmpty(parameters, "requirement", "description") ?? string.Empty,
+                ["template"] = FirstNonEmpty(parameters, "template") ?? string.Empty,
+                ["overwrite"] = StableValueString(FirstNonNull(parameters, "overwrite", "force", "overwrite_existing", "overwriteExisting") ?? false)
+            };
+
+            return StableKeyValueString(canonical);
+        }
+
+        if (string.Equals(toolName, ToolFileWrite, StringComparison.OrdinalIgnoreCase))
+        {
+            var canonical = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["path"] = FirstNonEmpty(parameters, "path") ?? string.Empty,
+                ["content"] = FirstNonEmpty(parameters, "content") ?? string.Empty,
+                ["overwrite"] = StableValueString(FirstNonNull(parameters, "overwrite") ?? false)
+            };
+
+            return StableKeyValueString(canonical);
+        }
+
+        if (string.Equals(toolName, ToolPythonExec, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(toolName, ToolNodeExec, StringComparison.OrdinalIgnoreCase))
+        {
+            var canonical = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["code"] = FirstNonEmpty(parameters, "code") ?? string.Empty,
+                ["working_dir"] = FirstNonEmpty(parameters, "working_dir") ?? string.Empty,
+                ["timeout_ms"] = StableValueString(FirstNonNull(parameters, "timeout_ms") ?? string.Empty),
+                ["args"] = StableValueString(FirstNonNull(parameters, "args") ?? string.Empty)
+            };
+
+            return StableKeyValueString(canonical);
+        }
+
         // Default: stable ordering of all keys.
         return StableKeyValueString(parameters);
+    }
+
+    private static object? FirstNonNull(Dictionary<string, object> parameters, params string[] keys)
+    {
+        foreach (var key in keys)
+        {
+            if (parameters.TryGetValue(key, out var value) && value is not null)
+            {
+                return value;
+            }
+        }
+
+        return null;
+    }
+
+    private static string? FirstNonEmpty(Dictionary<string, object> parameters, params string[] keys)
+    {
+        foreach (var key in keys)
+        {
+            if (!parameters.TryGetValue(key, out var value) || value is null)
+            {
+                continue;
+            }
+
+            var str = CoerceString(value)?.Trim();
+            if (!string.IsNullOrWhiteSpace(str))
+            {
+                return str;
+            }
+        }
+
+        return null;
+    }
+
+    private static string CanonicalizeDelimitedString(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return string.Empty;
+        }
+
+        return string.Join(",",
+            value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .OrderBy(part => part, StringComparer.OrdinalIgnoreCase));
     }
 
     private static string StableKeyValueString(Dictionary<string, object> parameters)

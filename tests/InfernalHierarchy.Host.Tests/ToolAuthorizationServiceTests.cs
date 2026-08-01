@@ -50,6 +50,45 @@ public sealed class ToolAuthorizationServiceCoverageTests
     }
 
     [Fact]
+    public void IsAuthorized_WhenCreateCustomToolExplicitlyDelegated_ShouldAllowCreationButNotInvocationByDefault()
+    {
+        IConfiguration config = BuildConfig(new Dictionary<string, string?>
+        {
+            ["ToolPermissions:create_custom_tool:Enabled"] = "true",
+            ["ToolPermissions:create_custom_tool:AllowedRanks"] = "Supreme,Prince,Duke",
+            ["ToolPermissions:create_custom_tool:WhitelistedAgents:0"] = "vassago",
+        });
+
+        var sut = new ToolAuthorizationService(NullLogger<ToolAuthorizationService>.Instance, config);
+
+        sut.IsAuthorized("a1", "vassago", AgentRank.Duke, "create_custom_tool").IsAuthorized.Should().BeTrue();
+
+        var invokeDecision = sut.IsAuthorized("a1", "vassago", AgentRank.Duke, "custom_http_tool");
+        invokeDecision.IsAuthorized.Should().BeFalse();
+        invokeDecision.Reason.Should().Contain("Supreme-only");
+    }
+
+    [Fact]
+    public void IsAuthorized_WhenCustomToolInvocationIsExplicitlyDelegated_ShouldAllowConfiguredAgent()
+    {
+        IConfiguration config = BuildConfig(new Dictionary<string, string?>
+        {
+            ["ToolPermissions:create_custom_tool:Enabled"] = "true",
+            ["ToolPermissions:create_custom_tool:AllowedRanks"] = "Supreme,Prince,Duke",
+            ["ToolPermissions:create_custom_tool:WhitelistedAgents:0"] = "vassago",
+            ["ToolPermissions:custom_http_tool:Enabled"] = "true",
+            ["ToolPermissions:custom_http_tool:AllowedRanks"] = "Duke",
+            ["ToolPermissions:custom_http_tool:WhitelistedAgents:0"] = "vassago",
+        });
+
+        var sut = new ToolAuthorizationService(NullLogger<ToolAuthorizationService>.Instance, config);
+
+        sut.IsAuthorized("a1", "vassago", AgentRank.Duke, "create_custom_tool").IsAuthorized.Should().BeTrue();
+        sut.IsAuthorized("a1", "vassago", AgentRank.Duke, "custom_http_tool").IsAuthorized.Should().BeTrue();
+        sut.IsAuthorized("a2", "other", AgentRank.Duke, "custom_http_tool").IsAuthorized.Should().BeFalse();
+    }
+
+    [Fact]
     public void IsAuthorized_WhenToolDisabled_ShouldDeny()
     {
         IConfiguration config = BuildConfig(new Dictionary<string, string?>

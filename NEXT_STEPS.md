@@ -414,6 +414,13 @@ If you want a stricter, opt-in quality gate (e.g., in CI), run:
 dotnet build /p:RunAnalyzersDuringBuild=true /p:EnforceCodeStyleInBuild=true
 ```
 
+Or use the checked-in helper:
+
+```powershell
+./scripts/run-analyzers.ps1
+./scripts/run-analyzers.ps1 -WarningsAsErrors
+```
+
 If you want fewer IDE warnings while iterating, prefer suppressing specific rules in `.editorconfig` instead of turning analyzers off globally.
 
 ### Issue: "Memory pruning not working"

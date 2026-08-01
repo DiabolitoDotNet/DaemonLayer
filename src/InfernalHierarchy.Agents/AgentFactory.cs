@@ -27,6 +27,7 @@ public class AgentFactory : IAgentFactory
     private readonly TokenUsageTracker? _tokenUsageTracker;
     private readonly MultiModelLlmClient? _multiModelLlmClient;
     private readonly IAgentCollaborationService? _collaborationService;
+    private readonly IAgentQuotaService? _agentQuotaService;
     private readonly IActionParser? _actionParser;
     private readonly IActionInputParser? _actionInputParser;
     private readonly IActionExecutor? _actionExecutor;
@@ -59,6 +60,7 @@ public class AgentFactory : IAgentFactory
         TokenUsageTracker? tokenUsageTracker = null,
         MultiModelLlmClient? multiModelLlmClient = null,
         IAgentCollaborationService? collaborationService = null,
+        IAgentQuotaService? agentQuotaService = null,
         IReActTaskProcessor? taskProcessor = null)
         : this(
             personaLoader,
@@ -79,6 +81,7 @@ public class AgentFactory : IAgentFactory
             tokenUsageTracker,
             multiModelLlmClient,
             collaborationService,
+                agentQuotaService,
             taskProcessor)
     {
         _vectorMemory = vectorMemory;
@@ -137,6 +140,7 @@ public class AgentFactory : IAgentFactory
         _tokenUsageTracker = null;
         _multiModelLlmClient = null;
         _collaborationService = null;
+        _agentQuotaService = null;
         _actionParser = null;
         _actionInputParser = null;
         _actionExecutor = null;
@@ -165,6 +169,7 @@ public class AgentFactory : IAgentFactory
         TokenUsageTracker? tokenUsageTracker,
         MultiModelLlmClient? multiModelLlmClient,
         IAgentCollaborationService? collaborationService,
+        IAgentQuotaService? agentQuotaService,
         IReActTaskProcessor? taskProcessor)
         : this(
             personaLoader,
@@ -186,6 +191,7 @@ public class AgentFactory : IAgentFactory
         _tokenUsageTracker = tokenUsageTracker;
         _multiModelLlmClient = multiModelLlmClient;
         _collaborationService = collaborationService;
+        _agentQuotaService = agentQuotaService;
         _taskProcessor = taskProcessor;
     }
 
@@ -223,6 +229,8 @@ public class AgentFactory : IAgentFactory
 
     private IAgent CreateAgentFromPersona(Persona persona, string personaKey, AgentRank rank, string? parentId, string? personaPathOverride = null)
     {
+        _agentQuotaService?.EnsureCanCreateAgent(rank);
+
         // Telegram routes messages to the main agent using a stable id ("lucifer").
         // Keep this id stable to preserve routing and avoid orphaned channels.
         var agentId = (rank == AgentRank.Supreme && parentId == null &&

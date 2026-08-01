@@ -52,6 +52,7 @@ internal static class HostDependencyInjection
         builder.Services.AddSingleton<IPostConfigureOptions<GitHubPublisherOptions>, GitHubPublisherDockerSecretsPostConfigureOptions>();
         builder.Services.AddSingleton<IPostConfigureOptions<BraveSearchOptions>, BraveSearchDockerSecretsPostConfigureOptions>();
         builder.Services.AddSingleton<IValidateOptions<MemoryOptions>, MemoryOptionsValidator>();
+        builder.Services.AddSingleton<IValidateOptions<MemoryBackupOptions>, MemoryBackupOptionsValidator>();
         builder.Services.AddSingleton<IValidateOptions<HierarchyOptions>, HierarchyOptionsValidator>();
         builder.Services.AddSingleton<IValidateOptions<SearXNGOptions>, SearXngOptionsValidator>();
         builder.Services.AddSingleton<IValidateOptions<BraveSearchOptions>, BraveSearchOptionsValidator>();
@@ -90,6 +91,7 @@ internal static class HostDependencyInjection
         builder.Services.AddSingleton<ResiliencePolicies>();
         builder.Services.AddSingleton<IResiliencePolicyProvider, ResiliencePolicyProvider>();
         builder.Services.AddSingleton<GlobalExceptionHandler>();
+        builder.Services.AddSingleton<IAgentQuotaService, TenantAgentQuotaService>();
     }
 
     public static void AddHealthChecks(WebApplicationBuilder builder)
@@ -184,6 +186,10 @@ internal static class HostDependencyInjection
         builder.Services.AddSingleton<ISharedMemory>(sp => sp.GetRequiredService<LiteDbSharedMemory>());
         builder.Services.AddSingleton<IToolResultCacheStore>(sp => sp.GetRequiredService<LiteDbSharedMemory>());
         builder.Services.AddSingleton<ICustomToolStore>(sp => sp.GetRequiredService<LiteDbSharedMemory>());
+        builder.Services.AddSingleton<ITenantIsolationService>(sp =>
+            new TenantIsolationService(
+                sp.GetRequiredService<ILogger<TenantIsolationService>>(),
+                Path.Combine(AppContext.BaseDirectory, "data")));
     }
 
     private static void AddPersonaAndDocsServices(WebApplicationBuilder builder)
@@ -250,6 +256,7 @@ internal static class HostDependencyInjection
     {
         builder.Services.AddSingleton<OnnxEmbeddingService>();
         builder.Services.AddHttpClient<IVectorMemory, VectorMemoryService>();
+        builder.Services.AddHostedService<MemoryBackupService>();
 
         if (vectorMemoryOptions.Enabled)
         {

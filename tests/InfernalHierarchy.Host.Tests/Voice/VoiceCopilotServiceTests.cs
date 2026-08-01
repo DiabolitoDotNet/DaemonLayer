@@ -53,7 +53,7 @@ public sealed class VoiceCopilotServiceTests
         var result = await sut.GetReplyAsync("Bonjour", sessionId: "t1", ct: CancellationToken.None);
 
         Assert.False(string.IsNullOrWhiteSpace(result.ReplyText));
-        Assert.EndsWith("?", result.ReplyText);
+        Assert.EndsWith("?", result.ReplyText, StringComparison.Ordinal);
         Assert.Equal(1, client.NonStreamingCalls);
     }
 

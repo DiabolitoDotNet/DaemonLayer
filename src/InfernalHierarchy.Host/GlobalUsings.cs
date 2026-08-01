@@ -24,6 +24,7 @@ global using InfernalHierarchy.Memory.Embeddings;
 global using InfernalHierarchy.Memory.Learning;
 global using InfernalHierarchy.Memory.Maintenance;
 global using InfernalHierarchy.Memory.Storage;
+global using InfernalHierarchy.Memory.Tenancy;
 global using InfernalHierarchy.Memory.Vector;
 global using InfernalHierarchy.Messaging.Bus;
 global using InfernalHierarchy.Personas.Loading;

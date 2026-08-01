@@ -90,4 +90,36 @@ public sealed class CreateCollaborationSagaExecutionTests
         memory.Verify(m => m.AddDecisionAsync(It.IsAny<Decision>(), It.IsAny<CancellationToken>()), Times.Once);
         memory.Verify(m => m.DeleteDecisionAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Once);
     }
+
+    [Fact]
+    public async Task ExecuteAsync_WhenParticipantValidationFails_DoesNotPerformMemorySideEffects()
+    {
+        var memory = new Mock<ISharedMemory>(MockBehavior.Strict);
+
+        var request = new CollaborationRequest
+        {
+            Id = "r1",
+            InitiatorAgentId = "lucifer",
+            Task = "t",
+            ParticipantAgentIds = ["a"],
+            MinimumParticipants = 2,
+            MinimumConfidence = 0.7,
+            Strategy = CollaborationStrategy.Voting
+        };
+
+        var saga = new CreateCollaborationSaga(
+            NullLogger<CreateCollaborationSaga>.Instance,
+            Mock.Of<IAgentFactory>(),
+            memory.Object,
+            Mock.Of<IAgentCollaborationService>(),
+            request);
+
+        var result = await saga.ExecuteAsync(CancellationToken.None);
+
+        result.Success.Should().BeFalse();
+        memory.Verify(m => m.AddDecisionAsync(It.IsAny<Decision>(), It.IsAny<CancellationToken>()), Times.Never);
+        memory.Verify(m => m.AddFactAsync(It.IsAny<Fact>(), It.IsAny<CancellationToken>()), Times.Never);
+        memory.Verify(m => m.DeleteDecisionAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+        memory.Verify(m => m.DeleteFactAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
 }

@@ -131,4 +131,38 @@ public sealed class CqrsDispatcherTests
         b.Should().Be("1");
         c.Should().Be("2");
     }
+
+    [Fact]
+    public async Task DispatchQueryAsync_WhenFirstCallFails_DoesNotCacheFailure()
+    {
+        var callCount = 0;
+        var handler = new Mock<IQueryHandler<TestQuery, string>>();
+        handler
+            .Setup(h => h.HandleAsync(It.IsAny<TestQuery>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() =>
+            {
+                callCount++;
+                if (callCount == 1)
+                {
+                    throw new InvalidOperationException("boom");
+                }
+
+                return "recovered";
+            });
+
+        var services = new ServiceCollection();
+        services.AddSingleton(handler.Object);
+        var sp = services.BuildServiceProvider();
+
+        var dispatcher = new CqrsDispatcher(NullLogger<CqrsDispatcher>.Instance, sp);
+        var query = new TestQuery("q1") { QueryId = "Q" };
+
+        var act = async () => await dispatcher.DispatchQueryAsync<TestQuery, string>(query, useCache: true, CancellationToken.None);
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("boom");
+
+        var second = await dispatcher.DispatchQueryAsync<TestQuery, string>(query, useCache: true, CancellationToken.None);
+
+        second.Should().Be("recovered");
+        handler.Verify(h => h.HandleAsync(query, It.IsAny<CancellationToken>()), Times.Exactly(2));
+    }
 }

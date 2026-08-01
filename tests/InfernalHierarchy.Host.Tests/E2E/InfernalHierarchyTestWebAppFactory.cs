@@ -87,6 +87,7 @@ public class InfernalHierarchyTestWebAppFactory : WebApplicationFactory<Program>
 
             // Remove noisy/background hosted services not needed for API E2E.
             RemoveHostedService<InfernalHierarchy.Memory.Vector.VectorMemoryInitializationService>(services);
+            RemoveHostedService<InfernalHierarchy.Memory.Maintenance.MemoryBackupService>(services);
             RemoveHostedService<InfernalHierarchy.Memory.Maintenance.MemoryPruningService>(services);
             RemoveHostedService<InfernalHierarchy.Memory.Learning.MemoryLearningService>(services);
             RemoveHostedService<InfernalHierarchy.Host.Configuration.ConfigurationReloadService>(services);
@@ -96,8 +97,6 @@ public class InfernalHierarchyTestWebAppFactory : WebApplicationFactory<Program>
 
     protected override void Dispose(bool disposing)
     {
-        base.Dispose(disposing);
-
         if (disposing)
         {
             try

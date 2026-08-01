@@ -172,7 +172,7 @@ public sealed class DefaultToolExecutionPipelineTests
         var result = await pipeline.ExecuteAsync(context);
 
         Assert.False(result.Success);
-        Assert.Contains("boom", result.Error ?? string.Empty);
+        Assert.Contains("boom", result.Error ?? string.Empty, StringComparison.Ordinal);
 
         Assert.Single(sink.Events);
         Assert.Equal(EventType.ErrorOccurred, sink.Events[0].Type);

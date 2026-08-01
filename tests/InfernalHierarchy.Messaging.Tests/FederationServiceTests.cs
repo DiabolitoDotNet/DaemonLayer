@@ -149,6 +149,31 @@ public sealed class FederationServiceTests
         instance.IsActive.Should().BeFalse();
     }
 
+    [Fact]
+    public async Task SendMessageAsync_WhenHttpReturnsFailureStatus_MarksInstanceInactive()
+    {
+        var handler = new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.InternalServerError));
+        var sut = CreateService(handler, localInstanceId: "local");
+
+        var instance = new FederatedInstance
+        {
+            InstanceId = "i1",
+            BaseUrl = "http://remote",
+            IsActive = true,
+            LastHeartbeat = DateTime.UtcNow,
+        };
+
+        await sut.RegisterInstanceAsync(instance);
+
+        await sut.SendMessageAsync(new FederatedMessage
+        {
+            TargetInstanceId = "i1",
+            MessageType = FederatedMessageType.Broadcast,
+        });
+
+        instance.IsActive.Should().BeFalse();
+    }
+
     private sealed class ThrowingHandler : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
@@ -275,6 +300,30 @@ public sealed class FederationServiceTests
         await sut.MonitorInstanceHealthAsync(CancellationToken.None);
 
         (await sut.GetActiveInstancesAsync()).Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task MonitorInstanceHealthAsync_WhenHeartbeatTransportFails_DoesNotThrow_AndMarksFreshInstanceHealthyInTimestampOnly()
+    {
+        var handler = new ThrowingHandler();
+        var client = new HttpClient(handler);
+        var sut = new FederationService(NullLogger<FederationService>.Instance, client, "local");
+
+        var originalHeartbeat = DateTime.UtcNow;
+        var instance = new FederatedInstance
+        {
+            InstanceId = "i1",
+            BaseUrl = "http://r1",
+            IsActive = true,
+            LastHeartbeat = originalHeartbeat
+        };
+
+        await sut.RegisterInstanceAsync(instance);
+
+        await sut.MonitorInstanceHealthAsync(CancellationToken.None);
+
+        instance.IsActive.Should().BeTrue();
+        instance.LastHeartbeat.Should().BeAfter(originalHeartbeat);
     }
 
     [Fact]

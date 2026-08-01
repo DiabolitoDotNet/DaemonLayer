@@ -50,7 +50,7 @@ public class ResiliencePoliciesTests
         Func<CancellationToken, Task> action = _ =>
         {
             attempts++;
-            cts.Cancel();
+            cts.CancelAsync().GetAwaiter().GetResult();
             throw new InvalidOperationException("boom");
         };
 
@@ -112,7 +112,7 @@ public class ResiliencePoliciesTests
         Func<CancellationToken, Task> action = _ =>
         {
             attempts++;
-            cts.Cancel();
+            cts.CancelAsync().GetAwaiter().GetResult();
             throw new TaskCanceledException("timeout");
         };
 
@@ -130,7 +130,7 @@ public class ResiliencePoliciesTests
 
         var attempts = 0;
         using var innerCts = new CancellationTokenSource();
-        innerCts.Cancel();
+        await innerCts.CancelAsync();
 
         var canceledTask = Task.FromCanceled(innerCts.Token);
 
@@ -159,7 +159,7 @@ public class ResiliencePoliciesTests
             await policies.HttpRequestPolicy.ExecuteAsync(ct =>
             {
                 attempts++;
-                cts.Cancel();
+                cts.CancelAsync().GetAwaiter().GetResult();
                 return Task.FromResult(new HttpResponseMessage(HttpStatusCode.InternalServerError));
             }, cts.Token);
 

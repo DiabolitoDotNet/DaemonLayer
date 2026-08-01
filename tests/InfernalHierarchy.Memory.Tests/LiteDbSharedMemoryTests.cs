@@ -47,6 +47,36 @@ public sealed class LiteDbSharedMemoryTests : IDisposable
     }
 
     [Fact]
+    public async Task CreateBackupAsync_ShouldCopyDatabaseFile()
+    {
+        await _memory.AddDecisionAsync(new Decision
+        {
+            CreatedBy = "lucifer",
+            Context = "backup",
+            Action = "copy",
+            Reasoning = "verify"
+        });
+
+        var backupPath = Path.Combine(Path.GetTempPath(), $"infernal-backup-{Guid.NewGuid():n}.db");
+
+        try
+        {
+            var createdPath = await _memory.CreateBackupAsync(backupPath);
+
+            createdPath.Should().Be(Path.GetFullPath(backupPath));
+            File.Exists(createdPath).Should().BeTrue();
+            new FileInfo(createdPath).Length.Should().BeGreaterThan(0);
+        }
+        finally
+        {
+            if (File.Exists(backupPath))
+            {
+                File.Delete(backupPath);
+            }
+        }
+    }
+
+    [Fact]
     public async Task SearchDecisionsAsync_ShouldSearchAcrossContextActionReasoning()
     {
         // Arrange

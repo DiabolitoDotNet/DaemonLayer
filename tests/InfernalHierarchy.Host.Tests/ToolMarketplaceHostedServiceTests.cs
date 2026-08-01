@@ -99,7 +99,7 @@ public sealed class ToolMarketplaceHostedServiceTests
         var env = new FakeHostEnvironment { ContentRootPath = Directory.GetCurrentDirectory() };
         var loader = new FakeLoader(typeof(PluginTool).Assembly);
 
-        var sut = new ToolMarketplaceHostedService(
+        using var sut = new ToolMarketplaceHostedService(
             registry,
             services: new ServiceCollection().BuildServiceProvider(),
             loader,
@@ -135,7 +135,7 @@ public sealed class ToolMarketplaceHostedServiceTests
         var env = new FakeHostEnvironment { ContentRootPath = Directory.GetCurrentDirectory() };
         var loader = new FakeLoader(typeof(PluginTool).Assembly);
 
-        var sut = new ToolMarketplaceHostedService(
+        using var sut = new ToolMarketplaceHostedService(
             registry,
             services: new ServiceCollection().BuildServiceProvider(),
             loader,
@@ -171,7 +171,7 @@ public sealed class ToolMarketplaceHostedServiceTests
         var env = new FakeHostEnvironment { ContentRootPath = Directory.GetCurrentDirectory() };
         var loader = new FakeLoader(typeof(PluginTool).Assembly);
 
-        var sut = new ToolMarketplaceHostedService(
+        using var sut = new ToolMarketplaceHostedService(
             registry,
             services: new ServiceCollection().BuildServiceProvider(),
             loader,
@@ -207,7 +207,7 @@ public sealed class ToolMarketplaceHostedServiceTests
         var env = new FakeHostEnvironment { ContentRootPath = Directory.GetCurrentDirectory() };
         var loader = new FakeFailingLoader();
 
-        var sut = new ToolMarketplaceHostedService(
+        using var sut = new ToolMarketplaceHostedService(
             registry,
             services: new ServiceCollection().BuildServiceProvider(),
             loader,
@@ -248,7 +248,7 @@ public sealed class ToolMarketplaceHostedServiceTests
         var env = new FakeHostEnvironment { ContentRootPath = Directory.GetCurrentDirectory() };
         var loader = new FakeLoader(typeof(PluginTool).Assembly);
 
-        var sut = new ToolMarketplaceHostedService(
+        using var sut = new ToolMarketplaceHostedService(
             registry,
             services: new ServiceCollection().BuildServiceProvider(),
             loader,
@@ -276,7 +276,7 @@ public sealed class ToolMarketplaceHostedServiceTests
         var env = new FakeHostEnvironment { ContentRootPath = Directory.GetCurrentDirectory() };
         var loader = new FakeLoader(typeof(PluginTool).Assembly);
 
-        var sut = new ToolMarketplaceHostedService(
+        using var sut = new ToolMarketplaceHostedService(
             registry,
             services: new ServiceCollection().BuildServiceProvider(),
             loader,
@@ -306,7 +306,7 @@ public sealed class ToolMarketplaceHostedServiceTests
         var env = new FakeHostEnvironment { ContentRootPath = Directory.GetCurrentDirectory() };
         var loader = new FakeLoader(typeof(PluginTool).Assembly);
 
-        var sut = new ToolMarketplaceHostedService(
+        using var sut = new ToolMarketplaceHostedService(
             registry,
             services: new ServiceCollection().BuildServiceProvider(),
             loader,
@@ -332,7 +332,7 @@ public sealed class ToolMarketplaceHostedServiceTests
         var env = new FakeHostEnvironment { ContentRootPath = Path.Combine(Path.GetTempPath(), "infernal-content-root") };
         var loader = new FakeLoader(typeof(PluginTool).Assembly);
 
-        var sut = new ToolMarketplaceHostedService(
+        using var sut = new ToolMarketplaceHostedService(
             registry,
             services: new ServiceCollection().BuildServiceProvider(),
             loader,
@@ -357,7 +357,7 @@ public sealed class ToolMarketplaceHostedServiceTests
         var env = new FakeHostEnvironment { ContentRootPath = Directory.GetCurrentDirectory() };
         var loader = new FakeLoader(typeof(PluginTool).Assembly);
 
-        var sut = new ToolMarketplaceHostedService(
+        using var sut = new ToolMarketplaceHostedService(
             registry,
             services: new ServiceCollection().BuildServiceProvider(),
             loader,

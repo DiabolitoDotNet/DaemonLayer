@@ -8,6 +8,7 @@ using Xunit;
 
 namespace InfernalHierarchy.Host.Tests.E2E;
 
+[Collection("Host E2E")]
 public sealed class PerfPersonaDocsE2ETests
 {
     private sealed class RequestProfilingEnabledFactory : InfernalHierarchyTestWebAppFactory

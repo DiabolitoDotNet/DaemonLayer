@@ -76,6 +76,64 @@ This enables multi-user use with isolation.
 2. Host surfaces health/metrics or a summarized state
 3. Operator-only actions require the operator API key and proper permissions
 
+### Deterministic tool execution
+
+1. Operator sends an explicit tool invocation through `/api/chat`
+2. ReAct loop detects `Invoke tool <name> {json}`
+3. Requested tool executes through the standard tool pipeline
+4. The result is returned without relying on model interpretation
+
+This is especially useful for:
+
+- operator debugging,
+- custom tool creation,
+- reproducible incident response,
+- validating permission or policy behavior.
+
+See: [Custom Tools Runbook](Runbooks/Custom-Tools.md)
+
+### Custom tool lifecycle
+
+1. Operator or authorized agent requests `create_custom_tool`
+2. Source is generated or templated
+3. Security policy evaluates the source
+4. Source is compiled, persisted, and registered when allowed
+5. The resulting `custom_*` tool can then be invoked if separately authorized
+
+This gives the system a controlled way to extend its tool surface without rebuilding the host.
+
+See: [Custom Tools Runbook](Runbooks/Custom-Tools.md)
+
+## Capability recipes
+
+### Add a new tool safely
+
+1. Implement the tool and register it in the host.
+2. Decide whether it is read-only or side-effecting.
+3. Add authorization defaults and, if needed, side-effect dedupe expectations.
+4. Add direct tests plus at least one pipeline or orchestration test.
+5. Update the relevant persona/tool docs.
+
+### Add a new specialist persona
+
+1. Create a JSON asset in `souls/`.
+2. Keep available tools narrow and role-specific.
+3. Prefer composition through existing tools before inventing new ones.
+4. Validate the persona in a realistic orchestration or chat flow.
+
+### Add a new template-driven workflow
+
+1. Add the template under `templates/`.
+2. Keep task framing reusable across personas.
+3. Document operator-facing usage when the template changes system behavior noticeably.
+
+### Operate the local memory store safely
+
+1. Monitor LiteDB health and file size.
+2. Use pruning for retention control.
+3. Use scheduled backups for rollback/recovery.
+4. Validate visibility rules when facts are shared across ranks.
+
 ## Boundaries and control levers
 
 - **Tool permissions** are the main safety boundary.
@@ -88,6 +146,8 @@ This enables multi-user use with isolation.
 ## Where to go deeper
 
 - Architecture: [Solution Architecture](Solution-Architecture.md)
+- Features and extension guide: [Features Catalog](Features.md)
+- Runbooks: [Documentation README](README.md)
 - Security model: [SECURITY_CONFIG](../SECURITY_CONFIG.md)
 - Observability model: [OBSERVABILITY](../OBSERVABILITY.md)
 - Advanced/experimental capabilities: [ADVANCED_FEATURES](../ADVANCED_FEATURES.md)

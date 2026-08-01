@@ -291,6 +291,12 @@ dotnet build /p:RunAnalyzersDuringBuild=true /p:EnforceCodeStyleInBuild=true
 
 # Opt-in: fail the build on warnings (typically paired with the analyzer gate)
 dotnet build /p:RunAnalyzersDuringBuild=true /p:EnforceCodeStyleInBuild=true /p:TreatWarningsAsErrors=true
+
+# Checked-in helper script
+./scripts/run-analyzers.ps1
+
+# Strict analyzer gate
+./scripts/run-analyzers.ps1 -WarningsAsErrors
 ```
 
 ---

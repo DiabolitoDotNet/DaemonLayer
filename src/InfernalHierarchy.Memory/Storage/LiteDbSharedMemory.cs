@@ -8,7 +8,11 @@ namespace InfernalHierarchy.Memory.Storage;
 public sealed class LiteDbSharedMemory : ISharedMemory, IToolResultCacheStore, ICustomToolStore, IDisposable
 {
     private readonly LiteDatabase _db;
+    private readonly string _dbPath;
+    private readonly object _maintenanceLock = new();
     private readonly ILogger<LiteDbSharedMemory> _logger;
+
+    public string DatabasePath => _dbPath;
 
     private ILiteCollection<Decision> Decisions => _db.GetCollection<Decision>("decisions");
     private ILiteCollection<Fact> Facts => _db.GetCollection<Fact>("facts");
@@ -21,7 +25,8 @@ public sealed class LiteDbSharedMemory : ISharedMemory, IToolResultCacheStore, I
         _logger = logger;
 
         var dbPath = options.Value.DatabasePath;
-        var directory = Path.GetDirectoryName(dbPath);
+        _dbPath = Path.GetFullPath(dbPath);
+        var directory = Path.GetDirectoryName(_dbPath);
         if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
         {
             Directory.CreateDirectory(directory);
@@ -32,7 +37,7 @@ public sealed class LiteDbSharedMemory : ISharedMemory, IToolResultCacheStore, I
         mapper.Entity<CachedToolResult>().Id(x => x.InputKey);
         mapper.Entity<CustomToolDefinition>().Id(x => x.Id);
 
-        _db = new LiteDatabase(dbPath, mapper);
+        _db = new LiteDatabase(_dbPath, mapper);
 
         // Create indexes for better query performance
         Decisions.EnsureIndex(nameof(MemoryEntry.CreatedAt));
@@ -51,7 +56,32 @@ public sealed class LiteDbSharedMemory : ISharedMemory, IToolResultCacheStore, I
         CustomTools.EnsureIndex(nameof(CustomToolDefinition.ToolName));
         CustomTools.EnsureIndex(nameof(CustomToolDefinition.CreatedAt));
 
-        _logger.LogInformation("💾 LiteDB shared memory initialized at {Path}", dbPath);
+        _logger.LogInformation("💾 LiteDB shared memory initialized at {Path}", _dbPath);
+    }
+
+    public Task<string> CreateBackupAsync(string backupPath, CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+
+        if (string.IsNullOrWhiteSpace(backupPath))
+        {
+            throw new ArgumentException("Backup path is required", nameof(backupPath));
+        }
+
+        var fullBackupPath = Path.GetFullPath(backupPath);
+        var backupDirectory = Path.GetDirectoryName(fullBackupPath);
+        if (!string.IsNullOrWhiteSpace(backupDirectory))
+        {
+            Directory.CreateDirectory(backupDirectory);
+        }
+
+        lock (_maintenanceLock)
+        {
+            _db.Checkpoint();
+            File.Copy(_dbPath, fullBackupPath, overwrite: true);
+        }
+
+        return Task.FromResult(fullBackupPath);
     }
 
     #region Custom Tools

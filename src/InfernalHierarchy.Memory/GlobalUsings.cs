@@ -4,4 +4,5 @@ global using InfernalHierarchy.Core.Security;
 global using InfernalHierarchy.Memory.Configuration;
 global using InfernalHierarchy.Memory.Embeddings;
 global using Microsoft.Extensions.Logging;
+global using Microsoft.Extensions.Hosting;
 global using Microsoft.Extensions.Options;

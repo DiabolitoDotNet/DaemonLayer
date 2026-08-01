@@ -63,7 +63,8 @@ For a complete, safe-by-default template (including `fs_*` and `http_request`, d
 - **Built-in defaults**: InfernalHierarchy starts with a default permission map for known tools.
   - This keeps new installs safe-by-default (powerful tools like filesystem/HTTP are disabled unless explicitly enabled).
 - **Partial configuration overlays defaults**: If you configure only a subset of tools under `ToolPermissions`, those entries override the defaults, and the rest of the default map remains in effect.
-- **Unknown tools**: If a tool name is not present in the effective permission map, it is **allowed by default** (fail-open for extensibility). See “Security Considerations” below.
+- **Unknown tools**: If a tool name is not present in the effective permission map, it is **denied by default** (fail-closed). Add an explicit `ToolPermissions` entry before delegating it.
+- **Custom tools (`custom_*`)**: Dynamically generated tools remain **Supreme-only by default** until you explicitly configure their permission entry.
 
 ### High-Risk Tools (Filesystem / HTTP / Code Execution)
 
@@ -99,7 +100,8 @@ For stronger isolation, run the Host in a container/VM and restrict the sandbox 
 
 ```
 1. Check if tool exists in permissions config
-   ├─ Not found → Allow by default (fail-open for extensibility)
+  ├─ Not found → DENY by default (fail-closed)
+  │            → Exception: `custom_*` tools are Supreme-only unless explicitly delegated
    └─ Found → Continue
 
 2. Check if tool is globally enabled
@@ -540,9 +542,10 @@ Save file. New limit applies to next memory write operation.
 
 ## Security Considerations
 
-1. **Fail-Open Design**: Unknown tools are allowed by default
-   - Ensures extensibility for custom tools
-   - Can be changed to fail-closed if needed
+1. **Fail-Closed for Unknown Tools**
+  - Unknown tool names are denied until explicitly configured in `ToolPermissions`
+  - Reduces policy bypass risk from casing drift or undeclared tools
+  - `custom_*` tools are a special case: they remain Supreme-only by default
 
 2. **No Authorization Required for Core Operations**
    - Message bus communication is always allowed

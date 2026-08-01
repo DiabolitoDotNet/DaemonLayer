@@ -827,6 +827,118 @@ public class DefaultReActLoopRunnerTests
         result.ToolCalls.Should().ContainSingle().Which.Should().Be("get_agent_status({})");
     }
 
+    [Fact]
+    public async Task RunAsync_WhenSendTelegramUsesAliasKeys_SuppressesDuplicateInvocationAsync()
+    {
+        var persona = new Persona
+        {
+            Name = "Lucifer",
+            DemonTitle = "Lucifer",
+            SystemPrompt = "",
+            AvailableTools = ["send_telegram", "read_memory"]
+        };
+
+        var llm = new SequenceLlmClient(
+            "Thought: Notify\nAction: send_telegram\nAction Input: {\"chat_id\":123,\"text\":\"ok\"}",
+            "Thought: Notify again\nAction: send_telegram\nAction Input: {\"chatId\":123,\"message\":\"ok\",\"timestamp\":\"t2\"}",
+            "Thought: Done\nAction: FINAL_ANSWER\nAction Input: ok");
+
+        var toolRegistry = new Mock<IToolRegistry>();
+        var execCount = 0;
+        var executor = new Mock<IActionExecutor>();
+        executor
+            .Setup(e => e.ExecuteAsync(It.IsAny<ActionExecutionContext>()))
+            .ReturnsAsync(() =>
+            {
+                execCount++;
+                return new ActionExecutionResult(
+                    ToolFound: true,
+                    Success: true,
+                    Observation: "Observation: Message queued for Telegram chat 123",
+                    ToolCall: "send_telegram({chat_id:123})",
+                    Error: null);
+            });
+
+        var context = new ReActLoopContext(
+            SystemContext: "",
+            Task: "notify telegram then stop",
+            Persona: persona,
+            LlmClient: llm,
+            ToolRegistry: toolRegistry.Object,
+            ActionParser: new DefaultActionParser(),
+            ActionExecutor: executor.Object,
+            Logger: NullLogger.Instance,
+            SetStatus: _ => { },
+            AgentId: "lucifer",
+            AgentName: "Lucifer",
+            AgentRank: AgentRank.Supreme,
+            ReActOptions: new ReActOptions { UseJsonResponse = false, TerminalTools = Array.Empty<string>() },
+            PromptBuilder: new DefaultReActPromptBuilder());
+
+        var runner = new DefaultReActLoopRunner();
+        var result = await runner.RunAsync(context, CancellationToken.None);
+
+        result.FinalAnswer.Should().Be("ok");
+        execCount.Should().Be(1);
+        result.ToolCalls.Should().ContainSingle().Which.Should().Be("send_telegram({chat_id:123})");
+    }
+
+    [Fact]
+    public async Task RunAsync_WhenWriteMemoryRepeatsSameFactWithFormattingDifferences_SuppressesDuplicateInvocationAsync()
+    {
+        var persona = new Persona
+        {
+            Name = "Lucifer",
+            DemonTitle = "Lucifer",
+            SystemPrompt = "",
+            AvailableTools = ["write_memory"]
+        };
+
+        var llm = new SequenceLlmClient(
+            "Thought: Store fact\nAction: write_memory\nAction Input: {\"type\":\"fact\",\"agent_id\":\"lucifer\",\"category\":\"ops\",\"content\":\"Disk full\",\"shared_with\":\"baal, asmodeus\"}",
+            "Thought: Store same fact again\nAction: write_memory\nAction Input: {\"agent_id\":\"lucifer\",\"type\":\"fact\",\"content\":\"Disk full\",\"category\":\"ops\",\"shared_with\":\"asmodeus,baal\",\"timestamp\":\"later\"}",
+            "Thought: Done\nAction: FINAL_ANSWER\nAction Input: ok");
+
+        var toolRegistry = new Mock<IToolRegistry>();
+        var execCount = 0;
+        var executor = new Mock<IActionExecutor>();
+        executor
+            .Setup(e => e.ExecuteAsync(It.IsAny<ActionExecutionContext>()))
+            .ReturnsAsync(() =>
+            {
+                execCount++;
+                return new ActionExecutionResult(
+                    ToolFound: true,
+                    Success: true,
+                    Observation: "Observation: Fact recorded in category: ops (shared with: baal, asmodeus)",
+                    ToolCall: "write_memory({type:fact})",
+                    Error: null);
+            });
+
+        var context = new ReActLoopContext(
+            SystemContext: "",
+            Task: "remember this fact",
+            Persona: persona,
+            LlmClient: llm,
+            ToolRegistry: toolRegistry.Object,
+            ActionParser: new DefaultActionParser(),
+            ActionExecutor: executor.Object,
+            Logger: NullLogger.Instance,
+            SetStatus: _ => { },
+            AgentId: "lucifer",
+            AgentName: "Lucifer",
+            AgentRank: AgentRank.Supreme,
+            ReActOptions: new ReActOptions { UseJsonResponse = false },
+            PromptBuilder: new DefaultReActPromptBuilder());
+
+        var runner = new DefaultReActLoopRunner();
+        var result = await runner.RunAsync(context, CancellationToken.None);
+
+        result.FinalAnswer.Should().Be("ok");
+        execCount.Should().Be(1);
+        result.ToolCalls.Should().ContainSingle().Which.Should().Be("write_memory({type:fact})");
+    }
+
     private sealed class SequenceLlmClient : ILlmClient
     {
         private readonly Queue<string> _responses;
