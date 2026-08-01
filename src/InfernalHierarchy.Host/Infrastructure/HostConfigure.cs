@@ -6,8 +6,7 @@ internal static class HostConfigure
 {
     public static HttpEndpointOptions ConfigureHttpEndpointOptions(WebApplicationBuilder builder)
     {
-        builder.Services.Configure<HttpEndpointOptions>(builder.Configuration.GetSection("Http"));
-        var httpOptions = builder.Configuration.GetSection("Http").Get<HttpEndpointOptions>() ?? new HttpEndpointOptions();
+        var httpOptions = HostConfigurationBinding.ConfigureAndRead<HttpEndpointOptions>(builder, "Http");
 
         if (httpOptions.Enabled && !string.IsNullOrWhiteSpace(httpOptions.Urls))
         {
@@ -39,7 +38,6 @@ internal static class HostConfigure
 
     private static void ConfigureObservabilityOptions(WebApplicationBuilder builder)
     {
-        builder.Services.Configure<OpenTelemetryExportOptions>(builder.Configuration.GetSection("OpenTelemetry:Exporters"));
         builder.Services.Configure<TraceCaptureOptions>(builder.Configuration.GetSection("Perf:TraceCapture"));
         builder.Services.Configure<PerfRequestProfilingOptions>(builder.Configuration.GetSection("Perf:RequestProfiling"));
     }

@@ -2,6 +2,7 @@ using InfernalHierarchy.Agents.Registry;
 using InfernalHierarchy.Agents.ReAct;
 using InfernalHierarchy.Tools;
 using InfernalHierarchy.Core.Utilities;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace InfernalHierarchy.Agents;
 
@@ -34,6 +35,7 @@ public class AgentFactory : IAgentFactory
     private readonly IReActLoopRunner? _loopRunner;
     private readonly IReActTaskProcessor? _taskProcessor;
 
+    [ActivatorUtilitiesConstructor]
     public AgentFactory(
         IPersonaLoader personaLoader,
         IMessageBus messageBus,
@@ -46,7 +48,8 @@ public class AgentFactory : IAgentFactory
         IVectorMemory vectorMemory,
         IOptions<RagOptions> ragOptions,
         IOptions<ReActOptions> reActOptions,
-        IAgentEventSink? eventSink,
+        IOptions<CritiqueOptions>? critiqueOptions = null,
+        IAgentEventSink? eventSink = null,
         IActionParser? actionParser = null,
         IActionInputParser? actionInputParser = null,
         IActionExecutor? actionExecutor = null,
@@ -81,6 +84,7 @@ public class AgentFactory : IAgentFactory
         _vectorMemory = vectorMemory;
         _ragOptions = ragOptions.Value;
         _reActOptions = reActOptions.Value;
+        _critiqueOptions = critiqueOptions?.Value ?? new CritiqueOptions();
     }
 
     public AgentFactory(
@@ -114,7 +118,8 @@ public class AgentFactory : IAgentFactory
         ILlmClient ollamaClient,
         ILogger<AgentFactory> logger,
         ILoggerFactory loggerFactory,
-        IAgentEventSink? eventSink)
+        IAgentEventSink? eventSink,
+        IOptions<CritiqueOptions>? critiqueOptions = null)
     {
         _personaLoader = personaLoader;
         _messageBus = messageBus;
@@ -128,7 +133,7 @@ public class AgentFactory : IAgentFactory
         _vectorMemory = null;
         _ragOptions = new RagOptions();
         _reActOptions = new ReActOptions();
-        _critiqueOptions = new CritiqueOptions();
+        _critiqueOptions = critiqueOptions?.Value ?? new CritiqueOptions();
         _tokenUsageTracker = null;
         _multiModelLlmClient = null;
         _collaborationService = null;
@@ -213,13 +218,25 @@ public class AgentFactory : IAgentFactory
 
         _logger.LogInformation("🔨 Creating agent from dynamic persona: {PersonaName} with rank {Rank} (PersonaPath={PersonaPath})", persona.Name, rank, resolvedPersonaPath);
 
+        return Task.FromResult(CreateAgentFromPersona(persona, personaKey, rank, parentId, resolvedPersonaPath));
+    }
+
+    private IAgent CreateAgentFromPersona(Persona persona, string personaKey, AgentRank rank, string? parentId, string? personaPathOverride = null)
+    {
+        // Telegram routes messages to the main agent using a stable id ("lucifer").
+        // Keep this id stable to preserve routing and avoid orphaned channels.
+        var agentId = (rank == AgentRank.Supreme && parentId == null &&
+                       string.Equals(personaKey, "lucifer", StringComparison.OrdinalIgnoreCase))
+            ? "lucifer"
+            : Guid.NewGuid().ToString();
+
         var agentEntity = new Agent
         {
-            Id = Guid.NewGuid().ToString(),
+            Id = agentId,
             Name = persona.Name,
             Rank = rank,
             ParentAgentId = parentId,
-            PersonaPath = resolvedPersonaPath,
+            PersonaPath = personaPathOverride ?? $"souls/{personaKey}.json",
             Status = AgentStatus.Idle,
             CreatedAt = DateTime.UtcNow
         };
@@ -262,7 +279,7 @@ public class AgentFactory : IAgentFactory
             });
 
         RegisterAgent(agent);
-        return Task.FromResult<IAgent>(agent);
+        return agent;
     }
 
     public IAgent? GetAgent(string agentId) => _registry.GetAgent(agentId);

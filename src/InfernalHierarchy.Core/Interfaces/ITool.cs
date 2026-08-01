@@ -85,12 +85,6 @@ public interface IToolRegistry
     IEnumerable<ITool> GetToolsForAgent(string[] toolNames);
 
     /// <summary>
-    /// Exposes registered services from the underlying container when supported.
-    /// Intended for advanced tools that need shared dependencies.
-    /// </summary>
-    T? GetService<T>() where T : class;
-
-    /// <summary>
     /// Executes a tool by name while capturing execution telemetry/metadata.
     /// Implementations may apply authorization, rate limiting, retries, and auditing.
     /// </summary>

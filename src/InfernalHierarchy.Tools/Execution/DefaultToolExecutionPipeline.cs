@@ -40,6 +40,21 @@ public sealed class DefaultToolExecutionPipeline : IToolExecutionPipeline
 
     public async Task<ToolResult> ExecuteAsync(ToolExecutionContext context)
     {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(context.Tool);
+        ArgumentNullException.ThrowIfNull(context.Parameters);
+
+        var canonicalToolName = ResolveCanonicalToolName(context);
+        if (string.IsNullOrWhiteSpace(canonicalToolName))
+        {
+            throw new ArgumentException("Tool name is required", nameof(context));
+        }
+
+        var immutableParameters = CloneParameters(context.Parameters);
+        var executionParameters = CloneParameters(immutableParameters);
+        var cacheBypassRequested = IsCacheBypassRequested(immutableParameters);
+        string? cacheKey = null;
+
         if (_authorizationService != null && !string.IsNullOrWhiteSpace(context.AgentId))
         {
             var rank = AgentRank.Worker;
@@ -57,7 +72,7 @@ public sealed class DefaultToolExecutionPipeline : IToolExecutionPipeline
                 context.AgentId,
                 agentName,
                 rank,
-                context.ToolName);
+                canonicalToolName);
 
             if (!decision.IsAuthorized)
             {
@@ -71,13 +86,15 @@ public sealed class DefaultToolExecutionPipeline : IToolExecutionPipeline
                     Metadata = new Dictionary<string, object>
                     {
                         ["authorization_denied"] = true,
-                        ["tool"] = context.ToolName,
+                        ["tool"] = canonicalToolName,
                         ["agent_rank"] = context.AgentRank ?? rank.ToString()
                     }
                 };
 
                 TryAppendToolEvent(
                     context,
+                    canonicalToolName,
+                    immutableParameters,
                     success: false,
                     duration: TimeSpan.Zero,
                     errorMessage: denied.Error);
@@ -94,23 +111,25 @@ public sealed class DefaultToolExecutionPipeline : IToolExecutionPipeline
             try
             {
                 var cacheSettings = _cacheOptions.Value;
-                if (TryResolveCachePolicy(context, cacheSettings, out var ttl) && !IsCacheBypassRequested(context.Parameters))
+                if (TryResolveCachePolicy(canonicalToolName, cacheSettings, out var ttl) && !cacheBypassRequested)
                 {
-                    var inputKey = ComputeStableCacheKey(context.ToolName, context.Parameters);
-                    var cached = await _cacheStore.GetAsync(inputKey, context.CancellationToken).ConfigureAwait(false);
+                    cacheKey = ComputeStableCacheKey(canonicalToolName, immutableParameters);
+                    var cached = await _cacheStore.GetAsync(cacheKey, context.CancellationToken).ConfigureAwait(false);
                     if (cached != null)
                     {
                         var cachedResult = TryDeserializeToolResult(cached.ResultJson);
                         if (cachedResult != null)
                         {
                             cachedResult.Metadata["cache_hit"] = true;
-                            cachedResult.Metadata["cache_key"] = inputKey;
+                            cachedResult.Metadata["cache_key"] = cacheKey;
                             cachedResult.Metadata["cache_expires_at_utc"] = cached.ExpiresAt.ToString("O");
                             cachedResult.Metadata["cache_ttl_seconds"] = (long)ttl.TotalSeconds;
-                            cachedResult.Metadata["tool"] = context.ToolName;
+                            cachedResult.Metadata["tool"] = canonicalToolName;
 
                             TryAppendToolEvent(
                                 context,
+                                canonicalToolName,
+                                immutableParameters,
                                 success: cachedResult.Success,
                                 duration: TimeSpan.Zero,
                                 errorMessage: cachedResult.Success ? null : (cachedResult.Error ?? "Cached tool failure"));
@@ -119,7 +138,7 @@ public sealed class DefaultToolExecutionPipeline : IToolExecutionPipeline
                         }
 
                         // If we cannot deserialize, treat it as a miss and remove the bad entry.
-                        await _cacheStore.RemoveAsync(inputKey, context.CancellationToken).ConfigureAwait(false);
+                        await _cacheStore.RemoveAsync(cacheKey, context.CancellationToken).ConfigureAwait(false);
                     }
                 }
             }
@@ -129,7 +148,7 @@ public sealed class DefaultToolExecutionPipeline : IToolExecutionPipeline
             }
             catch (Exception ex)
             {
-                _logger.LogDebug(ex, "Tool cache lookup failed for {ToolName}", context.ToolName);
+                _logger.LogDebug(ex, "Tool cache lookup failed for {ToolName}", canonicalToolName);
             }
         }
 
@@ -154,6 +173,8 @@ public sealed class DefaultToolExecutionPipeline : IToolExecutionPipeline
 
                 TryAppendToolEvent(
                     context,
+                    canonicalToolName,
+                    immutableParameters,
                     success: false,
                     duration: TimeSpan.Zero,
                     errorMessage: result.Error);
@@ -171,13 +192,13 @@ public sealed class DefaultToolExecutionPipeline : IToolExecutionPipeline
             if (_exceptionHandler != null)
             {
                 result = await _exceptionHandler.ExecuteWithHandlingAsync(
-                    async cancellationToken => await context.Tool.ExecuteAsync(context.Parameters, cancellationToken).ConfigureAwait(false),
-                    $"Tool_{context.ToolName}_{context.AgentId}",
+                    async cancellationToken => await context.Tool.ExecuteAsync(executionParameters, cancellationToken).ConfigureAwait(false),
+                    $"Tool_{canonicalToolName}_{context.AgentId}",
                     ct: context.CancellationToken).ConfigureAwait(false);
             }
             else
             {
-                result = await context.Tool.ExecuteAsync(context.Parameters, context.CancellationToken).ConfigureAwait(false);
+                result = await context.Tool.ExecuteAsync(executionParameters, context.CancellationToken).ConfigureAwait(false);
             }
 
             stopwatch.Stop();
@@ -187,13 +208,15 @@ public sealed class DefaultToolExecutionPipeline : IToolExecutionPipeline
                 _learningService.RecordToolExecution(
                     context.AgentId,
                     context.AgentRank ?? "Worker",
-                    context.ToolName,
+                    canonicalToolName,
                     result.Success,
                     stopwatch.Elapsed);
             }
 
             TryAppendToolEvent(
                 context,
+                canonicalToolName,
+                immutableParameters,
                 success: result.Success,
                 duration: stopwatch.Elapsed,
                 errorMessage: result.Success ? null : (result.Error ?? "Tool returned failure"));
@@ -204,25 +227,25 @@ public sealed class DefaultToolExecutionPipeline : IToolExecutionPipeline
                 try
                 {
                     var cacheSettings = _cacheOptions.Value;
-                    if (TryResolveCachePolicy(context, cacheSettings, out var ttl) && !IsCacheBypassRequested(context.Parameters))
+                    if (TryResolveCachePolicy(canonicalToolName, cacheSettings, out var ttl) && !cacheBypassRequested)
                     {
                         if (result.Success || cacheSettings.CacheFailures)
                         {
-                            var inputKey = ComputeStableCacheKey(context.ToolName, context.Parameters);
+                            cacheKey ??= ComputeStableCacheKey(canonicalToolName, immutableParameters);
                             var expiresAt = DateTimeOffset.UtcNow.Add(ttl);
                             var json = TrySerializeToolResult(result);
                             if (!string.IsNullOrWhiteSpace(json))
                             {
                                 await _cacheStore.UpsertAsync(new CachedToolResult
                                 {
-                                    ToolName = context.ToolName,
-                                    InputKey = inputKey,
+                                    ToolName = canonicalToolName,
+                                    InputKey = cacheKey,
                                     ResultJson = json,
                                     ExpiresAt = expiresAt
                                 }, context.CancellationToken).ConfigureAwait(false);
 
                                 result.Metadata["cache_stored"] = true;
-                                result.Metadata["cache_key"] = inputKey;
+                                result.Metadata["cache_key"] = cacheKey;
                                 result.Metadata["cache_expires_at_utc"] = expiresAt.ToString("O");
                             }
                         }
@@ -234,7 +257,7 @@ public sealed class DefaultToolExecutionPipeline : IToolExecutionPipeline
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogDebug(ex, "Tool cache store failed for {ToolName}", context.ToolName);
+                    _logger.LogDebug(ex, "Tool cache store failed for {ToolName}", canonicalToolName);
                 }
             }
 
@@ -253,19 +276,19 @@ public sealed class DefaultToolExecutionPipeline : IToolExecutionPipeline
             {
                 var handlingResult = await _exceptionHandler.HandleExceptionAsync(
                     ex,
-                    $"Tool_{context.ToolName}_{context.AgentId}").ConfigureAwait(false);
+                    $"Tool_{canonicalToolName}_{context.AgentId}").ConfigureAwait(false);
 
                 _logger.LogError(
                     ex,
                     "🔥 Tool {ToolName} failed | Category: {Category} | Retry: {ShouldRetry} | CorrelationId: {CorrelationId}",
-                    context.ToolName,
+                    canonicalToolName,
                     handlingResult.Category,
                     handlingResult.ShouldRetry,
                     handlingResult.CorrelationId);
             }
             else
             {
-                _logger.LogError(ex, "Tool {ToolName} execution failed", context.ToolName);
+                _logger.LogError(ex, "Tool {ToolName} execution failed", canonicalToolName);
             }
 
             if (_learningService != null && context.AgentId != null)
@@ -273,13 +296,15 @@ public sealed class DefaultToolExecutionPipeline : IToolExecutionPipeline
                 _learningService.RecordToolExecution(
                     context.AgentId,
                     context.AgentRank ?? "Worker",
-                    context.ToolName,
+                    canonicalToolName,
                     success: false,
                     stopwatch.Elapsed);
             }
 
             TryAppendToolEvent(
                 context,
+                canonicalToolName,
+                immutableParameters,
                 success: false,
                 duration: stopwatch.Elapsed,
                 errorMessage: ex.Message);
@@ -295,6 +320,8 @@ public sealed class DefaultToolExecutionPipeline : IToolExecutionPipeline
 
     private void TryAppendToolEvent(
         ToolExecutionContext context,
+        string toolName,
+        IReadOnlyDictionary<string, object> parameters,
         bool success,
         TimeSpan duration,
         string? errorMessage)
@@ -304,18 +331,18 @@ public sealed class DefaultToolExecutionPipeline : IToolExecutionPipeline
             return;
         }
 
-        var safeParametersJson = SafeSerialize(context.Parameters);
+        var safeParametersJson = SafeSerialize(parameters);
 
         var evt = new AgentEvent
         {
             AgentId = context.AgentId,
             Type = success ? EventType.ToolExecuted : EventType.ErrorOccurred,
             Description = success
-                ? $"Tool executed: {context.ToolName}"
-                : $"Tool failed: {context.ToolName}",
+                ? $"Tool executed: {toolName}"
+                : $"Tool failed: {toolName}",
             Metadata = new Dictionary<string, object>
             {
-                ["tool"] = context.ToolName,
+                ["tool"] = toolName,
                 ["success"] = success,
                 ["duration_ms"] = (long)duration.TotalMilliseconds,
                 ["agent_rank"] = context.AgentRank ?? "Worker",
@@ -338,7 +365,7 @@ public sealed class DefaultToolExecutionPipeline : IToolExecutionPipeline
         }
     }
 
-    private static string SafeSerialize(Dictionary<string, object> parameters)
+    private static string SafeSerialize(IReadOnlyDictionary<string, object> parameters)
     {
         try
         {
@@ -351,7 +378,7 @@ public sealed class DefaultToolExecutionPipeline : IToolExecutionPipeline
         }
     }
 
-    private static bool IsCacheBypassRequested(Dictionary<string, object> parameters)
+    private static bool IsCacheBypassRequested(IReadOnlyDictionary<string, object> parameters)
     {
         if (parameters.TryGetValue("cache_bust", out var bust) && bust is bool b1 && b1)
         {
@@ -366,7 +393,7 @@ public sealed class DefaultToolExecutionPipeline : IToolExecutionPipeline
         return false;
     }
 
-    private static bool TryResolveCachePolicy(ToolExecutionContext context, ToolResultCacheOptions options, out TimeSpan ttl)
+    private static bool TryResolveCachePolicy(string toolName, ToolResultCacheOptions options, out TimeSpan ttl)
     {
         ttl = options.DefaultTtl;
 
@@ -374,8 +401,6 @@ public sealed class DefaultToolExecutionPipeline : IToolExecutionPipeline
         {
             return false;
         }
-
-        var toolName = context.ToolName;
 
         if (options.Tools.TryGetValue(toolName, out var overrideOptions))
         {
@@ -410,7 +435,7 @@ public sealed class DefaultToolExecutionPipeline : IToolExecutionPipeline
         return options.CacheableTools.Contains(toolName, StringComparer.OrdinalIgnoreCase);
     }
 
-    private static string ComputeStableCacheKey(string toolName, Dictionary<string, object> parameters)
+    private static string ComputeStableCacheKey(string toolName, IReadOnlyDictionary<string, object> parameters)
     {
         var canonical = CanonicalizeParameters(parameters);
         var json = JsonSerializer.Serialize(canonical, JsonDefaults.Web);
@@ -420,7 +445,7 @@ public sealed class DefaultToolExecutionPipeline : IToolExecutionPipeline
         return Convert.ToHexString(bytes).ToLowerInvariant();
     }
 
-    private static object CanonicalizeParameters(Dictionary<string, object> parameters)
+    private static object CanonicalizeParameters(IReadOnlyDictionary<string, object> parameters)
     {
         var sorted = new SortedDictionary<string, object?>(StringComparer.Ordinal);
         foreach (var (key, value) in parameters)
@@ -460,6 +485,25 @@ public sealed class DefaultToolExecutionPipeline : IToolExecutionPipeline
         }
 
         return value;
+    }
+
+    private static Dictionary<string, object> CloneParameters(IReadOnlyDictionary<string, object> source)
+    {
+        return source.ToDictionary(entry => entry.Key, entry => entry.Value, StringComparer.Ordinal);
+    }
+
+    private static string ResolveCanonicalToolName(ToolExecutionContext context)
+    {
+        var preferred = string.IsNullOrWhiteSpace(context.Tool.Name)
+            ? context.ToolName
+            : context.Tool.Name;
+
+        return NormalizeToolName(preferred);
+    }
+
+    private static string NormalizeToolName(string? toolName)
+    {
+        return (toolName ?? string.Empty).Trim().ToLowerInvariant();
     }
 
     private static object? CanonicalizeJsonElement(JsonElement je)

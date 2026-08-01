@@ -27,15 +27,15 @@ public sealed class ToolAuthorizationServiceCoverageTests
     }
 
     [Fact]
-    public void IsAuthorized_WhenToolNotConfigured_ShouldAllowByDefault()
+    public void IsAuthorized_WhenToolNotConfigured_ShouldDenyByDefault()
     {
         IConfiguration config = new ConfigurationBuilder().AddInMemoryCollection().Build();
         var sut = new ToolAuthorizationService(NullLogger<ToolAuthorizationService>.Instance, config);
 
         var result = sut.IsAuthorized("a1", "lucifer", AgentRank.Worker, "unknown_tool");
 
-        result.IsAuthorized.Should().BeTrue();
-        result.Reason.Should().BeNull();
+        result.IsAuthorized.Should().BeFalse();
+        result.Reason.Should().Contain("not configured");
     }
 
     [Fact]

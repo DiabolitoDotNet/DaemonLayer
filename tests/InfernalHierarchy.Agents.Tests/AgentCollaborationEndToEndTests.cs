@@ -29,7 +29,6 @@ public class AgentCollaborationEndToEndTests
         var sharedMemory = new Mock<ISharedMemory>().Object;
 
         var toolRegistry = new Mock<IToolRegistry>();
-        toolRegistry.Setup(tr => tr.GetService<IAgentCollaborationService>()).Returns(collaborationService);
 
         var agent1 = new CollaborationResponderAgent(
             agent: new Agent { Id = "a1", Name = "a1", Rank = AgentRank.Worker },
@@ -37,6 +36,7 @@ public class AgentCollaborationEndToEndTests
             messageBus: bus,
             sharedMemory: sharedMemory,
             toolRegistry: toolRegistry.Object,
+            collaborationService: collaborationService,
             logger: new Mock<ILogger<BaseAgent>>().Object,
             fixedResponse: "OptionA",
             confidence: 0.9);
@@ -47,6 +47,7 @@ public class AgentCollaborationEndToEndTests
             messageBus: bus,
             sharedMemory: sharedMemory,
             toolRegistry: toolRegistry.Object,
+            collaborationService: collaborationService,
             logger: new Mock<ILogger<BaseAgent>>().Object,
             fixedResponse: "OptionA",
             confidence: 0.8);
@@ -94,6 +95,7 @@ public class AgentCollaborationEndToEndTests
 
         private readonly string _fixedResponse;
         private readonly double _confidence;
+        private readonly IAgentCollaborationService _collaborationService;
 
         public CollaborationResponderAgent(
             Agent agent,
@@ -101,6 +103,7 @@ public class AgentCollaborationEndToEndTests
             IMessageBus messageBus,
             ISharedMemory sharedMemory,
             IToolRegistry toolRegistry,
+            IAgentCollaborationService collaborationService,
             ILogger<BaseAgent> logger,
             string fixedResponse,
             double confidence)
@@ -108,6 +111,7 @@ public class AgentCollaborationEndToEndTests
         {
             _fixedResponse = fixedResponse;
             _confidence = confidence;
+            _collaborationService = collaborationService;
         }
 
         public override async Task<AgentMessage> ProcessTaskAsync(AgentMessage task, CancellationToken ct = default)
@@ -128,10 +132,7 @@ public class AgentCollaborationEndToEndTests
 
             var requestId = match.Groups[1].Value;
 
-            var collaborationService = _toolRegistry.GetService<IAgentCollaborationService>();
-            collaborationService.Should().NotBeNull("collaboration service should be available in tool registry");
-
-            await collaborationService!.SubmitResponseAsync(
+            await _collaborationService.SubmitResponseAsync(
                 requestId,
                 new AgentResponse
                 {

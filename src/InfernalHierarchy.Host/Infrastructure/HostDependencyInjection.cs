@@ -75,8 +75,7 @@ internal static class HostDependencyInjection
 
     public static void AddResourceLimits(WebApplicationBuilder builder)
     {
-        var resourceLimits = new ResourceLimits();
-        builder.Configuration.GetSection("ResourceLimits").Bind(resourceLimits);
+        var resourceLimits = HostConfigurationBinding.Read<ResourceLimits>(builder.Configuration, "ResourceLimits");
         builder.Services.AddSingleton(resourceLimits);
         builder.Services.AddSingleton<ResourceLimitService>();
     }
@@ -120,7 +119,7 @@ internal static class HostDependencyInjection
         builder.Services.AddSingleton<ITraceCaptureStore>(sp => sp.GetRequiredService<InMemoryTraceCaptureStore>());
         builder.Services.AddHostedService<ActivityTraceCaptureService>();
 
-        var otelExporterOptions = builder.Configuration.GetSection("OpenTelemetry:Exporters").Get<OpenTelemetryExportOptions>() ?? new OpenTelemetryExportOptions();
+        var otelExporterOptions = HostConfigurationBinding.ConfigureAndRead<OpenTelemetryExportOptions>(builder, "OpenTelemetry:Exporters");
 
         builder.Services.AddOpenTelemetry()
             .ConfigureResource(resource => resource
@@ -146,11 +145,11 @@ internal static class HostDependencyInjection
 
     public static void AddCoreServices(WebApplicationBuilder builder)
     {
-        var voiceOptions = builder.Configuration.GetSection("Voice").Get<VoiceInterfaceOptions>() ?? new VoiceInterfaceOptions();
-        var voiceCopilotOptions = builder.Configuration.GetSection("VoiceCopilot").Get<VoiceCopilotOptions>() ?? new VoiceCopilotOptions();
-        var vectorMemoryOptions = builder.Configuration.GetSection("VectorMemoryOptions").Get<VectorMemoryOptions>() ?? new VectorMemoryOptions();
-        var memoryPruningOptions = builder.Configuration.GetSection("MemoryPruningOptions").Get<MemoryPruningOptions>() ?? new MemoryPruningOptions();
-        var memoryLearningOptions = builder.Configuration.GetSection("MemoryLearningOptions").Get<MemoryLearningOptions>() ?? new MemoryLearningOptions();
+        var voiceOptions = HostConfigurationBinding.Read<VoiceInterfaceOptions>(builder.Configuration, "Voice");
+        var voiceCopilotOptions = HostConfigurationBinding.Read<VoiceCopilotOptions>(builder.Configuration, "VoiceCopilot");
+        var vectorMemoryOptions = HostConfigurationBinding.Read<VectorMemoryOptions>(builder.Configuration, "VectorMemoryOptions");
+        var memoryPruningOptions = HostConfigurationBinding.Read<MemoryPruningOptions>(builder.Configuration, "MemoryPruningOptions");
+        var memoryLearningOptions = HostConfigurationBinding.Read<MemoryLearningOptions>(builder.Configuration, "MemoryLearningOptions");
 
         AddMessagingAndMemory(builder);
         AddPersonaAndDocsServices(builder);
@@ -163,7 +162,7 @@ internal static class HostDependencyInjection
         }
 
         AddNotifications(builder);
-        AddAdvancedMemory(builder, vectorMemoryOptions.Enabled, memoryPruningOptions.Enabled, memoryLearningOptions.Enabled);
+        AddAdvancedMemory(builder, vectorMemoryOptions, memoryPruningOptions, memoryLearningOptions);
         AddCollaboration(builder);
         AddTemplates(builder);
         AddEventSourcing(builder);
@@ -212,7 +211,7 @@ internal static class HostDependencyInjection
         builder.Services.AddSingleton<IRagContextEnricher, DefaultRagContextEnricher>();
         builder.Services.AddSingleton<IAgentEventAppender, DefaultAgentEventAppender>();
         builder.Services.AddSingleton<IReActTaskProcessor, DefaultReActTaskProcessor>();
-        builder.Services.AddSingleton<IAgentFactory, AgentFactory>();
+        builder.Services.AddSingleton<IAgentFactory, InfernalHierarchy.Agents.AgentFactory>();
     }
 
     private static void AddToolExecutionPipeline(WebApplicationBuilder builder)
@@ -221,15 +220,7 @@ internal static class HostDependencyInjection
         builder.Services.AddSingleton<IToolRateLimiter, FixedWindowToolRateLimiter>();
         builder.Services.AddSingleton<IProcessRunner, DefaultProcessRunner>();
         builder.Services.AddSingleton<IToolPluginLoader, DefaultToolPluginLoader>();
-
-        builder.Services.AddSingleton<IToolRegistry>(sp =>
-        {
-            var logger = sp.GetRequiredService<ILogger<ToolRegistry>>();
-            var learningService = sp.GetRequiredService<AgentLearningService>();
-            var eventSink = sp.GetService<IAgentEventSink>();
-            var pipeline = sp.GetRequiredService<IToolExecutionPipeline>();
-            return new ToolRegistry(logger, learningService, sp, eventSink, pipeline);
-        });
+        builder.Services.AddSingleton<IToolRegistry, ToolRegistry>();
     }
 
     private static void AddLlmAndLearning(WebApplicationBuilder builder)
@@ -253,26 +244,26 @@ internal static class HostDependencyInjection
 
     private static void AddAdvancedMemory(
         WebApplicationBuilder builder,
-        bool vectorMemoryEnabled,
-        bool memoryPruningEnabled,
-        bool memoryLearningEnabled)
+        VectorMemoryOptions vectorMemoryOptions,
+        MemoryPruningOptions memoryPruningOptions,
+        MemoryLearningOptions memoryLearningOptions)
     {
         builder.Services.AddSingleton<OnnxEmbeddingService>();
         builder.Services.AddHttpClient<IVectorMemory, VectorMemoryService>();
 
-        if (vectorMemoryEnabled)
+        if (vectorMemoryOptions.Enabled)
         {
             builder.Services.AddHostedService<VectorMemoryInitializationService>();
         }
 
         builder.Services.AddSingleton<ISkillTreeService, SkillTreeService>();
 
-        if (memoryPruningEnabled)
+        if (memoryPruningOptions.Enabled)
         {
             builder.Services.AddHostedService<MemoryPruningService>();
         }
 
-        if (memoryLearningEnabled)
+        if (memoryLearningOptions.Enabled)
         {
             builder.Services.AddHostedService<MemoryLearningService>();
         }
@@ -384,7 +375,7 @@ internal static class HostDependencyInjection
 
     private static void AddToolHostedServices(WebApplicationBuilder builder)
     {
-        var toolMarketplaceOptions = builder.Configuration.GetSection("ToolMarketplace").Get<ToolMarketplaceOptions>() ?? new ToolMarketplaceOptions();
+        var toolMarketplaceOptions = HostConfigurationBinding.Read<ToolMarketplaceOptions>(builder.Configuration, "ToolMarketplace");
 
         builder.Services.AddHostedService<TextToSpeechWarmupService>();
         builder.Services.AddHostedService<ToolCacheStartupService>();
@@ -401,6 +392,7 @@ internal static class HostDependencyInjection
     {
         builder.Services.AddHostedService<ConfigurationReloadService>();
         builder.Services.AddHostedService<SecretRotationService>();
+        builder.Services.AddHostedService<StartupFeatureReportService>();
     }
 
     public static void AddHostedServices(WebApplicationBuilder builder)

@@ -1,5 +1,5 @@
 using FluentAssertions;
-using InfernalHierarchy.Agents.Factory;
+using InfernalHierarchy.Agents;
 using InfernalHierarchy.Agents.Registry;
 using InfernalHierarchy.Core.Eventing;
 using InfernalHierarchy.Core.Entities;

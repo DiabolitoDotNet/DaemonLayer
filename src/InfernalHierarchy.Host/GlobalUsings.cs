@@ -1,6 +1,5 @@
 global using InfernalHierarchy.Agents.Collaboration;
 global using InfernalHierarchy.Agents.Collaboration.Strategies;
-global using InfernalHierarchy.Agents.Factory;
 global using InfernalHierarchy.Agents.Orchestration;
 global using InfernalHierarchy.Agents.ReAct;
 global using InfernalHierarchy.Agents.Registry;

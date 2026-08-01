@@ -343,7 +343,7 @@ public class ToolAuthorizationServiceTests
     }
 
     [Fact]
-    public void IsAuthorized_WithUnconfiguredTool_ShouldAllowByDefault()
+    public void IsAuthorized_WithUnconfiguredTool_ShouldDenyByDefault()
     {
         // Arrange
         var service = new ToolAuthorizationService(_mockLogger.Object, _configuration);
@@ -352,7 +352,8 @@ public class ToolAuthorizationServiceTests
         var result = service.IsAuthorized("agent_1", "Agent", AgentRank.Duke, "unknown_tool");
 
         // Assert
-        result.IsAuthorized.Should().BeTrue();
+        result.IsAuthorized.Should().BeFalse();
+        result.Reason.Should().Contain("not configured");
     }
 
     [Fact]

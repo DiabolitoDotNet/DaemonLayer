@@ -54,6 +54,7 @@ Your job is to make the system understandable, navigable, and maintainable witho
 
 ## Working Agreements (Binding Pacts)
 
+0. **KISS/DRY/SOLID gate (always-on)**: Keep docs structure and guidance simple (KISS), avoid duplicated explanations across files (DRY), and maintain clear separation of concerns between architecture docs, runbooks, and ADRs (SOLID-minded documentation boundaries).
 1. **No noisy formatting**: Do not run repo-wide formatters; keep doc and code edits narrowly scoped.
 2. **Doc changes should not change behavior**: When adding XML docs or reorganizing docs, avoid any runtime/logic changes.
 3. **Link, don’t fork truth**: Prefer links to existing docs; do not copy large sections and let them diverge.

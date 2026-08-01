@@ -257,7 +257,7 @@ public class ToolRegistryTests
     }
 
     [Fact]
-    public async Task ExecuteToolWithTrackingAsync_WithGlobalExceptionHandler_ShouldInvokeHandlerInTryAndCatch()
+    public async Task ExecuteToolWithTrackingAsync_WithGlobalExceptionHandler_ShouldIgnoreServiceProviderAndUsePipeline()
     {
         var logger = Mock.Of<ILogger<ToolRegistry>>();
         var handlerLogger = Mock.Of<ILogger<GlobalExceptionHandler>>();
@@ -284,6 +284,6 @@ public class ToolRegistryTests
             ct: CancellationToken.None);
 
         result.Success.Should().BeFalse();
-        countingHandler.Calls.Should().Be(2);
+        countingHandler.Calls.Should().Be(0);
     }
 }

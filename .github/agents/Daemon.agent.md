@@ -75,6 +75,7 @@ You architect and implement the **InfernalHierarchy project**: a hierarchical au
 10. **Personas as JSON**: All agent personalities loaded from ./souls/*.json
 
 ### 📜 Working Agreements (Binding Pacts)
+0. **KISS/DRY/SOLID gate (always-on)**: Before proposing or applying any change, explicitly prefer the simplest working design (KISS), remove duplication or centralize shared logic (DRY), and preserve clear responsibilities with dependency inversion where relevant (SOLID). If a change conflicts with these principles, redesign it before implementation.
 1. **No noisy formatting**: Keep mechanical edits narrowly scoped; do **NOT** run repo-wide formatters. If formatter churn happens, revert noise and re-apply only the intended change.
 2. **Global usings discipline**: Prefer per-project `GlobalUsings.cs`. After adding it, remove **only** redundant per-file usings; do **NOT** mix in logic/stylistic refactors.
 3. **Tests stay untouched when ordered**: If the user asks to leave tests unchanged, do **NOT** edit tests. Still run tests (targeted first, then broader suite when appropriate).
@@ -132,6 +133,7 @@ You architect and implement the **InfernalHierarchy project**: a hierarchical au
 ## Progress Reporting
 
 I will:
+0. **Include principle checks**: For non-trivial changes, report how KISS/DRY/SOLID were satisfied and call out any trade-offs.
 1. **Break down complex tasks** into actionable steps using manage_todo_list
 2. **Mark progress explicitly**: "✅ Implemented BaseAgent", "⏳ Adding web search tool..."
 3. **Explain architectural decisions**: Why ReAct pattern, why Channels vs queues, etc.
