@@ -1,6 +1,7 @@
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
+using System.IO;
 using FluentAssertions;
 using InfernalHierarchy.Core.Interfaces;
 using Microsoft.Extensions.DependencyInjection;
@@ -24,7 +25,7 @@ public sealed class UiAndWebSocketE2ETests
         html.Should().Contain("InfernalHierarchy UI");
     }
 
-    [Fact(Skip = "Flaky under current WebApplicationFactory/WebSocket lifecycle; HTTP/UI paths remain covered.")]
+    [Fact]
     public async Task WebSocket_Task_ToLucifer_ReceivesReport()
     {
         using var factory = new InfernalHierarchyTestWebAppFactory();
@@ -46,23 +47,66 @@ public sealed class UiAndWebSocketE2ETests
             endOfMessage: true,
             cancellationToken: CancellationToken.None);
 
-        var deadline = DateTime.UtcNow.AddSeconds(10);
-        var buffer = new byte[64 * 1024];
+        var deadline = DateTime.UtcNow.AddSeconds(15);
+        var buffer = new byte[8 * 1024];
 
         while (DateTime.UtcNow < deadline)
         {
-            var result = await socket.ReceiveAsync(buffer, CancellationToken.None);
-            result.MessageType.Should().Be(WebSocketMessageType.Text);
-
-            var text = Encoding.UTF8.GetString(buffer, 0, result.Count);
-            if (text.Contains("\"type\": \"Report\"", StringComparison.OrdinalIgnoreCase) &&
-                text.Contains("Hello from WS", StringComparison.OrdinalIgnoreCase))
+            var text = await ReceiveTextMessageAsync(socket, buffer);
+            if (TryIsExpectedReport(text, expectedContentFragment: "Hello from WS"))
             {
                 return;
             }
         }
 
         throw new TimeoutException("Did not receive expected Report over WebSocket");
+    }
+
+    private static async Task<string> ReceiveTextMessageAsync(WebSocket socket, byte[] buffer)
+    {
+        using var ms = new MemoryStream();
+
+        while (true)
+        {
+            var result = await socket.ReceiveAsync(buffer, CancellationToken.None);
+            result.MessageType.Should().Be(WebSocketMessageType.Text);
+            ms.Write(buffer, 0, result.Count);
+
+            if (result.EndOfMessage)
+            {
+                return Encoding.UTF8.GetString(ms.ToArray());
+            }
+        }
+    }
+
+    private static bool TryIsExpectedReport(string payload, string expectedContentFragment)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(payload);
+            if (!doc.RootElement.TryGetProperty("type", out var type))
+            {
+                return false;
+            }
+
+            if (!"Report".Equals(type.GetString(), StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            if (!doc.RootElement.TryGetProperty("content", out var content))
+            {
+                return false;
+            }
+
+            var contentText = content.GetString();
+            return contentText is not null
+                && contentText.Contains(expectedContentFragment, StringComparison.OrdinalIgnoreCase);
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
     }
 
     private static async Task WaitForAgentAsync(IServiceProvider services, string agentId)

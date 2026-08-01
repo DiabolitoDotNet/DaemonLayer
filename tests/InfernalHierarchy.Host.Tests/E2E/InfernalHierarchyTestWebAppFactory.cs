@@ -123,6 +123,8 @@ public class InfernalHierarchyTestWebAppFactory : WebApplicationFactory<Program>
                 // best-effort
             }
         }
+
+        base.Dispose(disposing);
     }
 
     private static void SeedPersona(string soulsDir)
