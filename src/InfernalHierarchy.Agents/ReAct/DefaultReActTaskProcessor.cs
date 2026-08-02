@@ -10,17 +10,26 @@ public sealed class DefaultReActTaskProcessor : IReActTaskProcessor
 
     private readonly IRagContextEnricher _ragContextEnricher;
     private readonly IAgentEventAppender _eventAppender;
+    private readonly ICapabilityGapAnalyzer _capabilityGapAnalyzer;
+    private readonly ICapabilityRemediationOrchestrator _capabilityRemediationOrchestrator;
 
-    public DefaultReActTaskProcessor(IRagContextEnricher ragContextEnricher, IAgentEventAppender eventAppender)
+    public DefaultReActTaskProcessor(
+        IRagContextEnricher ragContextEnricher,
+        IAgentEventAppender eventAppender,
+        ICapabilityGapAnalyzer? capabilityGapAnalyzer = null,
+        ICapabilityRemediationOrchestrator? capabilityRemediationOrchestrator = null)
     {
         _ragContextEnricher = ragContextEnricher;
         _eventAppender = eventAppender;
+        _capabilityGapAnalyzer = capabilityGapAnalyzer ?? new DefaultCapabilityGapAnalyzer();
+        _capabilityRemediationOrchestrator = capabilityRemediationOrchestrator ?? new DefaultCapabilityRemediationOrchestrator();
     }
 
     public async Task<AgentMessage> ProcessAsync(ReActTaskProcessorContext context, AgentMessage task, CancellationToken ct)
     {
         var overlay = context.RuntimeSkillStore?.GetOverlay(context.AgentId, DateTime.UtcNow);
-        var effectiveContext = context with { Persona = BuildEffectivePersonaForTask(context.Persona, task, overlay) };
+        var effectivePersona = BuildEffectivePersonaForTask(context.Persona, task, overlay);
+        var effectiveContext = context with { Persona = effectivePersona };
 
         _eventAppender.TryAppendTaskEvent(context.EventSink, context.AgentId, context.AgentRank, task, EventType.TaskReceived, "Task received");
 
@@ -32,6 +41,35 @@ public sealed class DefaultReActTaskProcessor : IReActTaskProcessor
         if (TryGetTelegramCommand(task, out var command) && (command == "usage" || command == "models"))
         {
             return await HandleTelegramCommandAsync(effectiveContext, command, task, ct).ConfigureAwait(false);
+        }
+
+        CapabilityGapAnalysisResult? gapAnalysis = null;
+        CapabilityRemediationExecutionResult? remediationResult = null;
+
+        if (task.Type is MessageType.Task or MessageType.Query or MessageType.Command)
+        {
+            gapAnalysis = await _capabilityGapAnalyzer
+                .AnalyzeAsync(effectiveContext, task, effectiveContext.Persona, ct)
+                .ConfigureAwait(false);
+
+            if (gapAnalysis.HasGaps)
+            {
+                remediationResult = await _capabilityRemediationOrchestrator
+                    .ExecuteAsync(effectiveContext, task, gapAnalysis, ct)
+                    .ConfigureAwait(false);
+
+                EmitCapabilityGapDecisionEvent(effectiveContext, task, gapAnalysis, remediationResult);
+
+                if (remediationResult.NewlyAvailableTools.Count > 0)
+                {
+                    effectivePersona = AppendToolsToPersona(effectiveContext.Persona, remediationResult.NewlyAvailableTools);
+                    effectiveContext = effectiveContext with { Persona = effectivePersona };
+                }
+
+                var refreshedOverlay = context.RuntimeSkillStore?.GetOverlay(context.AgentId, DateTime.UtcNow);
+                effectivePersona = BuildEffectivePersonaForTask(effectiveContext.Persona, task, refreshedOverlay);
+                effectiveContext = effectiveContext with { Persona = effectivePersona };
+            }
         }
 
         var effectiveTaskContent = task.Content;
@@ -182,6 +220,32 @@ public sealed class DefaultReActTaskProcessor : IReActTaskProcessor
                 ["tool_calls"] = result.ToolCalls
             };
 
+            if (gapAnalysis is not null && gapAnalysis.HasGaps)
+            {
+                responsePayload["capability_gap_analysis"] = JsonSerializer.Serialize(new
+                {
+                    gaps = gapAnalysis.Gaps.Select(g => new
+                    {
+                        capability = g.Capability,
+                        reason_code = g.ReasonCode,
+                        description = g.Description,
+                        blocked_by_profile = g.BlockedByProfile,
+                        suggested_skill_pack_id = g.SuggestedSkillPackId,
+                        suggested_execution_profile = g.SuggestedExecutionProfile
+                    }).ToArray(),
+                    remediations = gapAnalysis.Remediations.Select(r => new
+                    {
+                        kind = r.Kind.ToString(),
+                        reason_code = r.ReasonCode,
+                        capability = r.Capability,
+                        description = r.Description
+                    }).ToArray(),
+                    applied = remediationResult?.AppliedActions.Select(a => a.Kind.ToString()).ToArray() ?? Array.Empty<string>(),
+                    failed = remediationResult?.FailedActions.Select(a => a.Kind.ToString()).ToArray() ?? Array.Empty<string>(),
+                    notes = remediationResult?.Notes.ToArray() ?? Array.Empty<string>()
+                }, JsonDefaults.Web);
+            }
+
             return new AgentMessage
             {
                 FromAgentId = effectiveContext.AgentId,
@@ -225,6 +289,69 @@ public sealed class DefaultReActTaskProcessor : IReActTaskProcessor
                 CorrelationId = task.CorrelationId ?? task.Id,
                 CausationId = task.Id
             };
+        }
+    }
+
+    private static Persona AppendToolsToPersona(Persona persona, IReadOnlyList<string> additionalTools)
+    {
+        var mergedTools = persona.AvailableTools
+            .Concat(additionalTools)
+            .Where(t => !string.IsNullOrWhiteSpace(t))
+            .Select(t => t.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        if (mergedTools.SequenceEqual(persona.AvailableTools, StringComparer.OrdinalIgnoreCase))
+        {
+            return persona;
+        }
+
+        return new Persona
+        {
+            Name = persona.Name,
+            DemonTitle = persona.DemonTitle,
+            SystemPrompt = persona.SystemPrompt,
+            ModelOverride = persona.ModelOverride,
+            Personality = persona.Personality,
+            Specializations = persona.Specializations,
+            AvailableTools = mergedTools,
+            CustomInstructions = new Dictionary<string, string>(persona.CustomInstructions, StringComparer.OrdinalIgnoreCase)
+        };
+    }
+
+    private static void EmitCapabilityGapDecisionEvent(
+        ReActTaskProcessorContext context,
+        AgentMessage task,
+        CapabilityGapAnalysisResult analysis,
+        CapabilityRemediationExecutionResult remediation)
+    {
+        if (context.EventSink is null)
+        {
+            return;
+        }
+
+        try
+        {
+            context.EventSink.AppendEvent(new AgentEvent
+            {
+                AgentId = context.AgentId,
+                Type = EventType.DecisionMade,
+                Description = "Capability gap analysis completed",
+                Metadata = new Dictionary<string, object>
+                {
+                    ["category"] = "capability.gap_analysis",
+                    ["task_id"] = task.Id,
+                    ["gap_count"] = analysis.Gaps.Count,
+                    ["remediation_count"] = analysis.Remediations.Count,
+                    ["failed_remediation_count"] = remediation.FailedActions.Count,
+                    ["reason_codes"] = string.Join(",", analysis.Gaps.Select(g => g.ReasonCode).Distinct(StringComparer.OrdinalIgnoreCase)),
+                    ["remediation_notes"] = string.Join(" | ", remediation.Notes)
+                }
+            });
+        }
+        catch
+        {
+            // best-effort eventing only
         }
     }
 

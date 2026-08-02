@@ -15,6 +15,7 @@ public sealed class CreateCustomToolTool : ITool
     private readonly ICustomToolCompiler _compiler;
     private readonly ICustomToolSecurityPolicy _policy;
     private readonly ICustomToolStore _store;
+    private readonly ICapabilityOutcomePublisher? _outcomePublisher;
     private readonly IOptionsMonitor<CustomToolsOptions> _options;
     private readonly ILogger<CreateCustomToolTool> _logger;
 
@@ -29,7 +30,8 @@ public sealed class CreateCustomToolTool : ITool
         ICustomToolSecurityPolicy policy,
         ICustomToolStore store,
         IOptionsMonitor<CustomToolsOptions> options,
-        ILogger<CreateCustomToolTool> logger)
+        ILogger<CreateCustomToolTool> logger,
+        ICapabilityOutcomePublisher? outcomePublisher = null)
     {
         _llm = llm;
         _registry = registry;
@@ -37,6 +39,7 @@ public sealed class CreateCustomToolTool : ITool
         _compiler = compiler;
         _policy = policy;
         _store = store;
+        _outcomePublisher = outcomePublisher;
         _options = options;
         _logger = logger;
     }
@@ -254,6 +257,20 @@ public sealed class CreateCustomToolTool : ITool
         }
 
         _registry.RegisterTool(compile.Tool);
+
+        if (_outcomePublisher is not null)
+        {
+            await _outcomePublisher.RecordOutcomeAsync(new CapabilityOutcome
+            {
+                Kind = CapabilityOutcomeKind.CustomToolCreated,
+                CapabilityId = definition.ToolName,
+                CapabilityType = "custom_tool",
+                SourceTask = requirement,
+                RiskLevel = definition.RequiresManualApproval ? "High" : "Low",
+                AgentId = creatorId,
+                OccurredAtUtc = DateTime.UtcNow
+            }, ct).ConfigureAwait(false);
+        }
 
         return new ToolResult
         {

@@ -53,6 +53,9 @@ internal static class HostAddOptions
         builder.Services.AddOptions<FailedOperationHandlingOptions>()
             .Bind(builder.Configuration.GetSection("FailedOperations"))
             .ValidateOnStart();
+        builder.Services.AddOptions<SkillbookPublishingOptions>()
+            .Bind(builder.Configuration.GetSection("SkillbookPublishing"))
+            .ValidateOnStart();
     }
 
     private static void AddSearchAndProviderOptions(WebApplicationBuilder builder)

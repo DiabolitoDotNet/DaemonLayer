@@ -24,4 +24,10 @@ public sealed class AgentSkillAssignmentOptions
     public string[] DukeBaseSkillPacks { get; set; } = ["implementation-engineering"];
 
     public string[] WorkerBaseSkillPacks { get; set; } = ["execution-worker"];
+
+    public bool PersistRuntimeGrants { get; set; } = true;
+
+    public string RuntimeGrantDatabasePath { get; set; } = "data/agent-skill-runtime.db";
+
+    public int RuntimeGrantMaxEntries { get; set; } = 20000;
 }

@@ -15,6 +15,7 @@ public sealed class RequestSkillPackTool : ITool
     private readonly IAgentSkillRuntimeStore _runtimeStore;
     private readonly AgentSkillAssignmentOptions _options;
     private readonly IAgentEventSink? _eventSink;
+    private readonly ICapabilityOutcomePublisher? _outcomePublisher;
 
     public string Name => "request_skill_pack";
 
@@ -27,7 +28,8 @@ public sealed class RequestSkillPackTool : ITool
         IAgentSkillAssignmentPolicy policy,
         IAgentSkillRuntimeStore runtimeStore,
         IOptions<AgentSkillAssignmentOptions>? options = null,
-        IAgentEventSink? eventSink = null)
+        IAgentEventSink? eventSink = null,
+        ICapabilityOutcomePublisher? outcomePublisher = null)
     {
         _logger = logger;
         _catalog = catalog;
@@ -35,6 +37,7 @@ public sealed class RequestSkillPackTool : ITool
         _runtimeStore = runtimeStore;
         _options = options?.Value ?? new AgentSkillAssignmentOptions();
         _eventSink = eventSink;
+        _outcomePublisher = outcomePublisher;
     }
 
     public async Task<ToolResult> ExecuteAsync(Dictionary<string, object> parameters, CancellationToken ct = default)
@@ -131,6 +134,20 @@ public sealed class RequestSkillPackTool : ITool
         AppendAuditEvent(requestorAgentId, targetAgentId, skillPackId, decision, expiresAt, reason, ttlMinutes);
 
         var overlay = _runtimeStore.GetOverlay(targetAgentId, DateTime.UtcNow);
+
+        if (_outcomePublisher is not null)
+        {
+            await _outcomePublisher.RecordOutcomeAsync(new CapabilityOutcome
+            {
+                Kind = CapabilityOutcomeKind.SkillPackGranted,
+                CapabilityId = pack.Id,
+                CapabilityType = "skill_pack",
+                SourceTask = reason,
+                RiskLevel = pack.RiskLevel,
+                AgentId = requestorAgentId,
+                OccurredAtUtc = DateTime.UtcNow
+            }, ct).ConfigureAwait(false);
+        }
 
         return new ToolResult
         {

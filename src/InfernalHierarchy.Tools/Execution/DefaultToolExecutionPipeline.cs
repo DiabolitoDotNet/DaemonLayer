@@ -19,6 +19,7 @@ public sealed class DefaultToolExecutionPipeline : IToolExecutionPipeline
     private readonly IOptions<ToolResultCacheOptions>? _cacheOptions;
     private readonly IToolExecutionLimiter? _executionLimiter;
     private readonly IFailedOperationStore? _failedOperationStore;
+    private readonly ICapabilityOutcomePublisher? _outcomePublisher;
 
     public DefaultToolExecutionPipeline(
         ILogger<DefaultToolExecutionPipeline> logger,
@@ -30,7 +31,8 @@ public sealed class DefaultToolExecutionPipeline : IToolExecutionPipeline
         IToolResultCacheStore? cacheStore = null,
         IOptions<ToolResultCacheOptions>? cacheOptions = null,
         IToolExecutionLimiter? executionLimiter = null,
-        IFailedOperationStore? failedOperationStore = null)
+        IFailedOperationStore? failedOperationStore = null,
+        ICapabilityOutcomePublisher? outcomePublisher = null)
     {
         _logger = logger;
         _learningService = learningService;
@@ -42,6 +44,7 @@ public sealed class DefaultToolExecutionPipeline : IToolExecutionPipeline
         _cacheOptions = cacheOptions;
         _executionLimiter = executionLimiter;
         _failedOperationStore = failedOperationStore;
+        _outcomePublisher = outcomePublisher;
     }
 
     public async Task<ToolResult> ExecuteAsync(ToolExecutionContext context)
@@ -236,6 +239,19 @@ public sealed class DefaultToolExecutionPipeline : IToolExecutionPipeline
                     "tool_result_failed",
                     result.Error ?? "Tool returned failure",
                     context.CancellationToken).ConfigureAwait(false);
+            }
+            else if (_outcomePublisher is not null && canonicalToolName.StartsWith("custom_", StringComparison.OrdinalIgnoreCase))
+            {
+                await _outcomePublisher.RecordOutcomeAsync(new CapabilityOutcome
+                {
+                    Kind = CapabilityOutcomeKind.CustomToolExecutionSucceeded,
+                    CapabilityId = canonicalToolName,
+                    CapabilityType = "custom_tool",
+                    SourceTask = string.Empty,
+                    RiskLevel = "Medium",
+                    AgentId = context.AgentId ?? string.Empty,
+                    OccurredAtUtc = DateTime.UtcNow
+                }, context.CancellationToken).ConfigureAwait(false);
             }
 
             // Cache store happens after real execution.

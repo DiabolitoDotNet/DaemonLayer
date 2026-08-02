@@ -100,6 +100,7 @@ internal static class HostDependencyInjection
         builder.Services.AddSingleton<IFailedOperationStore, LiteDbFailedOperationStore>();
         builder.Services.AddSingleton<DeadLetterReplayService>();
         builder.Services.AddHostedService<AutonomousDeadLetterReplayService>();
+        builder.Services.AddSingleton<ICapabilityOutcomePublisher, SkillbookOutcomePublisher>();
         builder.Services.AddSingleton<IAgentQuotaService, TenantAgentQuotaService>();
         builder.Services.AddSingleton<IToolExecutionLimiter, ResourceLimitToolExecutionLimiter>();
     }
@@ -238,7 +239,7 @@ internal static class HostDependencyInjection
     {
         builder.Services.AddSingleton<AgentRegistry>();
         builder.Services.AddSingleton<IAgentRegistry>(sp => sp.GetRequiredService<AgentRegistry>());
-        builder.Services.AddSingleton<IAgentSkillRuntimeStore, InMemoryAgentSkillRuntimeStore>();
+        builder.Services.AddSingleton<IAgentSkillRuntimeStore, LiteDbAgentSkillRuntimeStore>();
         builder.Services.AddHostedService<AgentStatusChangeProjectionService>();
         // ReAct SRP services
         builder.Services.AddSingleton<IActionParser, DefaultActionParser>();
@@ -247,6 +248,8 @@ internal static class HostDependencyInjection
         builder.Services.AddSingleton<IActionExecutor, DefaultActionExecutor>();
         builder.Services.AddSingleton<IReActPromptBuilder, DefaultReActPromptBuilder>();
         builder.Services.AddSingleton<IReActLoopRunner, DefaultReActLoopRunner>();
+        builder.Services.AddSingleton<ICapabilityGapAnalyzer, DefaultCapabilityGapAnalyzer>();
+        builder.Services.AddSingleton<ICapabilityRemediationOrchestrator, DefaultCapabilityRemediationOrchestrator>();
         builder.Services.AddSingleton<IReportGenerator>(sp =>
             new DefaultReportGenerator(sp.GetService<TokenUsageTracker>(), sp.GetService<MultiModelLlmClient>()));
         builder.Services.AddSingleton<IRagContextEnricher, DefaultRagContextEnricher>();
