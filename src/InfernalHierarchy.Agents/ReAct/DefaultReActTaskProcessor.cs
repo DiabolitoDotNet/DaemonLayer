@@ -469,6 +469,7 @@ public sealed class DefaultReActTaskProcessor : IReActTaskProcessor
 
         var hasTelegram = TryGetTelegramChatId(task.Payload, out var chatId) && chatId != 0;
         var transport = task.Payload?.TryGetValue("transport", out var t) == true ? t?.ToString() : null;
+        var executionProfile = ResolveExecutionProfile(task.Payload);
 
         var agentCountEmailRule = BuildAgentCountEmailRule(task, persona);
 
@@ -480,8 +481,27 @@ public sealed class DefaultReActTaskProcessor : IReActTaskProcessor
             - Action MUST be FINAL_ANSWER or one of the allowed tools above.
             - Do NOT call send_telegram unless a real telegram_chat_id is present in the task payload.
             {agentCountEmailRule}
+            - execution_profile={executionProfile}
             - transport={transport ?? "(unknown)"} telegram_chat_id={(hasTelegram ? chatId.ToString() : "(none)")}
             """;
+    }
+
+    private static string ResolveExecutionProfile(Dictionary<string, object>? payload)
+    {
+        if (payload is not null)
+        {
+            if (payload.TryGetValue("execution_profile", out var ep) && !string.IsNullOrWhiteSpace(ep?.ToString()))
+            {
+                return ep!.ToString()!.Trim();
+            }
+
+            if (payload.TryGetValue("profile", out var profile) && !string.IsNullOrWhiteSpace(profile?.ToString()))
+            {
+                return profile!.ToString()!.Trim();
+            }
+        }
+
+        return "Research";
     }
 
     private static string BuildAgentCountEmailRule(AgentMessage task, Persona persona)
@@ -596,7 +616,8 @@ public sealed class DefaultReActTaskProcessor : IReActTaskProcessor
             AgentRank: context.AgentRank,
             ReActOptions: context.ReActOptions,
             PromptBuilder: context.PromptBuilder,
-            EmitCheckpoint: EmitCheckpointAsync);
+            EmitCheckpoint: EmitCheckpointAsync,
+            ExecutionProfile: ResolveExecutionProfile(sourceTask.Payload));
 
         var result = await context.LoopRunner.RunAsync(loopContext, ct).ConfigureAwait(false);
 

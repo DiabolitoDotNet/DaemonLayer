@@ -15,7 +15,8 @@ public sealed record ActionExecutionContext(
     string AgentName,
     string AgentRank,
     IReadOnlyCollection<string> AvailableTools,
-    CancellationToken CancellationToken);
+    CancellationToken CancellationToken,
+    string? ExecutionProfile = null);
 
 public sealed record ActionExecutionResult(
     bool ToolFound,

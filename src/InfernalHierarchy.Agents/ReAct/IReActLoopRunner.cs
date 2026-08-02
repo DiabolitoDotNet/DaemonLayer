@@ -28,7 +28,8 @@ public sealed record ReActLoopContext(
     AgentRank AgentRank,
     ReActOptions ReActOptions,
     IReActPromptBuilder PromptBuilder,
-    Func<ReActCheckpoint, CancellationToken, Task>? EmitCheckpoint = null);
+    Func<ReActCheckpoint, CancellationToken, Task>? EmitCheckpoint = null,
+    string? ExecutionProfile = null);
 
 public sealed record ReActLoopResult(
     string FinalAnswer,

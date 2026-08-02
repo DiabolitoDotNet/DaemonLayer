@@ -59,6 +59,11 @@ public sealed class DefaultActionExecutor : IActionExecutor
             parameters["parent_agent_id"] = context.AgentId;
         }
 
+        if (!string.IsNullOrWhiteSpace(context.ExecutionProfile))
+        {
+            parameters["execution_profile"] = context.ExecutionProfile;
+        }
+
         var toolResult = await context.ToolRegistry.ExecuteToolWithTrackingAsync(
             toolName,
             parameters,

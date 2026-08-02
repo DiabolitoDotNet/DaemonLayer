@@ -77,11 +77,16 @@ public sealed class DefaultToolExecutionPipeline : IToolExecutionPipeline
                 ? context.AgentName
                 : context.AgentId;
 
+            var executionProfile = TryGetStringParameter(immutableParameters, "execution_profile")
+                ?? TryGetStringParameter(immutableParameters, "profile");
+
             var decision = _authorizationService.IsAuthorized(
                 context.AgentId,
                 agentName,
                 rank,
-                canonicalToolName);
+                canonicalToolName,
+                executionProfile,
+                immutableParameters);
 
             if (!decision.IsAuthorized)
             {
@@ -96,7 +101,8 @@ public sealed class DefaultToolExecutionPipeline : IToolExecutionPipeline
                     {
                         ["authorization_denied"] = true,
                         ["tool"] = canonicalToolName,
-                        ["agent_rank"] = context.AgentRank ?? rank.ToString()
+                        ["agent_rank"] = context.AgentRank ?? rank.ToString(),
+                        ["execution_profile"] = executionProfile ?? string.Empty
                     }
                 };
 
@@ -526,6 +532,17 @@ public sealed class DefaultToolExecutionPipeline : IToolExecutionPipeline
         }
 
         return false;
+    }
+
+    private static string? TryGetStringParameter(IReadOnlyDictionary<string, object> parameters, string key)
+    {
+        if (!parameters.TryGetValue(key, out var value) || value is null)
+        {
+            return null;
+        }
+
+        var text = value.ToString();
+        return string.IsNullOrWhiteSpace(text) ? null : text.Trim();
     }
 
     private static bool TryResolveCachePolicy(string toolName, ToolResultCacheOptions options, out TimeSpan ttl)

@@ -14,12 +14,18 @@ public interface IToolAuthorizationService
     /// <param name="agentName">Agent display name.</param>
     /// <param name="rank">Agent rank.</param>
     /// <param name="toolName">Tool name (<see cref="ITool.Name"/>).</param>
-    AuthorizationResult IsAuthorized(string agentId, string agentName, AgentRank rank, string toolName);
+    AuthorizationResult IsAuthorized(
+        string agentId,
+        string agentName,
+        AgentRank rank,
+        string toolName,
+        string? executionProfile = null,
+        IReadOnlyDictionary<string, object>? toolParameters = null);
 
     /// <summary>
     /// Returns the set of tools currently authorized for the agent.
     /// </summary>
-    List<string> GetAuthorizedTools(string agentId, string agentName, AgentRank rank);
+    List<string> GetAuthorizedTools(string agentId, string agentName, AgentRank rank, string? executionProfile = null);
 
     /// <summary>
     /// Reloads the permissions configuration.

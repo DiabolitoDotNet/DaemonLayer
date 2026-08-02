@@ -238,7 +238,8 @@ internal static class WebSocketInterface
                 Payload = new Dictionary<string, object>
                 {
                     ["transport"] = "websocket",
-                    ["ws_connection_id"] = connectionId
+                    ["ws_connection_id"] = connectionId,
+                    ["execution_profile"] = string.IsNullOrWhiteSpace(msg.ExecutionProfile) ? "Research" : msg.ExecutionProfile
                 }
             };
 
@@ -279,5 +280,5 @@ internal static class WebSocketInterface
         return safe;
     }
 
-    private sealed record WsClientMessage(string Type, string? ToAgentId, string? Content);
+    private sealed record WsClientMessage(string Type, string? ToAgentId, string? Content, string? ExecutionProfile);
 }

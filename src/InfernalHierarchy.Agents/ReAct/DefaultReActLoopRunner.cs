@@ -78,7 +78,8 @@ public sealed class DefaultReActLoopRunner : IReActLoopRunner
                 AgentName: context.AgentName,
                 AgentRank: context.AgentRank.ToString(),
                 AvailableTools: effectiveAvailableTools,
-                CancellationToken: ct)).ConfigureAwait(false);
+                CancellationToken: ct,
+                ExecutionProfile: context.ExecutionProfile)).ConfigureAwait(false);
 
             if (!string.IsNullOrWhiteSpace(exec.ToolCall))
             {
@@ -380,7 +381,8 @@ public sealed class DefaultReActLoopRunner : IReActLoopRunner
                         AgentName: context.AgentName,
                         AgentRank: context.AgentRank.ToString(),
                         AvailableTools: effectiveAvailableTools,
-                        CancellationToken: ct)).ConfigureAwait(false);
+                        CancellationToken: ct,
+                        ExecutionProfile: context.ExecutionProfile)).ConfigureAwait(false);
 
                     if (!exec.ToolFound)
                     {
@@ -439,7 +441,8 @@ public sealed class DefaultReActLoopRunner : IReActLoopRunner
                                     AgentName: context.AgentName,
                                     AgentRank: context.AgentRank.ToString(),
                                     AvailableTools: context.Persona.AvailableTools,
-                                    CancellationToken: ct)).ConfigureAwait(false);
+                                    CancellationToken: ct,
+                                    ExecutionProfile: context.ExecutionProfile)).ConfigureAwait(false);
 
                                 if (!string.IsNullOrWhiteSpace(emailExec.ToolCall))
                                 {

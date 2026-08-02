@@ -207,6 +207,135 @@ public sealed class ToolAuthorizationServiceCoverageTests
         sut.IsAuthorized("a", "n", AgentRank.Supreme, "t2").IsAuthorized.Should().BeTrue();
     }
 
+    [Fact]
+    public void IsAuthorized_WhenExecutionProfileDeniesTool_ShouldDeny()
+    {
+        IConfiguration config = BuildConfig(new Dictionary<string, string?>
+        {
+            ["ToolPermissions:http_request:Enabled"] = "true",
+            ["ToolPermissions:http_request:AllowedRanks"] = "Supreme,Prince,Duke",
+            ["ExecutionProfiles:Enabled"] = "true",
+            ["ExecutionProfiles:DefaultProfile"] = "Research",
+            ["ExecutionProfiles:Profiles:Research:Enabled"] = "true",
+            ["ExecutionProfiles:Profiles:Research:AllowedTools:0"] = "web_search",
+            ["ExecutionProfiles:Profiles:Research:AllowedTools:1"] = "read_memory",
+        });
+
+        var sut = new ToolAuthorizationService(NullLogger<ToolAuthorizationService>.Instance, config);
+
+        var result = sut.IsAuthorized("a1", "lucifer", AgentRank.Supreme, "http_request", "Research");
+
+        result.IsAuthorized.Should().BeFalse();
+        result.Reason.Should().Contain("not allowed by execution profile");
+    }
+
+    [Fact]
+    public void IsAuthorized_WhenExecutionProfileAllowsTool_ShouldAllow()
+    {
+        IConfiguration config = BuildConfig(new Dictionary<string, string?>
+        {
+            ["ToolPermissions:http_request:Enabled"] = "true",
+            ["ToolPermissions:http_request:AllowedRanks"] = "Supreme,Prince,Duke",
+            ["ExecutionProfiles:Enabled"] = "true",
+            ["ExecutionProfiles:DefaultProfile"] = "Build",
+            ["ExecutionProfiles:Profiles:Build:Enabled"] = "true",
+            ["ExecutionProfiles:Profiles:Build:AllowedTools:0"] = "http_request",
+            ["ExecutionProfiles:Profiles:Build:AllowedTools:1"] = "web_search",
+        });
+
+        var sut = new ToolAuthorizationService(NullLogger<ToolAuthorizationService>.Instance, config);
+
+        var result = sut.IsAuthorized("a1", "lucifer", AgentRank.Supreme, "http_request", "Build");
+
+        result.IsAuthorized.Should().BeTrue();
+    }
+
+    [Fact]
+    public void IsAuthorized_WhenExecutionProfileUnknown_ShouldDeny()
+    {
+        IConfiguration config = BuildConfig(new Dictionary<string, string?>
+        {
+            ["ToolPermissions:web_search:Enabled"] = "true",
+            ["ToolPermissions:web_search:AllowedRanks"] = "Supreme,Prince,Duke,Worker",
+            ["ExecutionProfiles:Enabled"] = "true",
+            ["ExecutionProfiles:DefaultProfile"] = "Research",
+            ["ExecutionProfiles:Profiles:Research:Enabled"] = "true",
+            ["ExecutionProfiles:Profiles:Research:AllowedTools:0"] = "web_search",
+        });
+
+        var sut = new ToolAuthorizationService(NullLogger<ToolAuthorizationService>.Instance, config);
+
+        var result = sut.IsAuthorized("a1", "lucifer", AgentRank.Supreme, "web_search", "UnknownProfile");
+
+        result.IsAuthorized.Should().BeFalse();
+        result.Reason.Should().Contain("not configured");
+    }
+
+    [Fact]
+    public void IsAuthorized_WhenFileScopeOutsideAllowedScopes_ShouldDeny()
+    {
+        IConfiguration config = BuildConfig(new Dictionary<string, string?>
+        {
+            ["ToolPermissions:fs_write:Enabled"] = "true",
+            ["ToolPermissions:fs_write:AllowedRanks"] = "Supreme,Prince,Duke",
+            ["ExecutionProfiles:Enabled"] = "true",
+            ["ExecutionProfiles:Profiles:Build:Enabled"] = "true",
+            ["ExecutionProfiles:Profiles:Build:AllowedTools:0"] = "fs_write",
+            ["ExecutionProfiles:Profiles:Build:AllowedFileScopes:0"] = "src/**",
+        });
+
+        var sut = new ToolAuthorizationService(NullLogger<ToolAuthorizationService>.Instance, config);
+        var parameters = new Dictionary<string, object> { ["path"] = "README.md" };
+
+        var result = sut.IsAuthorized("a1", "lucifer", AgentRank.Supreme, "fs_write", "Build", parameters);
+
+        result.IsAuthorized.Should().BeFalse();
+        result.Reason.Should().Contain("outside allowed file scopes");
+    }
+
+    [Fact]
+    public void IsAuthorized_WhenNetworkScopeOutsideAllowedScopes_ShouldDeny()
+    {
+        IConfiguration config = BuildConfig(new Dictionary<string, string?>
+        {
+            ["ToolPermissions:http_request:Enabled"] = "true",
+            ["ToolPermissions:http_request:AllowedRanks"] = "Supreme,Prince,Duke",
+            ["ExecutionProfiles:Enabled"] = "true",
+            ["ExecutionProfiles:Profiles:Build:Enabled"] = "true",
+            ["ExecutionProfiles:Profiles:Build:AllowedTools:0"] = "http_request",
+            ["ExecutionProfiles:Profiles:Build:AllowedNetworkScopes:0"] = ".example.com",
+        });
+
+        var sut = new ToolAuthorizationService(NullLogger<ToolAuthorizationService>.Instance, config);
+        var parameters = new Dictionary<string, object> { ["url"] = "https://api.not-example.net/v1" };
+
+        var result = sut.IsAuthorized("a1", "lucifer", AgentRank.Supreme, "http_request", "Build", parameters);
+
+        result.IsAuthorized.Should().BeFalse();
+        result.Reason.Should().Contain("outside allowed network scopes");
+    }
+
+    [Fact]
+    public void IsAuthorized_WhenCommandNotInAllowlist_ShouldDeny()
+    {
+        IConfiguration config = BuildConfig(new Dictionary<string, string?>
+        {
+            ["ToolPermissions:python_exec:Enabled"] = "true",
+            ["ToolPermissions:python_exec:AllowedRanks"] = "Supreme,Prince,Duke",
+            ["ExecutionProfiles:Enabled"] = "true",
+            ["ExecutionProfiles:Profiles:Build:Enabled"] = "true",
+            ["ExecutionProfiles:Profiles:Build:AllowedTools:0"] = "python_exec",
+            ["ExecutionProfiles:Profiles:Build:CommandAllowlist:0"] = "node_exec",
+        });
+
+        var sut = new ToolAuthorizationService(NullLogger<ToolAuthorizationService>.Instance, config);
+
+        var result = sut.IsAuthorized("a1", "lucifer", AgentRank.Supreme, "python_exec", "Build", new Dictionary<string, object>());
+
+        result.IsAuthorized.Should().BeFalse();
+        result.Reason.Should().Contain("not allowed by execution profile");
+    }
+
     private static IConfiguration BuildConfig(Dictionary<string, string?> values)
         => new ConfigurationBuilder().AddInMemoryCollection(values).Build();
 }

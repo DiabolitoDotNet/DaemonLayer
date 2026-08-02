@@ -43,6 +43,9 @@ internal static class ChatApi
             var timeoutMs = request.TimeoutMs is > 0 and <= 300_000
                 ? request.TimeoutMs.Value
                 : 180_000;
+            var executionProfile = string.IsNullOrWhiteSpace(request.ExecutionProfile)
+                ? "Research"
+                : request.ExecutionProfile.Trim();
 
             var replyToId = $"http-{Guid.NewGuid():N}";
             var startedUtc = DateTime.UtcNow;
@@ -67,7 +70,8 @@ internal static class ChatApi
                         ["transport"] = "http",
                         ["http_request_id"] = replyToId,
                         ["http_started_utc"] = startedUtc.ToString("O"),
-                        ["correlation_id"] = correlationId
+                        ["correlation_id"] = correlationId,
+                        ["execution_profile"] = executionProfile
                     }
                 };
 

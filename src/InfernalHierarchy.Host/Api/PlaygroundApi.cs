@@ -46,6 +46,9 @@ internal static class PlaygroundApi
 
             var toAgentId = string.IsNullOrWhiteSpace(request.ToAgentId) ? "lucifer" : request.ToAgentId.Trim();
             var timeoutMs = request.TimeoutMs is > 0 and <= 300_000 ? request.TimeoutMs.Value : 180_000;
+            var executionProfile = string.IsNullOrWhiteSpace(request.ExecutionProfile)
+                ? "Research"
+                : request.ExecutionProfile.Trim();
 
             var id = playground.CreateScenario(request.Name.Trim(), request.Prompt.Trim(), toAgentId, timeoutMs, request.Tags);
             var scenario = playground.GetScenario(id);
@@ -55,7 +58,7 @@ internal static class PlaygroundApi
                 return Results.Problem(title: "Playground", detail: "Failed to create scenario", statusCode: 500);
             }
 
-            var response = await SendChatAndWaitAsync(messageBus, scenario.Prompt, scenario.ToAgentId, scenario.TimeoutMs, ct).ConfigureAwait(false);
+            var response = await SendChatAndWaitAsync(messageBus, scenario.Prompt, scenario.ToAgentId, scenario.TimeoutMs, executionProfile, ct).ConfigureAwait(false);
             var run = playground.AddRun(scenario.ScenarioId, scenario.Prompt, scenario.ToAgentId, scenario.TimeoutMs, response);
 
             return Results.Ok(new { scenario, run });
@@ -84,8 +87,11 @@ internal static class PlaygroundApi
             var prompt = string.IsNullOrWhiteSpace(request.Prompt) ? scenario.Prompt : request.Prompt.Trim();
             var toAgentId = string.IsNullOrWhiteSpace(request.ToAgentId) ? scenario.ToAgentId : request.ToAgentId.Trim();
             var timeoutMs = request.TimeoutMs is > 0 and <= 300_000 ? request.TimeoutMs.Value : scenario.TimeoutMs;
+            var executionProfile = string.IsNullOrWhiteSpace(request.ExecutionProfile)
+                ? "Research"
+                : request.ExecutionProfile.Trim();
 
-            var response = await SendChatAndWaitAsync(messageBus, prompt, toAgentId, timeoutMs, ct).ConfigureAwait(false);
+            var response = await SendChatAndWaitAsync(messageBus, prompt, toAgentId, timeoutMs, executionProfile, ct).ConfigureAwait(false);
             var run = playground.AddRun(scenario.ScenarioId, prompt, toAgentId, timeoutMs, response);
 
             return Results.Ok(new { scenario, run });
@@ -132,7 +138,7 @@ internal static class PlaygroundApi
                 return Results.NotFound(new { runId, error = "Run not found" });
             }
 
-            var response = await SendChatAndWaitAsync(messageBus, run.Prompt, run.ToAgentId, run.TimeoutMs, ct).ConfigureAwait(false);
+            var response = await SendChatAndWaitAsync(messageBus, run.Prompt, run.ToAgentId, run.TimeoutMs, "Research", ct).ConfigureAwait(false);
             var replay = playground.AddRun(run.ScenarioId, run.Prompt, run.ToAgentId, run.TimeoutMs, response);
 
             return Results.Ok(new { sourceRunId = runId, replayRun = replay });
@@ -144,6 +150,7 @@ internal static class PlaygroundApi
         string message,
         string toAgentId,
         int timeoutMs,
+        string executionProfile,
         CancellationToken ct)
     {
         var correlationId = Guid.NewGuid().ToString("N");
@@ -168,7 +175,8 @@ internal static class PlaygroundApi
                 {
                     ["transport"] = "playground",
                     ["request_id"] = replyToId,
-                    ["started_utc"] = startedUtc.ToString("O")
+                    ["started_utc"] = startedUtc.ToString("O"),
+                    ["execution_profile"] = string.IsNullOrWhiteSpace(executionProfile) ? "Research" : executionProfile
                 }
             };
 

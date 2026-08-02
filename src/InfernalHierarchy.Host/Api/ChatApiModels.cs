@@ -1,6 +1,10 @@
 namespace InfernalHierarchy.Host.Api;
 
-public sealed record ChatRequest(string Message, string? ToAgentId = null, int? TimeoutMs = null);
+public sealed record ChatRequest(
+    string Message,
+    string? ToAgentId = null,
+    int? TimeoutMs = null,
+    string? ExecutionProfile = null);
 
 public sealed record ChatResponse(
     string fromAgentId,

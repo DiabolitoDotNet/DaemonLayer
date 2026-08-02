@@ -5,9 +5,11 @@ public sealed record PlaygroundScenarioCreateRequest(
     string Prompt,
     string? ToAgentId = null,
     int? TimeoutMs = null,
+    string? ExecutionProfile = null,
     Dictionary<string, object>? Tags = null);
 
 public sealed record PlaygroundScenarioRunRequest(
     string? Prompt = null,
     string? ToAgentId = null,
-    int? TimeoutMs = null);
+    int? TimeoutMs = null,
+    string? ExecutionProfile = null);

@@ -40,10 +40,16 @@ public sealed class DefaultToolExecutionPipelineTests
 
     private sealed class DenyAllAuthorizationService : IToolAuthorizationService
     {
-        public AuthorizationResult IsAuthorized(string agentId, string agentName, AgentRank rank, string toolName)
+        public AuthorizationResult IsAuthorized(
+            string agentId,
+            string agentName,
+            AgentRank rank,
+            string toolName,
+            string? executionProfile = null,
+            IReadOnlyDictionary<string, object>? toolParameters = null)
             => AuthorizationResult.Failure("denied by test");
 
-        public List<string> GetAuthorizedTools(string agentId, string agentName, AgentRank rank) => new();
+        public List<string> GetAuthorizedTools(string agentId, string agentName, AgentRank rank, string? executionProfile = null) => new();
 
         public void ReloadPermissions() { }
     }

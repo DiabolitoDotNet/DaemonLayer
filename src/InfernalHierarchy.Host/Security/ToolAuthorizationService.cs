@@ -13,6 +13,7 @@ public class ToolAuthorizationService : IToolAuthorizationService
 {
     private readonly ILogger<ToolAuthorizationService> _logger;
     private readonly IConfiguration _configuration;
+    private ExecutionProfilesOptions _executionProfiles;
     private ImmutableDictionary<string, ToolPermissions> _toolPermissions;
 
     public ToolAuthorizationService(ILogger<ToolAuthorizationService> logger, IConfiguration configuration)
@@ -20,12 +21,19 @@ public class ToolAuthorizationService : IToolAuthorizationService
         _logger = logger;
         _configuration = configuration;
         _toolPermissions = LoadToolPermissions();
+        _executionProfiles = LoadExecutionProfiles();
     }
 
     /// <summary>
     /// Check if an agent is authorized to use a specific tool
     /// </summary>
-    public AuthorizationResult IsAuthorized(string agentId, string agentName, AgentRank rank, string toolName)
+    public AuthorizationResult IsAuthorized(
+        string agentId,
+        string agentName,
+        AgentRank rank,
+        string toolName,
+        string? executionProfile = null,
+        IReadOnlyDictionary<string, object>? toolParameters = null)
     {
         var normalizedToolName = NormalizeToolName(toolName);
         if (string.IsNullOrWhiteSpace(normalizedToolName))
@@ -91,6 +99,19 @@ public class ToolAuthorizationService : IToolAuthorizationService
             }
         }
 
+        var profileDecision = EvaluateExecutionProfile(normalizedToolName, executionProfile, toolParameters);
+        if (!profileDecision.IsAuthorized)
+        {
+            _logger.LogWarning(
+                "🚫 Agent {AgentName} ({Rank}) denied access to {Tool} by execution profile {Profile}: {Reason}",
+                agentName,
+                rank,
+                normalizedToolName,
+                executionProfile ?? _executionProfiles.DefaultProfile,
+                profileDecision.Reason);
+            return profileDecision;
+        }
+
         _logger.LogDebug("✅ Agent {AgentName} ({Rank}) authorized to use {Tool}", agentName, rank, normalizedToolName);
         return AuthorizationResult.Success();
     }
@@ -98,14 +119,14 @@ public class ToolAuthorizationService : IToolAuthorizationService
     /// <summary>
     /// Get all tools available to an agent based on their rank and permissions
     /// </summary>
-    public List<string> GetAuthorizedTools(string agentId, string agentName, AgentRank rank)
+    public List<string> GetAuthorizedTools(string agentId, string agentName, AgentRank rank, string? executionProfile = null)
     {
         var authorizedTools = new List<string>();
         var permissionsSnapshot = _toolPermissions;
 
         foreach (var (toolName, permissions) in permissionsSnapshot)
         {
-            if (IsAuthorized(agentId, agentName, rank, toolName).IsAuthorized)
+            if (IsAuthorized(agentId, agentName, rank, toolName, executionProfile).IsAuthorized)
             {
                 authorizedTools.Add(toolName);
             }
@@ -122,7 +143,354 @@ public class ToolAuthorizationService : IToolAuthorizationService
         _logger.LogInformation("🔄 Reloading tool permissions...");
         var newPermissions = LoadToolPermissions();
         Interlocked.Exchange(ref _toolPermissions, newPermissions);
+        _executionProfiles = LoadExecutionProfiles();
         _logger.LogInformation("✅ Tool permissions reloaded - {Count} tools configured", _toolPermissions.Count);
+    }
+
+    private ExecutionProfilesOptions LoadExecutionProfiles()
+    {
+        var section = _configuration.GetSection("ExecutionProfiles");
+        if (!section.Exists())
+        {
+            return new ExecutionProfilesOptions
+            {
+                Enabled = false,
+                DefaultProfile = "Research",
+                Profiles = GetDefaultExecutionProfiles()
+            };
+        }
+
+        var configured = section.Get<ExecutionProfilesOptions>() ?? new ExecutionProfilesOptions();
+
+        if (configured.Profiles.Count == 0)
+        {
+            configured.Profiles = GetDefaultExecutionProfiles();
+        }
+
+        configured.DefaultProfile = string.IsNullOrWhiteSpace(configured.DefaultProfile)
+            ? "Research"
+            : configured.DefaultProfile.Trim();
+
+        return configured;
+    }
+
+    private AuthorizationResult EvaluateExecutionProfile(
+        string normalizedToolName,
+        string? executionProfile,
+        IReadOnlyDictionary<string, object>? toolParameters)
+    {
+        if (!_executionProfiles.Enabled)
+        {
+            return AuthorizationResult.Success();
+        }
+
+        var profileName = string.IsNullOrWhiteSpace(executionProfile)
+            ? _executionProfiles.DefaultProfile
+            : executionProfile.Trim();
+
+        if (!_executionProfiles.Profiles.TryGetValue(profileName, out var policy))
+        {
+            return AuthorizationResult.Failure($"Execution profile '{profileName}' is not configured");
+        }
+
+        if (!policy.Enabled)
+        {
+            return AuthorizationResult.Failure($"Execution profile '{profileName}' is disabled");
+        }
+
+        if (policy.DeniedTools.Contains(normalizedToolName, StringComparer.OrdinalIgnoreCase))
+        {
+            return AuthorizationResult.Failure(
+                $"Execution profile '{profileName}' denies tool '{normalizedToolName}'");
+        }
+
+        if (policy.AllowedTools.Count > 0
+            && !policy.AllowedTools.Contains(normalizedToolName, StringComparer.OrdinalIgnoreCase))
+        {
+            return AuthorizationResult.Failure(
+                $"Tool '{normalizedToolName}' is not allowed by execution profile '{profileName}'");
+        }
+
+        var scopeDecision = EvaluateExecutionScopes(normalizedToolName, profileName, policy, toolParameters);
+        if (!scopeDecision.IsAuthorized)
+        {
+            return scopeDecision;
+        }
+
+        return AuthorizationResult.Success();
+    }
+
+    private static AuthorizationResult EvaluateExecutionScopes(
+        string normalizedToolName,
+        string profileName,
+        ExecutionProfilePolicy policy,
+        IReadOnlyDictionary<string, object>? toolParameters)
+    {
+        var parameters = toolParameters ?? new Dictionary<string, object>();
+
+        if (policy.AllowedFileScopes.Count > 0)
+        {
+            foreach (var fileTarget in ExtractFileTargets(normalizedToolName, parameters))
+            {
+                if (!MatchesFileScope(fileTarget, policy.AllowedFileScopes))
+                {
+                    return AuthorizationResult.Failure(
+                        $"Path '{fileTarget}' is outside allowed file scopes for execution profile '{profileName}'");
+                }
+            }
+        }
+
+        if (policy.AllowedNetworkScopes.Count > 0)
+        {
+            foreach (var networkTarget in ExtractNetworkTargets(normalizedToolName, parameters))
+            {
+                if (!MatchesNetworkScope(networkTarget, policy.AllowedNetworkScopes))
+                {
+                    return AuthorizationResult.Failure(
+                        $"Network target '{networkTarget}' is outside allowed network scopes for execution profile '{profileName}'");
+                }
+            }
+        }
+
+        if (policy.CommandAllowlist.Count > 0)
+        {
+            var allowlist = new HashSet<string>(
+                policy.CommandAllowlist.Where(x => !string.IsNullOrWhiteSpace(x)).Select(x => x.Trim()),
+                StringComparer.OrdinalIgnoreCase);
+
+            foreach (var commandTarget in ExtractCommandTargets(normalizedToolName, parameters))
+            {
+                if (!allowlist.Contains(commandTarget))
+                {
+                    return AuthorizationResult.Failure(
+                        $"Command '{commandTarget}' is not allowed by execution profile '{profileName}'");
+                }
+            }
+        }
+
+        return AuthorizationResult.Success();
+    }
+
+    private static IEnumerable<string> ExtractFileTargets(string toolName, IReadOnlyDictionary<string, object> toolParameters)
+    {
+        if (toolName.Equals("fs_read", StringComparison.OrdinalIgnoreCase)
+            || toolName.Equals("fs_write", StringComparison.OrdinalIgnoreCase))
+        {
+            var path = TryGetString(toolParameters, "path");
+            if (!string.IsNullOrWhiteSpace(path))
+            {
+                yield return path.Trim();
+            }
+        }
+
+        if (toolName.Equals("python_exec", StringComparison.OrdinalIgnoreCase)
+            || toolName.Equals("node_exec", StringComparison.OrdinalIgnoreCase))
+        {
+            var workingDir = TryGetString(toolParameters, "working_dir");
+            if (!string.IsNullOrWhiteSpace(workingDir))
+            {
+                yield return workingDir.Trim();
+            }
+        }
+    }
+
+    private static IEnumerable<string> ExtractNetworkTargets(string toolName, IReadOnlyDictionary<string, object> toolParameters)
+    {
+        if (toolName.Equals("http_request", StringComparison.OrdinalIgnoreCase))
+        {
+            var url = TryGetString(toolParameters, "url");
+            if (!string.IsNullOrWhiteSpace(url))
+            {
+                yield return url.Trim();
+            }
+        }
+
+        if (toolName.Equals("graphql_request", StringComparison.OrdinalIgnoreCase))
+        {
+            var endpoint = TryGetString(toolParameters, "endpoint") ?? TryGetString(toolParameters, "url");
+            if (!string.IsNullOrWhiteSpace(endpoint))
+            {
+                yield return endpoint.Trim();
+            }
+        }
+    }
+
+    private static IEnumerable<string> ExtractCommandTargets(string toolName, IReadOnlyDictionary<string, object> toolParameters)
+    {
+        if (toolName.Equals("python_exec", StringComparison.OrdinalIgnoreCase))
+        {
+            yield return "python_exec";
+            yield return "python";
+        }
+
+        if (toolName.Equals("node_exec", StringComparison.OrdinalIgnoreCase))
+        {
+            yield return "node_exec";
+            yield return "node";
+        }
+
+        var explicitCommand = TryGetString(toolParameters, "command")
+            ?? TryGetString(toolParameters, "executable")
+            ?? TryGetString(toolParameters, "shell_command");
+
+        if (!string.IsNullOrWhiteSpace(explicitCommand))
+        {
+            yield return explicitCommand.Trim();
+        }
+    }
+
+    private static bool MatchesFileScope(string path, IReadOnlyCollection<string> allowedScopes)
+    {
+        if (allowedScopes.Count == 0)
+        {
+            return true;
+        }
+
+        var normalizedPath = NormalizePath(path);
+
+        foreach (var scope in allowedScopes)
+        {
+            if (string.IsNullOrWhiteSpace(scope))
+            {
+                continue;
+            }
+
+            var normalizedScope = NormalizePath(scope);
+
+            if (normalizedScope == "*")
+            {
+                return true;
+            }
+
+            if (normalizedScope.EndsWith("/**", StringComparison.Ordinal))
+            {
+                var prefix = normalizedScope[..^3].TrimEnd('/');
+                if (normalizedPath.StartsWith(prefix + "/", StringComparison.OrdinalIgnoreCase)
+                    || normalizedPath.Equals(prefix, StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+
+                continue;
+            }
+
+            if (normalizedScope.EndsWith("/*", StringComparison.Ordinal))
+            {
+                var prefix = normalizedScope[..^2].TrimEnd('/');
+                if (normalizedPath.StartsWith(prefix + "/", StringComparison.OrdinalIgnoreCase)
+                    || normalizedPath.Equals(prefix, StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+
+                continue;
+            }
+
+            if (normalizedPath.Equals(normalizedScope, StringComparison.OrdinalIgnoreCase)
+                || normalizedPath.StartsWith(normalizedScope + "/", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool MatchesNetworkScope(string target, IReadOnlyCollection<string> allowedScopes)
+    {
+        if (allowedScopes.Count == 0)
+        {
+            return true;
+        }
+
+        if (!Uri.TryCreate(target, UriKind.Absolute, out var uri))
+        {
+            return false;
+        }
+
+        foreach (var scope in allowedScopes)
+        {
+            if (string.IsNullOrWhiteSpace(scope))
+            {
+                continue;
+            }
+
+            var trimmed = scope.Trim();
+            if (trimmed == "*")
+            {
+                return true;
+            }
+
+            if (trimmed.StartsWith(".", StringComparison.Ordinal)
+                && uri.Host.EndsWith(trimmed, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            if (Uri.TryCreate(trimmed, UriKind.Absolute, out var allowedUri))
+            {
+                if (!string.Equals(uri.Scheme, allowedUri.Scheme, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                if (!string.Equals(uri.Host, allowedUri.Host, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                if (!allowedUri.IsDefaultPort && uri.Port != allowedUri.Port)
+                {
+                    continue;
+                }
+
+                var prefix = allowedUri.AbsolutePath.TrimEnd('/');
+                if (string.IsNullOrWhiteSpace(prefix) || prefix == "/")
+                {
+                    return true;
+                }
+
+                if (uri.AbsolutePath.StartsWith(prefix + "/", StringComparison.OrdinalIgnoreCase)
+                    || uri.AbsolutePath.Equals(prefix, StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+
+                continue;
+            }
+
+            if (string.Equals(uri.Host, trimmed, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static string NormalizePath(string value)
+    {
+        return value.Trim().Replace('\\', '/').TrimEnd('/');
+    }
+
+    private static string? TryGetString(IReadOnlyDictionary<string, object> parameters, string key)
+    {
+        if (!parameters.TryGetValue(key, out var value) || value is null)
+        {
+            return null;
+        }
+
+        if (value is string s)
+        {
+            return s;
+        }
+
+        if (value is System.Text.Json.JsonElement element)
+        {
+            return element.ValueKind == System.Text.Json.JsonValueKind.String ? element.GetString() : element.ToString();
+        }
+
+        return value.ToString();
     }
 
     private ImmutableDictionary<string, ToolPermissions> LoadToolPermissions()
@@ -370,6 +738,48 @@ public class ToolAuthorizationService : IToolAuthorizationService
                 BlacklistedAgents = new()
             }
         }.ToImmutableDictionary(StringComparer.OrdinalIgnoreCase);
+    }
+
+    private static Dictionary<string, ExecutionProfilePolicy> GetDefaultExecutionProfiles()
+    {
+        return new Dictionary<string, ExecutionProfilePolicy>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["Research"] = new ExecutionProfilePolicy
+            {
+                Enabled = true,
+                AllowedTools =
+                [
+                    "web_search", "read_memory", "write_memory", "request_collaboration",
+                    "get_agent_status", "request_skill_pack", "create_sub_agent", "send_agent_message",
+                    "create_agent_from_template", "list_templates", "email_send", "send_telegram",
+                    "vision_describe", "audio_transcribe", "tts_speak"
+                ],
+                DeniedTools = ["fs_write", "python_exec", "node_exec"]
+            },
+            ["Build"] = new ExecutionProfilePolicy
+            {
+                Enabled = true,
+                AllowedTools =
+                [
+                    "web_search", "read_memory", "write_memory", "request_collaboration",
+                    "get_agent_status", "request_skill_pack", "fs_read", "fs_search", "fs_write",
+                    "http_request", "graphql_request", "sql_query_readonly", "python_exec", "node_exec",
+                    "create_custom_tool", "custom_tool_list", "custom_tool_get_source", "custom_tool_delete",
+                    "vision_describe", "audio_transcribe"
+                ]
+            },
+            ["Deploy"] = new ExecutionProfilePolicy
+            {
+                Enabled = true,
+                AllowedTools =
+                [
+                    "web_search", "read_memory", "write_memory", "request_collaboration",
+                    "get_agent_status", "request_skill_pack", "fs_read", "fs_search", "http_request",
+                    "python_exec", "node_exec", "create_custom_tool", "custom_tool_list", "custom_tool_get_source"
+                ],
+                DeniedTools = ["fs_write", "custom_tool_delete"]
+            }
+        };
     }
 
     private static string NormalizeToolName(string? toolName)

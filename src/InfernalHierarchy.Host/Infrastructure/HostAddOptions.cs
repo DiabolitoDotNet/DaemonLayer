@@ -56,6 +56,9 @@ internal static class HostAddOptions
         builder.Services.AddOptions<SkillbookPublishingOptions>()
             .Bind(builder.Configuration.GetSection("SkillbookPublishing"))
             .ValidateOnStart();
+        builder.Services.AddOptions<ExecutionProfilesOptions>()
+            .Bind(builder.Configuration.GetSection("ExecutionProfiles"))
+            .ValidateOnStart();
     }
 
     private static void AddSearchAndProviderOptions(WebApplicationBuilder builder)
