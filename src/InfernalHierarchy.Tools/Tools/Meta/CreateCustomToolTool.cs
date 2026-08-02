@@ -241,6 +241,8 @@ public sealed class CreateCustomToolTool : ITool
 
         if (!compile.Success || compile.Tool == null)
         {
+            var rollbackApplied = await TryRestorePreviousDefinitionAsync(overwrite, existingDefinition, ct).ConfigureAwait(false);
+
             return new ToolResult
             {
                 Success = false,
@@ -251,6 +253,7 @@ public sealed class CreateCustomToolTool : ITool
                     ["tool_id"] = definition.Id,
                     ["tool_name"] = definition.ToolName,
                     ["diagnostics"] = compile.Diagnostics.ToArray(),
+                    ["rollback_applied"] = rollbackApplied,
                     ["used_template"] = usedTemplate
                 }
             };
@@ -295,6 +298,28 @@ public sealed class CreateCustomToolTool : ITool
         if (!parameters.TryGetValue(key, out var v) || v is null) return false;
         if (v is bool b) return b;
         return bool.TryParse(v.ToString(), out var parsed) && parsed;
+    }
+
+    private async Task<bool> TryRestorePreviousDefinitionAsync(
+        bool overwrite,
+        CustomToolDefinition? previousDefinition,
+        CancellationToken ct)
+    {
+        if (!overwrite || previousDefinition == null)
+        {
+            return false;
+        }
+
+        try
+        {
+            await _store.UpsertAsync(previousDefinition, ct).ConfigureAwait(false);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to restore previous custom tool definition during rollback: {ToolName}", previousDefinition.ToolName);
+            return false;
+        }
     }
 
     private static bool ShouldUseHttpGetJsonTemplate(string? requestedTemplate, string toolName, string requirement)

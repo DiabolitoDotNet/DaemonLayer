@@ -12,6 +12,7 @@ internal static class HostAddOptions
         AddVectorMemoryOptions(builder);
         AddOperatorApiOptions(builder);
         AddSupervisorOptions(builder);
+        AddIncidentResponseOptions(builder);
     }
 
     private static void AddCritiqueOptions(WebApplicationBuilder builder)
@@ -161,6 +162,13 @@ internal static class HostAddOptions
     {
         builder.Services.AddOptions<AgentSupervisorOptions>()
             .Bind(builder.Configuration.GetSection("AgentSupervisor"))
+            .ValidateOnStart();
+    }
+
+    private static void AddIncidentResponseOptions(WebApplicationBuilder builder)
+    {
+        builder.Services.AddOptions<AutonomousIncidentResponseOptions>()
+            .Bind(builder.Configuration.GetSection("AutonomousIncidentResponse"))
             .ValidateOnStart();
     }
 }

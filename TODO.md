@@ -76,7 +76,7 @@ Validation:
 
 ### P0.3 Autonomous incident response baseline
 
-Status: TODO
+Status: DONE
 
 Implementation:
 
@@ -126,7 +126,7 @@ Validation:
 
 ### P1.2 Autonomous skill/tool synthesis pipeline
 
-Status: TODO
+Status: DONE
 
 Implementation:
 
@@ -149,7 +149,7 @@ Validation:
 
 ### P1.3 Persistent runtime skills and reusable skillbook writer
 
-Status: TODO
+Status: DONE
 
 Implementation:
 
@@ -355,11 +355,15 @@ Validation:
 
 ## Immediate Next Sprint (start here)
 
-1. Implement durable failed-operation store.
-2. Implement autonomous replay worker.
-3. Implement capability gap analyzer.
-4. Persist runtime skill grants.
-5. Add integration tests for restart recovery and missing-capability closure.
+All roadmap items P0-P4 in this file are completed.
+
+Suggested next iteration focus:
+
+1. Expand incident-response UAT scenarios and tune thresholds from production-like telemetry.
+2. Add chaos/load automation around incident throttling + supervisor preemption interactions.
+3. Extend skillbook promotion quality gates (semantic dedupe + confidence scoring).
+4. Introduce release-level dashboards for incident_response/actions trend and false-positive rate.
+5. Promote this completed plan snapshot into long-term roadmap v2.
 
 ---
 

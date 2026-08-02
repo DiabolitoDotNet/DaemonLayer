@@ -19,6 +19,7 @@ Un système distribué d'agents LLM locaux fonctionnant avec Ollama, organisés 
 - ✅ **Personas JSON** : Chargement dynamique des âmes démoniaques
 - ✅ **Skill Catalog JSON** : Packs de compétences réutilisables assignés par politique
 - ✅ **Supervision** : AgentSupervisor détecte les agents bloqués (replan) et peut préempter un sous-agent après replan si aucune progression
+- ✅ **Incident response autonome** : mitigation automatique des spikes timeout/rejets queue avec replan, préemption contrôlée et réduction temporaire du débit tool
 - ✅ **.NET 10** : Dernière version avec performance optimisée
 
 ## 📋 Architecture
@@ -283,6 +284,60 @@ Exemple de configuration:
 - Métriques exposées:
   - compteurs `deadletter.created.*`, `deadletter.replay.attempt`, `deadletter.replay.succeeded`, `deadletter.replay.failed.*`
   - gauges `deadletter.total`, `deadletter.pending`, `deadletter.replayed`, `deadletter.replay_failed`
+
+### Incident response autonome (P0.3)
+
+- Le service `AutonomousIncidentResponseService` surveille en continu les signaux critiques:
+  - spike des timeouts d'outils (`tools.timeout.total`),
+  - croissance des rejets de queue (`message_bus.messages.rejected`),
+  - détection de branches bloquées/bouclées (`supervisor.detected.*`).
+- Actions de mitigation automatiques:
+  - demande de replan au root agent,
+  - préemption d'une branche non-root en cas de boucle persistante,
+  - réduction temporaire du débit d'exécution des tools à risque via un throttle incident.
+- Auditabilité:
+  - événements `DecisionMade` catégorie `incident.response` avec `reason_code`, action et cible,
+  - métriques `incident_response.actions.*` pour pilotage opérateur.
+
+Exemple de configuration:
+
+```json
+{
+  "AutonomousIncidentResponse": {
+    "Enabled": true,
+    "PollInterval": "00:00:10",
+    "ActionCooldown": "00:00:30",
+    "ToolTimeoutSpikeThreshold": 3,
+    "QueueRejectGrowthThreshold": 5,
+    "StalledBranchDetectionThreshold": 2,
+    "LoopingBranchDetectionThreshold": 2,
+    "EnableBranchPreemption": true,
+    "EnableTemporaryRateReduction": true,
+    "RateReductionDuration": "00:01:00",
+    "DeferredToolNames": ["request_collaboration", "create_sub_agent", "send_agent_message"]
+  }
+}
+```
+
+### Pipeline de synthèse capacité/tool (P1.2)
+
+- `create_custom_tool` suit une chaîne standardisée:
+  - synthèse (LLM ou template),
+  - policy scan sécurité,
+  - compilation,
+  - persistance,
+  - enregistrement runtime.
+- En cas d'échec de compilation pendant un overwrite, un rollback automatique restaure la définition précédente persistée.
+
+### Runtime skills persistants et skillbook (P1.3)
+
+- Les grants runtime de skills sont persistés en LiteDB (`agent-skill-runtime.db`) et survivent aux redémarrages.
+- Les outcomes de capacités sont consolidés dans un skillbook versionné (`skills/runtime/*.json`) avec provenance:
+  - `source_task`,
+  - `risk_level`,
+  - `success_count`,
+  - `last_validated_date`.
+- La promotion automatique est pilotée par `SkillbookPublishing:PromotionMinSuccessCount` pour éviter le bruit.
 
 ### Collaboration renforcée (P1)
 

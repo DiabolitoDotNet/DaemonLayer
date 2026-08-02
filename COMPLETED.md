@@ -298,6 +298,27 @@ The roadmap in `TODO.md` was synchronized so completed work is now tracked here.
 ### P3 Voice and UX (Incremental) ✅
 - French TTS quality improvements with language-specific voice selection:
   - Added optional routing by language for `tts_speak` (`language` parameter + lightweight auto-detection for French text).
+
+## ✅ Remaining TODO Closure (Aug 2, 2026)
+
+### P0.3 Autonomous incident response baseline ✅
+- Added `AutonomousIncidentResponseService` to monitor critical degradation signals:
+  - tool timeout spikes,
+  - queue rejection growth,
+  - stalled/looping branch detections.
+- Added controlled mitigations:
+  - root replan requests,
+  - branch preemption for looping non-root agents,
+  - temporary incident throttle for selected high-amplification tools.
+- Added explicit event audit (`incident.response`) and metrics namespace (`incident_response.actions.*`).
+
+### P1.2 Autonomous skill/tool synthesis pipeline ✅
+- Confirmed end-to-end custom tool synthesis chain (synthesize → policy scan → compile → persist → register).
+- Hardened overwrite safety with rollback: failed recompilation now restores previous persisted definition.
+
+### P1.3 Persistent runtime skills and reusable skillbook writer ✅
+- Runtime skill grants persisted in LiteDB and validated across restarts.
+- Skillbook outcome publisher promotes reusable capability entries with provenance metadata and versioning.
   - Added French Piper overrides in `TextToSpeech` options (`FrenchPiperVoicePath`, `FrenchPiperSpeakerId`).
   - Added per-voice Piper model caching/warmup support so default and French voices can both be preloaded and reused.
 

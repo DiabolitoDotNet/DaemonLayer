@@ -98,9 +98,11 @@ internal static class HostDependencyInjection
         builder.Services.AddSingleton<ResiliencePolicies>();
         builder.Services.AddSingleton<IResiliencePolicyProvider, ResiliencePolicyProvider>();
         builder.Services.AddSingleton<GlobalExceptionHandler>();
+        builder.Services.AddSingleton<IncidentToolThrottleState>();
         builder.Services.AddSingleton<IFailedOperationStore, LiteDbFailedOperationStore>();
         builder.Services.AddSingleton<DeadLetterReplayService>();
         builder.Services.AddHostedService<AutonomousDeadLetterReplayService>();
+        builder.Services.AddHostedService<AutonomousIncidentResponseService>();
         builder.Services.AddSingleton<ICapabilityOutcomePublisher, SkillbookOutcomePublisher>();
         builder.Services.AddSingleton<IAgentQuotaService, TenantAgentQuotaService>();
         builder.Services.AddSingleton<IToolExecutionLimiter, ResourceLimitToolExecutionLimiter>();

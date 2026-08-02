@@ -9,6 +9,7 @@ internal sealed class BackpressureAwareToolRateLimiter : IToolRateLimiter
     private readonly IMessageBus _messageBus;
     private readonly FixedWindowToolRateLimiter _innerLimiter;
     private readonly IOptions<MessageBusOptions> _messageBusOptions;
+    private readonly IncidentToolThrottleState? _incidentThrottle;
     private readonly MetricsCollector? _metrics;
     private readonly ILogger<BackpressureAwareToolRateLimiter> _logger;
 
@@ -17,12 +18,14 @@ internal sealed class BackpressureAwareToolRateLimiter : IToolRateLimiter
         FixedWindowToolRateLimiter innerLimiter,
         IOptions<MessageBusOptions> messageBusOptions,
         ILogger<BackpressureAwareToolRateLimiter> logger,
+        IncidentToolThrottleState? incidentThrottle = null,
         MetricsCollector? metrics = null)
     {
         _messageBus = messageBus;
         _innerLimiter = innerLimiter;
         _messageBusOptions = messageBusOptions;
         _logger = logger;
+        _incidentThrottle = incidentThrottle;
         _metrics = metrics;
     }
 
@@ -32,6 +35,18 @@ internal sealed class BackpressureAwareToolRateLimiter : IToolRateLimiter
         if (!innerDecision.Allowed)
         {
             return innerDecision;
+        }
+
+        if (_incidentThrottle != null
+            && _incidentThrottle.TryGetActiveThrottle(DateTimeOffset.UtcNow, out var throttle)
+            && throttle.IsActive
+            && throttle.DeferredToolNames.Contains(context.ToolName ?? string.Empty))
+        {
+            _metrics?.IncrementCounter("incident_response.actions.rate_limiter_deferrals");
+
+            return RateLimitDecision.Deny(
+                retryAfter: TimeSpan.FromMilliseconds(Math.Max(100, throttle.RetryAfterMs)),
+                reason: $"Execution deferred due to temporary incident mitigation ({throttle.Reason})");
         }
 
         if (_messageBus is not ChannelMessageBus bus)

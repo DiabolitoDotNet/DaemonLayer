@@ -54,6 +54,16 @@ A tenant context can be carried through:
 
 This enables multi-user use with isolation.
 
+### 6) Autonomous incident response
+
+The host continuously monitors runtime degradation signals and can apply controlled mitigations without operator intervention:
+
+- trigger root-agent replan when timeout/rejection/stall signals spike,
+- preempt a non-root looping branch when needed,
+- temporarily throttle selected high-amplification tools while the system recovers.
+
+Every mitigation is emitted as an auditable decision event and reflected in incident-response metrics.
+
 ## Example workflows
 
 ### Research + synthesis
@@ -99,6 +109,8 @@ See: [Custom Tools Runbook](Runbooks/Custom-Tools.md)
 3. Security policy evaluates the source
 4. Source is compiled, persisted, and registered when allowed
 5. The resulting `custom_*` tool can then be invoked if separately authorized
+
+If an overwrite attempt fails at compile stage, the previous persisted definition is restored automatically (safe rollback).
 
 This gives the system a controlled way to extend its tool surface without rebuilding the host.
 
@@ -146,6 +158,7 @@ See: [Custom Tools Runbook](Runbooks/Custom-Tools.md)
 ## Where to go deeper
 
 - Architecture: [Solution Architecture](Solution-Architecture.md)
+- Incident operations: [Runbooks/Incident-Memory-Bloat.md](Runbooks/Incident-Memory-Bloat.md)
 - Features and extension guide: [Features Catalog](Features.md)
 - Runbooks: [Documentation README](README.md)
 - Security model: [SECURITY_CONFIG](../SECURITY_CONFIG.md)

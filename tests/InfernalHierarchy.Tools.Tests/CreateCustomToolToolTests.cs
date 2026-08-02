@@ -183,6 +183,56 @@ public sealed class CreateCustomToolToolTests
         persisted!.RequiresManualApproval.Should().BeFalse();
     }
 
+    [Fact]
+    public async Task ExecuteAsync_WhenOverwriteCompilationFails_ShouldRollbackPreviousDefinition()
+    {
+        var store = new InMemoryCustomToolStore();
+        var registry = new ToolRegistry(NullLogger<ToolRegistry>.Instance);
+        var services = new ServiceCollection().BuildServiceProvider();
+
+        var previous = new CustomToolDefinition
+        {
+            Id = "existing-id",
+            ToolName = "custom_hello",
+            Description = "stable previous definition",
+            SourceCode = SafeToolSource("custom_hello", "CustomHelloTool"),
+            CreatedByAgentId = "lucifer",
+            CreatedByAgentName = "Lucifer",
+            CreatedAt = DateTimeOffset.UtcNow.AddMinutes(-10),
+            SourceHash = "abc"
+        };
+
+        await store.UpsertAsync(previous);
+
+        var llm = new StubLlmClient(SafeToolSource("custom_hello", "CustomHelloTool"));
+        var tool = new CreateCustomToolTool(
+            llm,
+            registry,
+            services,
+            new FailingCompiler("compile failed"),
+            new DefaultCustomToolSecurityPolicy(),
+            store,
+            new TestOptionsMonitor<CustomToolsOptions>(new CustomToolsOptions { Enabled = true }),
+            NullLogger<CreateCustomToolTool>.Instance);
+
+        var result = await tool.ExecuteAsync(new Dictionary<string, object>
+        {
+            ["requirement"] = "Say hello with updates",
+            ["tool_name"] = "custom_hello",
+            ["overwrite"] = true,
+            ["agent_id"] = "lucifer",
+            ["agent_name"] = "Lucifer"
+        });
+
+        result.Success.Should().BeFalse();
+        result.Metadata.Should().ContainKey("rollback_applied");
+        result.Metadata["rollback_applied"].Should().Be(true);
+
+        var persisted = await store.GetByNameAsync("custom_hello");
+        persisted.Should().NotBeNull();
+        persisted!.Description.Should().Be("stable previous definition");
+    }
+
     private sealed class HttpTool : ITool
     {
         public string Name => "custom_http";
@@ -228,6 +278,21 @@ public sealed class CreateCustomToolToolTests
             var tool = _factory(sourceCode, expectedToolName);
             return Task.FromResult(new CustomToolCompileResult(true, tool, null, Array.Empty<string>()));
         }
+    }
+
+    private sealed class FailingCompiler : ICustomToolCompiler
+    {
+        private readonly string _error;
+
+        public FailingCompiler(string error) => _error = error;
+
+        public Task<CustomToolCompileResult> CompileAndCreateAsync(
+            string sourceCode,
+            string? expectedToolName,
+            IServiceProvider services,
+            ILogger logger,
+            CancellationToken ct = default)
+            => Task.FromResult(new CustomToolCompileResult(false, null, _error, new[] { _error }));
     }
 
     private sealed class InMemoryCustomToolStore : ICustomToolStore
