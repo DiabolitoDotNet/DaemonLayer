@@ -7,6 +7,31 @@ public sealed class TextToSpeechToolOptions
     public bool Enabled { get; set; } = false;
 
     /// <summary>
+    /// If true, synthesis is delegated to an external voice sidecar HTTP service.
+    /// </summary>
+    public bool UseSidecar { get; set; } = false;
+
+    /// <summary>
+    /// Base URL of the voice sidecar service.
+    /// </summary>
+    public Uri SidecarBaseUrl { get; set; } = new("http://localhost:5091");
+
+    /// <summary>
+    /// Relative or absolute endpoint used for sidecar speech synthesis.
+    /// </summary>
+    public string SidecarSpeakPath { get; set; } = "/speak";
+
+    /// <summary>
+    /// Timeout used for sidecar speech synthesis calls.
+    /// </summary>
+    public int SidecarTimeoutMs { get; set; } = 120_000;
+
+    /// <summary>
+    /// If true, route synthesis to a language-specific voice when possible.
+    /// </summary>
+    public bool EnableLanguageVoiceSelection { get; set; } = true;
+
+    /// <summary>
     /// If true, synthesize in-process using a Piper/VITS ONNX voice via LMSupply.Synthesizer (CPU-only).
     /// When enabled, <see cref="ExecutablePath"/> and <see cref="Arguments"/> are ignored.
     /// </summary>
@@ -19,9 +44,21 @@ public sealed class TextToSpeechToolOptions
     public string PiperVoicePath { get; set; } = string.Empty;
 
     /// <summary>
+    /// Optional French-specific Piper voice directory/model alias.
+    /// Used when language is explicitly set to French or auto-detected as French.
+    /// </summary>
+    public string FrenchPiperVoicePath { get; set; } = string.Empty;
+
+    /// <summary>
     /// Speaker id for multi-speaker voices (usually 0 for single-speaker).
     /// </summary>
     public int PiperSpeakerId { get; set; } = 0;
+
+    /// <summary>
+    /// Optional French-specific speaker id for multi-speaker voices.
+    /// If null, <see cref="PiperSpeakerId"/> is used.
+    /// </summary>
+    public int? FrenchPiperSpeakerId { get; set; }
 
     /// <summary>
     /// Speech speed (1.0 = normal). Values outside a sane range are clamped by the tool.

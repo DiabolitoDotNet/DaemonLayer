@@ -1,0 +1,15 @@
+{
+  "id": "debate_then_synthesize",
+  "version": "1.0.0",
+  "description": "Agents propose divergent options first, then run consensus rounds to synthesize one plan.",
+  "strategy": "Consensus",
+  "minParticipants": 2,
+  "minConfidence": 0.8,
+  "participantRanks": ["worker", "duke"],
+  "includeThinking": true,
+  "workflow": [
+    "proposal_round",
+    "counter_argument_round",
+    "synthesis_round"
+  ]
+}

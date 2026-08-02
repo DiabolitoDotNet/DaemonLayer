@@ -14,18 +14,26 @@ public class OllamaClient : ILlmClient
     , IModelOverrideLlmClient
     , IStreamingLlmClient
     , ITunableLlmClient
+    , IModelRoutingLlmClient
+    , IImageLlmClient
 {
     private readonly JsonSerializerOptions _json;
     private readonly ILogger<OllamaClient> _logger;
+    private readonly GlobalExceptionHandler? _exceptionHandler;
     private readonly IHttpClientFactory? _httpClientFactory;
     private readonly IOptionsMonitor<OllamaOptions>? _optionsMonitor;
     private readonly OllamaOptions? _staticOptions;
 
-    public OllamaClient(IHttpClientFactory httpClientFactory, IOptionsMonitor<OllamaOptions> options, ILogger<OllamaClient> logger)
+    public OllamaClient(
+        IHttpClientFactory httpClientFactory,
+        IOptionsMonitor<OllamaOptions> options,
+        ILogger<OllamaClient> logger,
+        GlobalExceptionHandler? exceptionHandler = null)
     {
         _httpClientFactory = httpClientFactory;
         _optionsMonitor = options;
         _logger = logger;
+        _exceptionHandler = exceptionHandler;
 
         _json = new JsonSerializerOptions
         {
@@ -36,10 +44,11 @@ public class OllamaClient : ILlmClient
         LogCurrentConfiguration(options.CurrentValue);
     }
 
-    public OllamaClient(IOptions<OllamaOptions> options, ILogger<OllamaClient> logger)
+    public OllamaClient(IOptions<OllamaOptions> options, ILogger<OllamaClient> logger, GlobalExceptionHandler? exceptionHandler = null)
     {
         _staticOptions = options.Value;
         _logger = logger;
+        _exceptionHandler = exceptionHandler;
 
         _json = new JsonSerializerOptions
         {
@@ -71,6 +80,26 @@ public class OllamaClient : ILlmClient
         return GetCompletionInternalAsync(systemPrompt, userMessage, modelOverride: null, temperature, maxTokens, ct);
     }
 
+    public Task<string> GetCompletionWithRoutingAsync(
+        string systemPrompt,
+        string userMessage,
+        LlmRoutingHint routingHint,
+        double? temperature = null,
+        int? maxTokens = null,
+        CancellationToken ct = default)
+    {
+        var options = GetCurrentOptions();
+        var selectedModel = OllamaModelRoutingPolicy.ResolveModel(options, routingHint);
+
+        _logger.LogDebug(
+            "LLM routing selected model={Model} task_type={TaskType} latency_budget_ms={LatencyBudgetMs}",
+            selectedModel,
+            routingHint.TaskType,
+            routingHint.LatencyBudgetMs);
+
+        return GetCompletionInternalAsync(systemPrompt, userMessage, selectedModel, temperature, maxTokens, ct);
+    }
+
     public async IAsyncEnumerable<string> GetStreamingCompletionAsync(
         string systemPrompt,
         string userMessage,
@@ -90,6 +119,29 @@ public class OllamaClient : ILlmClient
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
     {
         await foreach (var chunk in GetStreamingCompletionInternalAsync(systemPrompt, userMessage, modelOverride: null, temperature, maxTokens, ct).WithCancellation(ct))
+        {
+            yield return chunk;
+        }
+    }
+
+    public async IAsyncEnumerable<string> GetStreamingCompletionWithRoutingAsync(
+        string systemPrompt,
+        string userMessage,
+        LlmRoutingHint routingHint,
+        double? temperature = null,
+        int? maxTokens = null,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
+    {
+        var options = GetCurrentOptions();
+        var selectedModel = OllamaModelRoutingPolicy.ResolveModel(options, routingHint);
+
+        _logger.LogDebug(
+            "LLM streaming routing selected model={Model} task_type={TaskType} latency_budget_ms={LatencyBudgetMs}",
+            selectedModel,
+            routingHint.TaskType,
+            routingHint.LatencyBudgetMs);
+
+        await foreach (var chunk in GetStreamingCompletionInternalAsync(systemPrompt, userMessage, selectedModel, temperature, maxTokens, ct).WithCancellation(ct))
         {
             yield return chunk;
         }
@@ -147,7 +199,11 @@ public class OllamaClient : ILlmClient
         HttpResponseMessage? response = null;
         try
         {
-            response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
+            response = await ExecuteWithResilienceAsync(
+                token => http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, token),
+                operationName: "ollama_streaming_completion",
+                ct).ConfigureAwait(false);
+
             if (!response.IsSuccessStatusCode)
             {
                 var body = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
@@ -156,7 +212,9 @@ public class OllamaClient : ILlmClient
                     (int)response.StatusCode,
                     Truncate(body, 2000));
                 throw new HttpRequestException(
-                    $"Ollama streaming completion failed with status {(int)response.StatusCode} ({response.StatusCode})");
+                    $"Ollama streaming completion failed with status {(int)response.StatusCode} ({response.StatusCode})",
+                    inner: null,
+                    statusCode: response.StatusCode);
             }
 
             await using var stream = await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
@@ -278,7 +336,11 @@ public class OllamaClient : ILlmClient
             var json = JsonSerializer.Serialize(request, _json);
             using var content = new StringContent(json, Encoding.UTF8, "application/json");
 
-            using var response = await http.PostAsync("chat/completions", content, ct).ConfigureAwait(false);
+            using var response = await ExecuteWithResilienceAsync(
+                token => http.PostAsync("chat/completions", content, token),
+                operationName: "ollama_completion",
+                ct).ConfigureAwait(false);
+
             var responseText = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
 
             if (!response.IsSuccessStatusCode)
@@ -289,7 +351,9 @@ public class OllamaClient : ILlmClient
                     Truncate(responseText, 2000));
 
                 throw new HttpRequestException(
-                    $"Ollama completion failed with status {(int)response.StatusCode} ({response.StatusCode})");
+                    $"Ollama completion failed with status {(int)response.StatusCode} ({response.StatusCode})",
+                    inner: null,
+                    statusCode: response.StatusCode);
             }
 
             var parsed = JsonSerializer.Deserialize<ChatCompletionResponse>(responseText, _json);
@@ -325,6 +389,100 @@ public class OllamaClient : ILlmClient
     public Task<string> GetSimpleCompletionAsync(string prompt, CancellationToken ct = default)
     {
         return GetCompletionAsync("You are a helpful AI assistant.", prompt, ct);
+    }
+
+    public async Task<string> GetImageCompletionAsync(
+        string systemPrompt,
+        string userMessage,
+        byte[] imageBytes,
+        string mimeType,
+        string? modelOverride = null,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(imageBytes);
+
+        if (imageBytes.Length == 0)
+        {
+            throw new ArgumentException("imageBytes cannot be empty", nameof(imageBytes));
+        }
+
+        if (string.IsNullOrWhiteSpace(mimeType))
+        {
+            mimeType = "image/png";
+        }
+
+        var options = GetCurrentOptions();
+        using var http = CreateConfiguredHttpClient(options);
+
+        var dataUrl = $"data:{mimeType};base64,{Convert.ToBase64String(imageBytes)}";
+        var request = new
+        {
+            model = modelOverride ?? options.DefaultModel,
+            temperature = options.Temperature,
+            max_tokens = options.MaxTokens,
+            stream = false,
+            messages = new object[]
+            {
+                new
+                {
+                    role = "system",
+                    content = systemPrompt
+                },
+                new
+                {
+                    role = "user",
+                    content = new object[]
+                    {
+                        new
+                        {
+                            type = "text",
+                            text = userMessage
+                        },
+                        new
+                        {
+                            type = "image_url",
+                            image_url = new
+                            {
+                                url = dataUrl
+                            }
+                        }
+                    }
+                }
+            }
+        };
+
+        var json = JsonSerializer.Serialize(request, _json);
+        using var content = new StringContent(json, Encoding.UTF8, "application/json");
+
+        using var response = await ExecuteWithResilienceAsync(
+            token => http.PostAsync("chat/completions", content, token),
+            operationName: "ollama_image_completion",
+            ct).ConfigureAwait(false);
+
+        var responseText = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+        if (!response.IsSuccessStatusCode)
+        {
+            _logger.LogError(
+                "LLM image request failed: {StatusCode} | Body: {Body}",
+                (int)response.StatusCode,
+                Truncate(responseText, 2000));
+
+            throw new HttpRequestException(
+                $"Ollama image completion failed with status {(int)response.StatusCode} ({response.StatusCode})",
+                inner: null,
+                statusCode: response.StatusCode);
+        }
+
+        var parsed = JsonSerializer.Deserialize<ChatCompletionResponse>(responseText, _json);
+        var message = parsed?.Choices?.FirstOrDefault()?.Message;
+        var output = message?.Content;
+
+        if (string.IsNullOrWhiteSpace(output) && !string.IsNullOrWhiteSpace(message?.Reasoning))
+        {
+            output = message!.Reasoning;
+        }
+
+        return output ?? string.Empty;
     }
 
     private OllamaOptions GetCurrentOptions() => _optionsMonitor?.CurrentValue ?? _staticOptions ?? new OllamaOptions();
@@ -366,6 +524,21 @@ public class OllamaClient : ILlmClient
     {
         if (string.IsNullOrEmpty(value) || value.Length <= maxLen) return value;
         return value.Substring(0, maxLen) + "…";
+    }
+
+    private async Task<T> ExecuteWithResilienceAsync<T>(
+        Func<CancellationToken, Task<T>> operation,
+        string operationName,
+        CancellationToken ct)
+    {
+        if (_exceptionHandler is null)
+        {
+            return await operation(ct).ConfigureAwait(false);
+        }
+
+        return await _exceptionHandler
+            .ExecuteWithHandlingAsync(operation, operationName, maxRetries: 3, ct: ct)
+            .ConfigureAwait(false);
     }
 
     private sealed class ChatCompletionRequest

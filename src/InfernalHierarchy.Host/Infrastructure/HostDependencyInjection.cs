@@ -13,6 +13,10 @@ using InfernalHierarchy.Host.Migration;
 using InfernalHierarchy.Host.Personas;
 using InfernalHierarchy.Host.Telegram;
 using InfernalHierarchy.Tools.Options;
+using InfernalHierarchy.Personas.Loading;
+using InfernalHierarchy.Agents.Policies;
+using InfernalHierarchy.Tools.Tools.GraphQL;
+using InfernalHierarchy.Tools.Tools.Sql;
 
 namespace InfernalHierarchy.Host.Infrastructure;
 
@@ -72,6 +76,7 @@ internal static class HostDependencyInjection
         builder.Services.AddSingleton<IValidateOptions<VoiceInterfaceOptions>, VoiceInterfaceOptionsValidator>();
         builder.Services.AddSingleton<IValidateOptions<VoiceTranscriptionToolOptions>, VoiceTranscriptionToolOptionsValidator>();
         builder.Services.AddSingleton<IValidateOptions<TextToSpeechToolOptions>, TextToSpeechToolOptionsValidator>();
+        builder.Services.AddSingleton<IValidateOptions<VisionToolOptions>, VisionToolOptionsValidator>();
     }
 
     public static void AddResourceLimits(WebApplicationBuilder builder)
@@ -85,13 +90,17 @@ internal static class HostDependencyInjection
     {
         builder.Services.AddSingleton<ToolAuthorizationService>();
         builder.Services.AddSingleton<IToolAuthorizationService>(sp => sp.GetRequiredService<ToolAuthorizationService>());
+        builder.Services.AddSingleton<IAgentPlaygroundService, AgentPlaygroundService>();
         builder.Services.AddSingleton<TelegramBotClientFactory>();
         builder.Services.AddSingleton<ITelegramBotClientFactory>(sp => sp.GetRequiredService<TelegramBotClientFactory>());
 
         builder.Services.AddSingleton<ResiliencePolicies>();
         builder.Services.AddSingleton<IResiliencePolicyProvider, ResiliencePolicyProvider>();
         builder.Services.AddSingleton<GlobalExceptionHandler>();
+        builder.Services.AddSingleton<IFailedOperationStore, InMemoryFailedOperationStore>();
+        builder.Services.AddSingleton<DeadLetterReplayService>();
         builder.Services.AddSingleton<IAgentQuotaService, TenantAgentQuotaService>();
+        builder.Services.AddSingleton<IToolExecutionLimiter, ResourceLimitToolExecutionLimiter>();
     }
 
     public static void AddHealthChecks(WebApplicationBuilder builder)
@@ -101,6 +110,7 @@ internal static class HostDependencyInjection
             .AddCheck<QdrantHealthCheck>("qdrant", HealthStatus.Degraded, tags: new[] { "vector", "external" })
             .AddCheck<OnnxEmbeddingsHealthCheck>("onnx_embeddings", HealthStatus.Degraded, tags: new[] { "embeddings", "local" })
             .AddCheck<TelegramHealthCheck>("telegram", HealthStatus.Degraded, tags: new[] { "bot", "external" })
+            .AddCheck<VoiceSidecarHealthCheck>("voice_sidecar", HealthStatus.Degraded, tags: new[] { "voice", "external" })
             .AddCheck<LiteDbHealthCheck>("litedb", HealthStatus.Unhealthy, tags: new[] { "database", "storage" })
             .AddCheck<AgentHierarchyHealthCheck>("agents", HealthStatus.Degraded, tags: new[] { "agents", "system" });
 
@@ -113,6 +123,7 @@ internal static class HostDependencyInjection
         builder.Services.AddSingleton<MetricsService>();
         builder.Services.AddSingleton<PerformanceMonitor>();
         builder.Services.AddSingleton<DistributedTracing>();
+        builder.Services.AddHostedService<MessageBusMetricsReporter>();
         builder.Services.AddHostedService<ActivitySpanProfilingService>();
 
         builder.Services.AddSingleton<IHttpRequestProfilingStore, InMemoryHttpRequestProfilingStore>();
@@ -181,7 +192,22 @@ internal static class HostDependencyInjection
 
     private static void AddMessagingAndMemory(WebApplicationBuilder builder)
     {
-        builder.Services.AddSingleton<IMessageBus, ChannelMessageBus>();
+        builder.Services.AddSingleton<IMessageBus>(sp =>
+        {
+            var logger = sp.GetRequiredService<ILogger<ChannelMessageBus>>();
+            var resourceLimits = sp.GetRequiredService<ResourceLimits>();
+            var messageBusOptions = sp.GetRequiredService<IOptions<MessageBusOptions>>().Value;
+
+            var queueCapacity = messageBusOptions.QueueCapacity > 0
+                ? messageBusOptions.QueueCapacity
+                : resourceLimits.MaxMessageQueueSize;
+
+            return new ChannelMessageBus(
+                logger,
+                queueCapacity,
+                messageBusOptions.OverflowPolicy,
+                sp.GetService<IFailedOperationStore>());
+        });
         builder.Services.AddSingleton<LiteDbSharedMemory>();
         builder.Services.AddSingleton<ISharedMemory>(sp => sp.GetRequiredService<LiteDbSharedMemory>());
         builder.Services.AddSingleton<IToolResultCacheStore>(sp => sp.GetRequiredService<LiteDbSharedMemory>());
@@ -195,6 +221,13 @@ internal static class HostDependencyInjection
     private static void AddPersonaAndDocsServices(WebApplicationBuilder builder)
     {
         builder.Services.AddSingleton<IPersonaLoader, JsonPersonaLoader>();
+        builder.Services.AddSingleton<ISkillPackCatalog>(sp =>
+        {
+            var logger = sp.GetRequiredService<ILogger<JsonSkillPackCatalog>>();
+            var options = sp.GetRequiredService<IOptions<SkillCatalogOptions>>().Value;
+            return new JsonSkillPackCatalog(logger, options.DirectoryPath);
+        });
+        builder.Services.AddSingleton<IAgentSkillAssignmentPolicy, DefaultAgentSkillAssignmentPolicy>();
         builder.Services.AddSingleton<PersonaFileStore>();
         builder.Services.AddSingleton<DocumentationGenerator>();
         builder.Services.AddSingleton<AgentMigrationService>();
@@ -204,6 +237,7 @@ internal static class HostDependencyInjection
     {
         builder.Services.AddSingleton<AgentRegistry>();
         builder.Services.AddSingleton<IAgentRegistry>(sp => sp.GetRequiredService<AgentRegistry>());
+        builder.Services.AddSingleton<IAgentSkillRuntimeStore, InMemoryAgentSkillRuntimeStore>();
         builder.Services.AddHostedService<AgentStatusChangeProjectionService>();
         // ReAct SRP services
         builder.Services.AddSingleton<IActionParser, DefaultActionParser>();
@@ -245,7 +279,12 @@ internal static class HostDependencyInjection
 
     private static void AddNotifications(WebApplicationBuilder builder)
     {
-        builder.Services.AddSingleton<IEmailSender, SmtpEmailSender>();
+        builder.Services.AddSingleton<SmtpEmailSender>();
+        builder.Services.AddSingleton<IEmailSender>(sp =>
+            new ResilientEmailSender(
+                sp.GetRequiredService<SmtpEmailSender>(),
+                sp.GetRequiredService<IResiliencePolicyProvider>(),
+                sp.GetRequiredService<ILogger<ResilientEmailSender>>()));
     }
 
     private static void AddAdvancedMemory(
@@ -348,6 +387,7 @@ internal static class HostDependencyInjection
     private static void AddToolHttpClients(WebApplicationBuilder builder)
     {
         builder.Services.AddHttpClient(nameof(HttpRequestTool));
+        builder.Services.AddHttpClient(nameof(GraphQlRequestTool));
         builder.Services.AddHttpClient(nameof(PublishCustomToolsToGitHubTool));
     }
 
@@ -364,20 +404,26 @@ internal static class HostDependencyInjection
         builder.Services.AddSingleton<ITool, TelegramSendTool>();
         builder.Services.AddSingleton<ITool, CreateCustomToolTool>();
         builder.Services.AddSingleton<ITool, GetCustomToolSourceTool>();
+        builder.Services.AddSingleton<ITool, ListCustomToolsTool>();
+        builder.Services.AddSingleton<ITool, DeleteCustomToolTool>();
         builder.Services.AddSingleton<ITool, PublishCustomToolsToGitHubTool>();
         builder.Services.AddSingleton<ITool, CreateAgentFromTemplateTool>();
         builder.Services.AddSingleton<ITool, ListTemplatesTool>();
         builder.Services.AddSingleton<ITool, PromptAbTestTool>();
         builder.Services.AddSingleton<ITool, SendAgentMessageTool>();
+        builder.Services.AddSingleton<ITool, RequestSkillPackTool>();
         builder.Services.AddSingleton<ITool, EmailNotificationTool>();
         builder.Services.AddSingleton<ITool, FileReadTool>();
         builder.Services.AddSingleton<ITool, FileWriteTool>();
         builder.Services.AddSingleton<ITool, FileSearchTool>();
         builder.Services.AddSingleton<ITool, HttpRequestTool>();
+        builder.Services.AddSingleton<ITool, GraphQlRequestTool>();
+        builder.Services.AddSingleton<ITool, SqlReadOnlyQueryTool>();
         builder.Services.AddSingleton<ITool, PythonExecTool>();
         builder.Services.AddSingleton<ITool, NodeExecTool>();
         builder.Services.AddSingleton<ITool, AudioTranscribeTool>();
         builder.Services.AddSingleton<ITool, TextToSpeechTool>();
+        builder.Services.AddSingleton<ITool, VisionDescribeTool>();
     }
 
     private static void AddToolHostedServices(WebApplicationBuilder builder)

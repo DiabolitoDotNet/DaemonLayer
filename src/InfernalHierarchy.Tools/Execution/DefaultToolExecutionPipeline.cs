@@ -17,6 +17,8 @@ public sealed class DefaultToolExecutionPipeline : IToolExecutionPipeline
     private readonly IToolAuthorizationService? _authorizationService;
     private readonly IToolResultCacheStore? _cacheStore;
     private readonly IOptions<ToolResultCacheOptions>? _cacheOptions;
+    private readonly IToolExecutionLimiter? _executionLimiter;
+    private readonly IFailedOperationStore? _failedOperationStore;
 
     public DefaultToolExecutionPipeline(
         ILogger<DefaultToolExecutionPipeline> logger,
@@ -26,7 +28,9 @@ public sealed class DefaultToolExecutionPipeline : IToolExecutionPipeline
         IToolRateLimiter? rateLimiter = null,
         IToolAuthorizationService? authorizationService = null,
         IToolResultCacheStore? cacheStore = null,
-        IOptions<ToolResultCacheOptions>? cacheOptions = null)
+        IOptions<ToolResultCacheOptions>? cacheOptions = null,
+        IToolExecutionLimiter? executionLimiter = null,
+        IFailedOperationStore? failedOperationStore = null)
     {
         _logger = logger;
         _learningService = learningService;
@@ -36,6 +40,8 @@ public sealed class DefaultToolExecutionPipeline : IToolExecutionPipeline
         _authorizationService = authorizationService;
         _cacheStore = cacheStore;
         _cacheOptions = cacheOptions;
+        _executionLimiter = executionLimiter;
+        _failedOperationStore = failedOperationStore;
     }
 
     public async Task<ToolResult> ExecuteAsync(ToolExecutionContext context)
@@ -192,13 +198,13 @@ public sealed class DefaultToolExecutionPipeline : IToolExecutionPipeline
             if (_exceptionHandler != null)
             {
                 result = await _exceptionHandler.ExecuteWithHandlingAsync(
-                    async cancellationToken => await context.Tool.ExecuteAsync(executionParameters, cancellationToken).ConfigureAwait(false),
+                    async cancellationToken => await ExecuteToolCoreAsync(context.Tool, executionParameters, cancellationToken).ConfigureAwait(false),
                     $"Tool_{canonicalToolName}_{context.AgentId}",
                     ct: context.CancellationToken).ConfigureAwait(false);
             }
             else
             {
-                result = await context.Tool.ExecuteAsync(executionParameters, context.CancellationToken).ConfigureAwait(false);
+                result = await ExecuteToolCoreAsync(context.Tool, executionParameters, context.CancellationToken).ConfigureAwait(false);
             }
 
             stopwatch.Stop();
@@ -220,6 +226,17 @@ public sealed class DefaultToolExecutionPipeline : IToolExecutionPipeline
                 success: result.Success,
                 duration: stopwatch.Elapsed,
                 errorMessage: result.Success ? null : (result.Error ?? "Tool returned failure"));
+
+            if (!result.Success)
+            {
+                await RecordToolFailureDeadLetterAsync(
+                    context,
+                    canonicalToolName,
+                    immutableParameters,
+                    "tool_result_failed",
+                    result.Error ?? "Tool returned failure",
+                    context.CancellationToken).ConfigureAwait(false);
+            }
 
             // Cache store happens after real execution.
             if (_cacheStore != null && _cacheOptions?.Value.Enabled == true)
@@ -268,6 +285,40 @@ public sealed class DefaultToolExecutionPipeline : IToolExecutionPipeline
             stopwatch.Stop();
             throw;
         }
+        catch (TimeoutException ex)
+        {
+            stopwatch.Stop();
+
+            _logger.LogWarning(ex, "Tool {ToolName} exceeded runtime budget", canonicalToolName);
+
+            TryAppendToolEvent(
+                context,
+                canonicalToolName,
+                immutableParameters,
+                success: false,
+                duration: stopwatch.Elapsed,
+                errorMessage: ex.Message);
+
+            await RecordToolFailureDeadLetterAsync(
+                context,
+                canonicalToolName,
+                immutableParameters,
+                "tool_timeout",
+                ex.Message,
+                context.CancellationToken).ConfigureAwait(false);
+
+            return new ToolResult
+            {
+                Success = false,
+                Output = string.Empty,
+                Error = ex.Message,
+                Metadata = new Dictionary<string, object>
+                {
+                    ["resource_limit_timeout"] = true,
+                    ["tool"] = canonicalToolName
+                }
+            };
+        }
         catch (Exception ex)
         {
             stopwatch.Stop();
@@ -309,6 +360,14 @@ public sealed class DefaultToolExecutionPipeline : IToolExecutionPipeline
                 duration: stopwatch.Elapsed,
                 errorMessage: ex.Message);
 
+            await RecordToolFailureDeadLetterAsync(
+                context,
+                canonicalToolName,
+                immutableParameters,
+                "tool_exception",
+                ex.Message,
+                context.CancellationToken).ConfigureAwait(false);
+
             return new ToolResult
             {
                 Success = false,
@@ -316,6 +375,66 @@ public sealed class DefaultToolExecutionPipeline : IToolExecutionPipeline
                 Error = ex.Message
             };
         }
+    }
+
+    private async Task RecordToolFailureDeadLetterAsync(
+        ToolExecutionContext context,
+        string canonicalToolName,
+        IReadOnlyDictionary<string, object> immutableParameters,
+        string reasonCode,
+        string error,
+        CancellationToken ct)
+    {
+        if (_failedOperationStore is null)
+        {
+            return;
+        }
+
+        if (string.Equals(context.AgentId, FailedOperationReplayConstants.ReplayAgentId, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        var payload = new ToolReplayPayload
+        {
+            ToolName = canonicalToolName,
+            Parameters = CloneParameters(immutableParameters),
+            AgentId = context.AgentId,
+            AgentRank = context.AgentRank,
+            AgentName = context.AgentName
+        };
+
+        try
+        {
+            await _failedOperationStore.RecordAsync(new FailedOperationRecord
+            {
+                Kind = FailedOperationKind.ToolExecution,
+                ReasonCode = reasonCode,
+                OperationName = canonicalToolName,
+                AgentId = context.AgentId,
+                TargetId = canonicalToolName,
+                PayloadJson = JsonSerializer.Serialize(payload, JsonDefaults.Web),
+                Metadata = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                {
+                    ["tool"] = canonicalToolName,
+                    ["error"] = error
+                }
+            }, ct).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Failed to record tool dead-letter for {ToolName}", canonicalToolName);
+        }
+    }
+
+    private Task<ToolResult> ExecuteToolCoreAsync(ITool tool, Dictionary<string, object> parameters, CancellationToken ct)
+    {
+        if (_executionLimiter == null)
+        {
+            return tool.ExecuteAsync(parameters, ct);
+        }
+
+        return _executionLimiter.ExecuteAsync(innerCt => tool.ExecuteAsync(parameters, innerCt), ct);
     }
 
     private void TryAppendToolEvent(

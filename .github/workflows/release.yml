@@ -1,0 +1,115 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - v*
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Optional image tag override
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    name: Build And Smoke
+    runs-on: ubuntu-latest
+
+    env:
+      IMAGE_NAME: infernal-hierarchy
+      CONTAINER_NAME: infernal-hierarchy-smoke
+      OPERATOR_API_KEY: smoke-operator-key
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Resolve Image Tag
+        id: vars
+        run: |
+          if [ -n "${{ github.event.inputs.tag }}" ]; then
+            TAG="${{ github.event.inputs.tag }}"
+          elif [ -n "${GITHUB_REF_NAME}" ]; then
+            TAG="${GITHUB_REF_NAME}"
+          else
+            TAG="sha-${GITHUB_SHA::12}"
+          fi
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+
+      - name: Build Release Image
+        run: |
+          docker build -t "${IMAGE_NAME}:${{ steps.vars.outputs.tag }}" -f Dockerfile .
+
+      - name: Start Smoke Container
+        run: |
+          docker run -d \
+            --name "${CONTAINER_NAME}" \
+            -p 5080:5080 \
+            -e Http__Enabled=true \
+            -e Http__Urls=http://0.0.0.0:5080 \
+            -e Ui__LocalOnly=false \
+            -e WebSockets__LocalOnly=false \
+            -e OperatorApi__ApiKey="${OPERATOR_API_KEY}" \
+            -e OpenTelemetry__Exporters__Console__Enabled=false \
+            -e Telegram__BotToken=dummy \
+            -e Telegram__AllowedUserIds=1 \
+            -e Telegram__StartupNotificationChatId=1 \
+            -e Ollama__BaseUrl=http://127.0.0.1:11434/v1 \
+            -e Ollama__DefaultModel=qwen3:8b \
+            -e SearXNG__Enabled=false \
+            "${IMAGE_NAME}:${{ steps.vars.outputs.tag }}"
+
+      - name: Wait For Health Ready
+        run: |
+          for i in $(seq 1 60); do
+            code=$(curl -s -o /tmp/health.json -w "%{http_code}" http://localhost:5080/health/ready || true)
+            if [ "$code" = "200" ] || [ "$code" = "503" ]; then
+              echo "Health endpoint responded with $code"
+              cat /tmp/health.json || true
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Health endpoint did not respond in time"
+          exit 1
+
+      - name: Chat Round-Trip Smoke
+        run: |
+          code=$(curl -sS -o /tmp/chat.json -w "%{http_code}" \
+            -X POST http://localhost:5080/api/chat \
+            -H "Content-Type: application/json" \
+            -H "X-Infernal-Operator-Key: ${OPERATOR_API_KEY}" \
+            -d '{"message":"smoke-test","toAgentId":"lucifer","timeoutMs":15000}' || true)
+
+          echo "Chat status: $code"
+          cat /tmp/chat.json || true
+
+          # Accept success (200) or bounded timeout while proving endpoint/security/routing path (504).
+          if [ "$code" != "200" ] && [ "$code" != "504" ]; then
+            echo "Unexpected chat status: $code"
+            exit 1
+          fi
+
+      - name: Upload Smoke Artifacts On Failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-smoke-failure-artifacts
+          path: |
+            /tmp/health.json
+            /tmp/chat.json
+
+      - name: Print Container Logs
+        if: always()
+        run: docker logs "${CONTAINER_NAME}" || true
+
+      - name: Stop Container
+        if: always()
+        run: docker rm -f "${CONTAINER_NAME}" || true

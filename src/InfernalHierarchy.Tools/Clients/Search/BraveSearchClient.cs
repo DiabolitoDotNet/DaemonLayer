@@ -8,15 +8,18 @@ public sealed class BraveSearchClient : IBraveSearchClient
     private readonly HttpClient _httpClient;
     private readonly ILogger<BraveSearchClient> _logger;
     private readonly BraveSearchOptions _options;
+    private readonly GlobalExceptionHandler? _exceptionHandler;
 
     public BraveSearchClient(
         HttpClient httpClient,
         IOptions<BraveSearchOptions> options,
-        ILogger<BraveSearchClient> logger)
+        ILogger<BraveSearchClient> logger,
+        GlobalExceptionHandler? exceptionHandler = null)
     {
         _httpClient = httpClient;
         _options = options.Value;
         _logger = logger;
+        _exceptionHandler = exceptionHandler;
     }
 
     public async Task<WebSearchResponse> SearchAsync(string query, int count, CancellationToken ct = default)
@@ -30,9 +33,26 @@ public sealed class BraveSearchClient : IBraveSearchClient
             request.Headers.Add("X-Subscription-Token", _options.ApiKey);
             request.Headers.Add("Accept", "application/json");
 
-            var response = await _httpClient.SendAsync(request, ct).ConfigureAwait(false);
+            var response = await ExecuteWithResilienceAsync(
+                async token =>
+                {
+                    var resp = await _httpClient.SendAsync(request, token).ConfigureAwait(false);
+                    if (!resp.IsSuccessStatusCode && IsTransientStatus(resp.StatusCode))
+                    {
+                        throw new HttpRequestException(
+                            $"Brave Search transient response {(int)resp.StatusCode} ({resp.StatusCode})",
+                            inner: null,
+                            statusCode: resp.StatusCode);
+                    }
+
+                    return resp;
+                },
+                operationName: "brave_search",
+                ct).ConfigureAwait(false);
+
             if (!response.IsSuccessStatusCode)
             {
+
                 var body = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
                 _logger.LogWarning(
                     "Brave Search returned {StatusCode}. Body: {Body}",
@@ -69,6 +89,27 @@ public sealed class BraveSearchClient : IBraveSearchClient
             _logger.LogError(ex, "Brave Search failed");
             return new WebSearchResponse(Array.Empty<WebSearchResultItem>(), ex.Message);
         }
+    }
+
+    private async Task<T> ExecuteWithResilienceAsync<T>(
+        Func<CancellationToken, Task<T>> operation,
+        string operationName,
+        CancellationToken ct)
+    {
+        if (_exceptionHandler is null)
+        {
+            return await operation(ct).ConfigureAwait(false);
+        }
+
+        return await _exceptionHandler
+            .ExecuteWithHandlingAsync(operation, operationName, maxRetries: 3, ct: ct)
+            .ConfigureAwait(false);
+    }
+
+    private static bool IsTransientStatus(System.Net.HttpStatusCode status)
+    {
+        var code = (int)status;
+        return code >= 500 || code == 429 || code == 408;
     }
 
     private sealed class BraveSearchResponse

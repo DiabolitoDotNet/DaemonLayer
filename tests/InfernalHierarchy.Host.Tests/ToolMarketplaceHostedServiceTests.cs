@@ -19,6 +19,12 @@ public sealed class ToolMarketplaceHostedServiceTests
 
         public void RegisterTool(ITool tool) => RegisteredNames.Add(tool.Name);
 
+        public bool UnregisterTool(string name)
+        {
+            RegisteredNames.RemoveAll(x => string.Equals(x, name, StringComparison.OrdinalIgnoreCase));
+            return true;
+        }
+
         public ITool? GetTool(string name) => null;
         public IEnumerable<ITool> GetAllTools() => Array.Empty<ITool>();
         public IEnumerable<ITool> GetToolsForAgent(string[] toolNames) => Array.Empty<ITool>();

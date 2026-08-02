@@ -79,6 +79,23 @@ public class ToolRegistry : IToolRegistry
         return tool;
     }
 
+    public bool UnregisterTool(string name)
+    {
+        var normalizedName = NormalizeToolName(name);
+        if (normalizedName is null)
+        {
+            return false;
+        }
+
+        if (_tools.TryRemove(normalizedName, out _))
+        {
+            _logger.LogInformation("🧹 Unregistered tool: {ToolName}", normalizedName);
+            return true;
+        }
+
+        return false;
+    }
+
     public IEnumerable<ITool> GetAllTools() => _tools.Values;
 
     public IEnumerable<ITool> GetToolsForAgent(string[] toolNames)

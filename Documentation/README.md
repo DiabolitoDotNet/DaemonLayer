@@ -11,12 +11,29 @@ The repository root already contains detailed topic docs (security, observabilit
 - [Capabilities & Use Cases](Capabilities.md)
 - [Runbooks](Runbooks/Custom-Tools.md)
 - [Architecture Decision Records (ADRs)](ADRs/README.md)
+- [Active Feature Matrix](Active-Feature-Matrix.md)
+- [SLOs](SLOs.md)
+- [Alert Playbooks](Alert-Playbooks.md)
 
 ## Runbooks
 
 - [Custom Tools Runbook](Runbooks/Custom-Tools.md)
 - [End-to-End Request Tracing](Runbooks/End-to-End-Request-Tracing.md)
 - [Tool Authorization Debugging](Runbooks/Tool-Authorization-Debugging.md)
+- [Incident: Startup Failures](Runbooks/Incident-Startup-Failures.md)
+- [Incident: Stalled Agents](Runbooks/Incident-Stalled-Agents.md)
+- [Incident: Tool Outage](Runbooks/Incident-Tool-Outage.md)
+- [Incident: Memory Bloat](Runbooks/Incident-Memory-Bloat.md)
+- [Incident: WebSocket Issues](Runbooks/Incident-WebSocket-Issues.md)
+
+## Reliability Targets
+
+- [Service Level Objectives](SLOs.md)
+- [Alert Playbooks](Alert-Playbooks.md)
+
+## Inventory
+
+- [Active Feature Matrix](Active-Feature-Matrix.md)
 
 ## Related docs (repo root)
 

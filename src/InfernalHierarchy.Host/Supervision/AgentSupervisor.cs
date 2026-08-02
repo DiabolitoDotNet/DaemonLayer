@@ -29,6 +29,7 @@ public sealed class AgentSupervisor : BackgroundService, IAgentSupervisor
     private readonly IMessageBus _messageBus;
     private readonly ISharedMemory _sharedMemory;
     private readonly AgentSupervisorOptions _options;
+    private readonly MetricsCollector? _metrics;
     private readonly ILogger<AgentSupervisor> _logger;
 
     private readonly ConcurrentDictionary<string, Observation> _observations = new();
@@ -40,6 +41,7 @@ public sealed class AgentSupervisor : BackgroundService, IAgentSupervisor
         IMessageBus messageBus,
         ISharedMemory sharedMemory,
         IOptions<AgentSupervisorOptions> options,
+        MetricsCollector? metrics,
         ILogger<AgentSupervisor> logger)
     {
         _registry = registry;
@@ -47,17 +49,21 @@ public sealed class AgentSupervisor : BackgroundService, IAgentSupervisor
         _messageBus = messageBus;
         _sharedMemory = sharedMemory;
         _options = options.Value;
+        _metrics = metrics;
         _logger = logger;
     }
 
     public Task RequestReplanAsync(string rootAgentId, string reason, CancellationToken ct = default)
     {
+        _metrics?.IncrementCounter("supervisor.interventions.total");
+        _metrics?.IncrementCounter("supervisor.interventions.replan");
         var message = new AgentMessage
         {
             FromAgentId = SupervisorId,
             ToAgentId = rootAgentId,
             Type = MessageType.Command,
             Content = $"SUPERVISOR_REPLAN: {reason}",
+            CorrelationId = Guid.NewGuid().ToString("N"),
             Payload = new Dictionary<string, object>
             {
                 ["supervisor_action"] = "replan",
@@ -71,6 +77,8 @@ public sealed class AgentSupervisor : BackgroundService, IAgentSupervisor
 
     public Task PreemptAgentAsync(string agentId, string reason, CancellationToken ct = default)
     {
+        _metrics?.IncrementCounter("supervisor.interventions.total");
+        _metrics?.IncrementCounter("supervisor.interventions.preempt");
         _logger.LogWarning("🛑 Supervisor preempting agent {AgentId}: {Reason}", agentId, reason);
         return _agentFactory.TerminateAgentAsync(agentId, ct);
     }
@@ -142,6 +150,8 @@ public sealed class AgentSupervisor : BackgroundService, IAgentSupervisor
         var recentDecisions = await _sharedMemory.GetRecentDecisionsAsync(_options.DecisionLookbackCount, ct)
             .ConfigureAwait(false);
 
+        _metrics?.SetGauge("supervisor.agents.tracked", agents.Count);
+
         var latestDecisionByAgent = recentDecisions
             .GroupBy(d => d.CreatedBy)
             .ToDictionary(g => g.Key, g => g.Max(d => (DateTimeOffset)d.CreatedAt));
@@ -205,6 +215,16 @@ public sealed class AgentSupervisor : BackgroundService, IAgentSupervisor
 
             var isStalled = stalledFor >= _options.MaxStallDuration;
             var isLooping = updated.NoProgressTicks >= _options.MaxNoProgressTicks;
+
+            if (isStalled)
+            {
+                _metrics?.IncrementCounter("supervisor.detected.stalled");
+            }
+
+            if (isLooping)
+            {
+                _metrics?.IncrementCounter("supervisor.detected.looping");
+            }
 
             if (!isStalled && !isLooping)
             {

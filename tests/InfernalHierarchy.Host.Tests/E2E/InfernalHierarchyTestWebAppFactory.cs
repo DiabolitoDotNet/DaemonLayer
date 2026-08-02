@@ -36,6 +36,8 @@ public class InfernalHierarchyTestWebAppFactory : WebApplicationFactory<Program>
                 ["Voice:Enabled"] = "true",
                 ["Voice:LocalOnly"] = "false",
 
+                ["OperatorApi:ApiKey"] = "test-operator-key",
+
                 // Required by validators (ValidateOnStart)
                 ["Ollama:BaseUrl"] = "http://localhost:11434",
                 ["Ollama:DefaultModel"] = "test-model",

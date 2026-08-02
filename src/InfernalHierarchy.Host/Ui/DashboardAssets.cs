@@ -9,6 +9,8 @@ internal static partial class DashboardAssets
         () => LayoutPrefix
             + PageHome
             + PagePerf
+            + PageTimeline
+            + PagePlayground
             + PagePersonas
             + PageDocs
             + PageMigrate

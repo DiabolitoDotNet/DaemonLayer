@@ -158,6 +158,8 @@ public sealed class AgentStatusChangeProjectionService : BackgroundService
                 ToAgentId = lucifer.Id,
                 Type = MessageType.Notification,
                 Content = message.Content,
+                CorrelationId = message.CorrelationId ?? message.Id,
+                CausationId = message.Id,
                 Payload = new Dictionary<string, object>(message.Payload ?? new Dictionary<string, object>())
                 {
                     ["projection"] = "AgentStatusChangeProjectionService"
@@ -217,6 +219,8 @@ public sealed class AgentStatusChangeProjectionService : BackgroundService
                 ToAgentId = supervisor.Id,
                 Type = MessageType.Notification,
                 Content = message.Content,
+                CorrelationId = message.CorrelationId ?? message.Id,
+                CausationId = message.Id,
                 Payload = new Dictionary<string, object>(message.Payload ?? new Dictionary<string, object>())
                 {
                     ["projection"] = "AgentStatusChangeProjectionService"

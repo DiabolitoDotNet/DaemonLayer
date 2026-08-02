@@ -19,6 +19,8 @@ internal static partial class DashboardAssets
     <nav class="nav">
       <a class="navLink" href="/ui">Dashboard</a>
       <a class="navLink" href="/ui/perf">Performance</a>
+      <a class="navLink" href="/ui/timeline">Timeline</a>
+      <a class="navLink" href="/ui/playground">Playground</a>
       <a class="navLink" href="/ui/personas">Personas</a>
       <a class="navLink" href="/ui/docs">Docs</a>
       <a class="navLink" href="/ui/migrate">Migrate</a>
@@ -192,6 +194,48 @@ internal static partial class DashboardAssets
           <pre id="perfTraceSummary" class="log small"></pre>
           <pre id="perfSpanDetail" class="log small"></pre>
           <pre id="perfTraceDetail" class="log"></pre>
+        </section>
+      </div>
+    </div>
+
+""";
+
+    internal const string PageTimeline = """
+    <div id="page-timeline" class="page">
+      <div class="grid">
+        <section class="card">
+          <h2>Reasoning and Tool Timeline</h2>
+          <div class="row">
+            <button id="timelineRefresh">Refresh</button>
+            <input id="timelineMinutes" placeholder="minutes (default 60)" />
+            <input id="timelineLimit" placeholder="limit (default 500)" />
+            <span id="timelineSummary" class="pill"></span>
+          </div>
+          <div id="timelineList" class="list"></div>
+          <pre id="timelineDetail" class="log small"></pre>
+        </section>
+      </div>
+    </div>
+
+""";
+
+    internal const string PagePlayground = """
+    <div id="page-playground" class="page">
+      <div class="grid">
+        <section class="card">
+          <h2>Agent Playground</h2>
+          <div class="row">
+            <input id="pgName" placeholder="Scenario name" />
+            <input id="pgAgent" placeholder="to_agent_id (default: lucifer)" />
+            <input id="pgTimeout" placeholder="timeout ms (default 180000)" />
+          </div>
+          <textarea id="pgPrompt" rows="4" placeholder="Prompt for scenario..." spellcheck="false"></textarea>
+          <div class="row">
+            <button id="pgCreateRun">Create + Run</button>
+            <button id="pgRefresh">Refresh Scenarios</button>
+          </div>
+          <div id="pgScenarios" class="list"></div>
+          <pre id="pgRuns" class="log small"></pre>
         </section>
       </div>
     </div>

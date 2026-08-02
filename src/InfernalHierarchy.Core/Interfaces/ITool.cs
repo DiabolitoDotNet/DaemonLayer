@@ -69,6 +69,11 @@ public interface IToolRegistry
     void RegisterTool(ITool tool);
 
     /// <summary>
+    /// Removes a tool from the registry by name.
+    /// </summary>
+    bool UnregisterTool(string name);
+
+    /// <summary>
     /// Gets a tool by its <see cref="ITool.Name"/>.
     /// </summary>
     ITool? GetTool(string name);

@@ -322,3 +322,68 @@ public class AgentHierarchyHealthCheck : IHealthCheck
         }
     }
 }
+
+/// <summary>
+/// Health check for optional voice sidecar used by STT/TTS tools.
+/// </summary>
+public class VoiceSidecarHealthCheck : IHealthCheck
+{
+    private readonly VoiceTranscriptionToolOptions _stt;
+    private readonly TextToSpeechToolOptions _tts;
+    private readonly IHttpClientFactory _httpClientFactory;
+
+    public VoiceSidecarHealthCheck(
+        IOptions<VoiceTranscriptionToolOptions> stt,
+        IOptions<TextToSpeechToolOptions> tts,
+        IHttpClientFactory httpClientFactory)
+    {
+        _stt = stt.Value;
+        _tts = tts.Value;
+        _httpClientFactory = httpClientFactory;
+    }
+
+    public async Task<HealthCheckResult> CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken = default)
+    {
+        var sidecarEnabled = _stt.Enabled && _stt.UseSidecar || _tts.Enabled && _tts.UseSidecar;
+        if (!sidecarEnabled)
+        {
+            return HealthCheckResult.Healthy("Voice sidecar not enabled");
+        }
+
+        var baseUrl = _stt.UseSidecar ? _stt.SidecarBaseUrl : _tts.SidecarBaseUrl;
+        var healthEndpoint = new Uri(baseUrl, "/health");
+
+        try
+        {
+            var client = _httpClientFactory.CreateClient();
+            client.Timeout = TimeSpan.FromSeconds(3);
+
+            var response = await client.GetAsync(healthEndpoint, cancellationToken).ConfigureAwait(false);
+            if (response.IsSuccessStatusCode)
+            {
+                return HealthCheckResult.Healthy("Voice sidecar reachable", data: new Dictionary<string, object>
+                {
+                    ["url"] = baseUrl.ToString(),
+                    ["health_endpoint"] = healthEndpoint.ToString(),
+                    ["status"] = "connected"
+                });
+            }
+
+            return HealthCheckResult.Degraded($"Voice sidecar returned {(int)response.StatusCode}", data: new Dictionary<string, object>
+            {
+                ["url"] = baseUrl.ToString(),
+                ["health_endpoint"] = healthEndpoint.ToString(),
+                ["status"] = "error"
+            });
+        }
+        catch (Exception ex)
+        {
+            return HealthCheckResult.Unhealthy("Voice sidecar unreachable", ex, data: new Dictionary<string, object>
+            {
+                ["url"] = baseUrl.ToString(),
+                ["health_endpoint"] = healthEndpoint.ToString(),
+                ["status"] = "unreachable"
+            });
+        }
+    }
+}

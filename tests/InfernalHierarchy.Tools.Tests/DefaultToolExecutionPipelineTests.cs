@@ -12,6 +12,32 @@ namespace InfernalHierarchy.Tools.Tests;
 
 public sealed class DefaultToolExecutionPipelineTests
 {
+    private sealed class InMemoryFailedOperationStoreForTests : IFailedOperationStore
+    {
+        public List<FailedOperationRecord> Records { get; } = new();
+
+        public Task RecordAsync(FailedOperationRecord record, CancellationToken ct = default)
+        {
+            Records.Add(record);
+            return Task.CompletedTask;
+        }
+
+        public Task<IReadOnlyList<FailedOperationRecord>> GetRecentAsync(int limit, bool pendingOnly, CancellationToken ct = default)
+            => Task.FromResult<IReadOnlyList<FailedOperationRecord>>(Records);
+
+        public Task<FailedOperationRecord?> GetByIdAsync(string id, CancellationToken ct = default)
+            => Task.FromResult<FailedOperationRecord?>(Records.FirstOrDefault(r => r.Id == id));
+
+        public Task<FailedOperationRecord?> TryStartReplayAsync(string id, string requestedBy, CancellationToken ct = default)
+            => Task.FromResult<FailedOperationRecord?>(null);
+
+        public Task MarkReplaySucceededAsync(string id, CancellationToken ct = default) => Task.CompletedTask;
+
+        public Task MarkReplayFailedAsync(string id, string reasonCode, string? error, CancellationToken ct = default) => Task.CompletedTask;
+
+        public FailedOperationStats GetStats() => new(Records.Count, Records.Count, 0, 0);
+    }
+
     private sealed class DenyAllAuthorizationService : IToolAuthorizationService
     {
         public AuthorizationResult IsAuthorized(string agentId, string agentName, AgentRank rank, string toolName)
@@ -49,6 +75,54 @@ public sealed class DefaultToolExecutionPipelineTests
     private sealed class ThrowingEventSink : IAgentEventSink
     {
         public void AppendEvent(AgentEvent evt) => throw new InvalidOperationException("append failed");
+    }
+
+    private sealed class ConcurrencyGateLimiter : IToolExecutionLimiter
+    {
+        private readonly SemaphoreSlim _semaphore;
+
+        public ConcurrencyGateLimiter(int maxConcurrency)
+        {
+            _semaphore = new SemaphoreSlim(maxConcurrency, maxConcurrency);
+        }
+
+        public async Task<T> ExecuteAsync<T>(Func<CancellationToken, Task<T>> operation, CancellationToken ct = default)
+        {
+            await _semaphore.WaitAsync(ct);
+            try
+            {
+                return await operation(ct);
+            }
+            finally
+            {
+                _semaphore.Release();
+            }
+        }
+    }
+
+    private sealed class TimeoutLimiter : IToolExecutionLimiter
+    {
+        private readonly TimeSpan _timeout;
+
+        public TimeoutLimiter(TimeSpan timeout)
+        {
+            _timeout = timeout;
+        }
+
+        public async Task<T> ExecuteAsync<T>(Func<CancellationToken, Task<T>> operation, CancellationToken ct = default)
+        {
+            using var budget = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            budget.CancelAfter(_timeout);
+
+            try
+            {
+                return await operation(budget.Token);
+            }
+            catch (OperationCanceledException) when (!ct.IsCancellationRequested && budget.IsCancellationRequested)
+            {
+                throw new TimeoutException("Tool execution exceeded test timeout budget.");
+            }
+        }
     }
 
     private sealed class ListLogger<T> : ILogger<T>
@@ -303,5 +377,113 @@ public sealed class DefaultToolExecutionPipelineTests
         Assert.False(result.Success);
         Assert.Single(sink.Events);
         Assert.Equal(EventType.ErrorOccurred, sink.Events[0].Type);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_WithExecutionLimiterTimeout_ReturnsExplicitTimeoutFailure()
+    {
+        var pipeline = new DefaultToolExecutionPipeline(
+            NullLogger<DefaultToolExecutionPipeline>.Instance,
+            executionLimiter: new TimeoutLimiter(TimeSpan.FromMilliseconds(25)));
+
+        var tool = new FakeTool("slow", "d", async (_, ct) =>
+        {
+            await Task.Delay(TimeSpan.FromMilliseconds(250), ct);
+            return new ToolResult { Success = true, Output = "ok" };
+        });
+
+        var result = await pipeline.ExecuteAsync(new ToolExecutionContext(
+            ToolName: tool.Name,
+            Tool: tool,
+            Parameters: new Dictionary<string, object>(),
+            AgentId: "agent-7",
+            AgentRank: "Worker",
+            CancellationToken: CancellationToken.None));
+
+        Assert.False(result.Success);
+        Assert.Contains("timeout", result.Error ?? string.Empty, StringComparison.OrdinalIgnoreCase);
+        Assert.True(result.Metadata.TryGetValue("resource_limit_timeout", out var timeoutFlag));
+        Assert.True(timeoutFlag is true);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_WithExecutionLimiterStress_ShouldBoundConcurrencyUnderLoad()
+    {
+        var limiter = new ConcurrencyGateLimiter(maxConcurrency: 2);
+        var pipeline = new DefaultToolExecutionPipeline(
+            NullLogger<DefaultToolExecutionPipeline>.Instance,
+            executionLimiter: limiter);
+
+        var current = 0;
+        var observedMax = 0;
+
+        var tool = new FakeTool("bounded", "d", async (_, ct) =>
+        {
+            var now = Interlocked.Increment(ref current);
+            while (true)
+            {
+                var maxSeen = Volatile.Read(ref observedMax);
+                if (now <= maxSeen)
+                {
+                    break;
+                }
+
+                if (Interlocked.CompareExchange(ref observedMax, now, maxSeen) == maxSeen)
+                {
+                    break;
+                }
+            }
+
+            await Task.Delay(40, ct);
+            Interlocked.Decrement(ref current);
+            return new ToolResult { Success = true, Output = "ok" };
+        });
+
+        var runs = Enumerable.Range(0, 24).Select(_ =>
+            pipeline.ExecuteAsync(new ToolExecutionContext(
+                ToolName: tool.Name,
+                Tool: tool,
+                Parameters: new Dictionary<string, object>(),
+                AgentId: "agent-8",
+                AgentRank: "Worker",
+                CancellationToken: CancellationToken.None)));
+
+        var results = await Task.WhenAll(runs);
+
+        Assert.All(results, r => Assert.True(r.Success));
+        Assert.True(observedMax <= 2, $"Observed max concurrency {observedMax} exceeded limiter bound.");
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_WhenToolReturnsFailure_RecordsDeadLetterEntry()
+    {
+        var failedStore = new InMemoryFailedOperationStoreForTests();
+
+        var pipeline = new DefaultToolExecutionPipeline(
+            NullLogger<DefaultToolExecutionPipeline>.Instance,
+            failedOperationStore: failedStore);
+
+        var tool = new FakeTool("failing_tool", "d", (_, _) =>
+            Task.FromResult(new ToolResult
+            {
+                Success = false,
+                Error = "boom",
+                Output = string.Empty
+            }));
+
+        var result = await pipeline.ExecuteAsync(new ToolExecutionContext(
+            ToolName: tool.Name,
+            Tool: tool,
+            Parameters: new Dictionary<string, object> { ["query"] = "x" },
+            AgentId: "agent-9",
+            AgentRank: "Worker",
+            CancellationToken: CancellationToken.None));
+
+        Assert.False(result.Success);
+        Assert.Single(failedStore.Records);
+        Assert.Equal(FailedOperationKind.ToolExecution, failedStore.Records[0].Kind);
+        Assert.Equal("tool_result_failed", failedStore.Records[0].ReasonCode);
+        Assert.Equal("failing_tool", failedStore.Records[0].OperationName);
+        Assert.False(string.IsNullOrWhiteSpace(failedStore.Records[0].PayloadJson));
     }
 }

@@ -1,18 +1,28 @@
 using InfernalHierarchy.Core.Entities;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using System.Diagnostics;
 
 namespace InfernalHierarchy.Host.Api;
 
 internal static class ChatApi
 {
-    public static void Map(WebApplication app)
+    public static void Map(WebApplication app, UiInterfaceOptions uiOptions)
     {
+        var operatorOptions = app.Services.GetRequiredService<IOptions<OperatorApiOptions>>().Value;
+
         app.MapPost("/api/chat", async (
+            HttpContext ctx,
             [FromBody] ChatRequest request,
             IMessageBus messageBus,
             CancellationToken ct) =>
         {
+            var forbid = OperationalAuthGuard.ForbidIfUnauthorized(ctx, uiOptions.LocalOnly, operatorOptions.ApiKey);
+            if (forbid is not null)
+            {
+                return forbid;
+            }
+
             if (request is null || string.IsNullOrWhiteSpace(request.Message))
             {
                 return Results.BadRequest(new { error = "Missing request body: message" });
@@ -26,6 +36,9 @@ internal static class ChatApi
             var toAgentId = string.IsNullOrWhiteSpace(request.ToAgentId)
                 ? "lucifer"
                 : request.ToAgentId.Trim();
+
+            var correlationId = ResolveCorrelationId(ctx);
+            ctx.Response.Headers["X-Correlation-Id"] = correlationId;
 
             var timeoutMs = request.TimeoutMs is > 0 and <= 300_000
                 ? request.TimeoutMs.Value
@@ -43,15 +56,18 @@ internal static class ChatApi
             {
                 var message = new AgentMessage
                 {
+                    Id = replyToId,
                     FromAgentId = replyToId,
                     ToAgentId = toAgentId,
                     Type = MessageType.Task,
                     Content = request.Message,
+                    CorrelationId = correlationId,
                     Payload = new Dictionary<string, object>
                     {
                         ["transport"] = "http",
                         ["http_request_id"] = replyToId,
-                        ["http_started_utc"] = startedUtc.ToString("O")
+                        ["http_started_utc"] = startedUtc.ToString("O"),
+                        ["correlation_id"] = correlationId
                     }
                 };
 
@@ -72,6 +88,8 @@ internal static class ChatApi
                         toAgentId: response.ToAgentId,
                         content: response.Content,
                         payload: response.Payload,
+                        correlationId: response.CorrelationId ?? correlationId,
+                        causationId: response.CausationId,
                         receivedUtc: DateTime.UtcNow,
                         durationMs: (DateTime.UtcNow - startedUtc).TotalMilliseconds));
                 }
@@ -97,5 +115,20 @@ internal static class ChatApi
                 }
             }
         });
+    }
+
+    private static string ResolveCorrelationId(HttpContext ctx)
+    {
+        if (ctx.Request.Headers.TryGetValue("X-Correlation-Id", out var provided)
+            && provided.Count == 1
+            && !string.IsNullOrWhiteSpace(provided[0]))
+        {
+            return provided[0].ToString();
+        }
+
+        var traceId = Activity.Current?.TraceId.ToString();
+        return string.IsNullOrWhiteSpace(traceId)
+            ? Guid.NewGuid().ToString("N")
+            : traceId;
     }
 }

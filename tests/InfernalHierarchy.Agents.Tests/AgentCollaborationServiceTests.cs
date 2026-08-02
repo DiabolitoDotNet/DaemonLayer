@@ -1,5 +1,6 @@
 using FluentAssertions;
 using InfernalHierarchy.Agents.Collaboration;
+using InfernalHierarchy.Agents.Collaboration.Strategies;
 using InfernalHierarchy.Agents.Registry;
 using InfernalHierarchy.Core.Entities;
 using InfernalHierarchy.Core.Interfaces;
@@ -427,5 +428,85 @@ public class AgentCollaborationServiceTests
 
         result.Strategy.Should().Be(CollaborationStrategy.WeightedVoting);
         result.Decision.Should().Be("A");
+    }
+
+    [Fact]
+    public async Task RequestCollaborationAsync_ShouldPersistArtifactsWithCollaborationId()
+    {
+        var bus = new Mock<IMessageBus>();
+        bus.Setup(b => b.PublishAsync(It.IsAny<AgentMessage>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        var sharedMemory = new Mock<ISharedMemory>();
+        sharedMemory.Setup(x => x.AddFactAsync(It.IsAny<Fact>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        sharedMemory.Setup(x => x.AddDecisionAsync(It.IsAny<Decision>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        var registry = new AgentRegistry(new Mock<ILogger<AgentRegistry>>().Object);
+        registry.Register(CreateAgent("a1", AgentRank.Worker).Object);
+        registry.Register(CreateAgent("a2", AgentRank.Worker).Object);
+
+        var service = new AgentCollaborationService(
+            new Mock<ILogger<AgentCollaborationService>>().Object,
+            bus.Object,
+            registry,
+            new IAggregationStrategy[]
+            {
+                new VotingAggregationStrategy(),
+                new WeightedVotingAggregationStrategy(),
+                new ConsensusAggregationStrategy(),
+                new HighestConfidenceAggregationStrategy(),
+                new HierarchicalAggregationStrategy()
+            },
+            sharedMemory.Object);
+
+        var request = new CollaborationRequest
+        {
+            Id = Guid.NewGuid().ToString(),
+            InitiatorAgentId = "init",
+            Task = "Pick A or B",
+            Strategy = CollaborationStrategy.Voting,
+            MinimumParticipants = 2,
+            MinimumConfidence = 0.6,
+            Timeout = TimeSpan.FromSeconds(2),
+            ParticipantAgentIds = new List<string> { "a1", "a2" }
+        };
+
+        var collaborationTask = service.RequestCollaborationAsync(request, CancellationToken.None);
+
+        await service.SubmitResponseAsync(request.Id, new AgentResponse
+        {
+            AgentId = "a1",
+            AgentRank = AgentRank.Worker,
+            Response = "A",
+            Confidence = 0.9,
+            Reasoning = "r1"
+        });
+
+        await service.SubmitResponseAsync(request.Id, new AgentResponse
+        {
+            AgentId = "a2",
+            AgentRank = AgentRank.Worker,
+            Response = "A",
+            Confidence = 0.8,
+            Reasoning = "r2"
+        });
+
+        var result = await collaborationTask;
+
+        result.Decision.Should().Be("A");
+
+        sharedMemory.Verify(
+            x => x.AddFactAsync(
+                It.Is<Fact>(f => f.Category == "collaboration.timeline" && f.Content.Contains(request.Id)),
+                It.IsAny<CancellationToken>()),
+            Times.AtLeast(2));
+
+        sharedMemory.Verify(
+            x => x.AddDecisionAsync(
+                It.Is<Decision>(d => d.Context.Contains(request.Id) && d.Action == "A"),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
     }
 }

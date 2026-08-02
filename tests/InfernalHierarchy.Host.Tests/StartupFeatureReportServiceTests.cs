@@ -65,6 +65,7 @@ public sealed class StartupFeatureReportServiceTests
                 Console = new ConsoleExporterOptions { Enabled = true },
                 Otlp = new OtlpExporterOptions { Enabled = false }
             }),
+            Options.Create(new OperatorApiOptions()),
             logger);
 
         await service.StartAsync(CancellationToken.None);
@@ -95,10 +96,38 @@ public sealed class StartupFeatureReportServiceTests
             Options.Create(new ToolMarketplaceOptions()),
             Options.Create(new ToolResultCacheOptions()),
             Options.Create(new OpenTelemetryExportOptions()),
+            Options.Create(new OperatorApiOptions()),
             new ListLogger<StartupFeatureReportService>());
 
         await service.StopAsync(CancellationToken.None);
 
         true.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task StartAsync_LogsWarnings_ForInertConfiguration()
+    {
+        var logger = new ListLogger<StartupFeatureReportService>();
+        var service = new StartupFeatureReportService(
+            Options.Create(new HttpEndpointOptions { Enabled = true, Urls = "http://localhost:5080" }),
+            Options.Create(new UiInterfaceOptions { Enabled = true, LocalOnly = true }),
+            Options.Create(new WebSocketInterfaceOptions { Enabled = true, LocalOnly = true }),
+            Options.Create(new VoiceInterfaceOptions { Enabled = false }),
+            Options.Create(new VoiceCopilotOptions { Enabled = true }),
+            Options.Create(new VectorMemoryOptions { Enabled = false, QdrantUrl = new Uri("http://localhost:6333") }),
+            Options.Create(new MemoryPruningOptions { Enabled = false }),
+            Options.Create(new MemoryLearningOptions { Enabled = false }),
+            Options.Create(new ToolMarketplaceOptions { Enabled = false }),
+            Options.Create(new ToolResultCacheOptions { Enabled = false, ClearOnStartup = true }),
+            Options.Create(new OpenTelemetryExportOptions()),
+            Options.Create(new OperatorApiOptions()),
+            logger);
+
+        await service.StartAsync(CancellationToken.None);
+
+        logger.Entries.Should().Contain(e => e.Level == LogLevel.Warning && e.Message.Contains("Vector memory is disabled", StringComparison.Ordinal));
+        logger.Entries.Should().Contain(e => e.Level == LogLevel.Warning && e.Message.Contains("Tool cache clear-on-startup", StringComparison.Ordinal));
+        logger.Entries.Should().Contain(e => e.Level == LogLevel.Warning && e.Message.Contains("VoiceCopilot is enabled", StringComparison.Ordinal));
+        logger.Entries.Should().Contain(e => e.Level == LogLevel.Warning && e.Message.Contains("Memory learning is disabled", StringComparison.Ordinal));
     }
 }

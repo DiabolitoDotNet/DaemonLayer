@@ -41,6 +41,16 @@ public class AgentMessage
     /// UTC timestamp set at creation time.
     /// </summary>
     public DateTime Timestamp { get; set; } = DateTime.UtcNow;
+
+    /// <summary>
+    /// End-to-end correlation identifier spanning HTTP, message bus, tools, and responses.
+    /// </summary>
+    public string? CorrelationId { get; set; }
+
+    /// <summary>
+    /// Identifier of the immediate parent event or message that caused this message.
+    /// </summary>
+    public string? CausationId { get; set; }
 }
 
 /// <summary>

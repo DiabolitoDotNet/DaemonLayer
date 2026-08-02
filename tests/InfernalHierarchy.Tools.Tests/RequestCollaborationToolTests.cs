@@ -229,4 +229,94 @@ public class RequestCollaborationToolTests
         captured!.ParticipantAgentIds.Should().BeEquivalentTo(ExpectedRankedParticipants);
         captured.Strategy.Should().Be(CollaborationStrategy.Voting);
     }
+
+    [Fact]
+    public async Task ExecuteAsync_WithTemplate_ShouldApplyTemplateDefaults()
+    {
+        var logger = new Mock<ILogger<RequestCollaborationTool>>();
+        var collaboration = new Mock<IAgentCollaborationService>();
+        var registry = new Mock<IAgentRegistry>();
+
+        registry.Setup(r => r.GetAgentsByRank(AgentRank.Worker)).Returns(new[]
+        {
+            CreateAgent("w1", AgentRank.Worker, AgentStatus.Idle),
+            CreateAgent("w2", AgentRank.Worker, AgentStatus.Idle)
+        });
+        registry.Setup(r => r.GetAgentsByRank(AgentRank.Duke)).Returns(new[]
+        {
+            CreateAgent("d1", AgentRank.Duke, AgentStatus.Idle)
+        });
+
+        CollaborationRequest? captured = null;
+        collaboration
+            .Setup(s => s.RequestCollaborationAsync(It.IsAny<CollaborationRequest>(), It.IsAny<CancellationToken>()))
+            .Callback<CollaborationRequest, CancellationToken>((req, _) => captured = req)
+            .ReturnsAsync(new CollaborationResult
+            {
+                Decision = "Ok",
+                Confidence = 0.83,
+                AgreementScore = 0.72,
+                ParticipantCount = 3,
+                Strategy = CollaborationStrategy.WeightedVoting,
+                AggregatedReasoning = "Reasoning"
+            });
+
+        var tool = new RequestCollaborationTool(logger.Object, collaboration.Object, registry.Object);
+
+        var result = await tool.ExecuteAsync(new Dictionary<string, object>
+        {
+            ["task"] = "Need broad research",
+            ["template"] = "parallel_research_adjudicate"
+        });
+
+        result.Success.Should().BeTrue();
+        captured.Should().NotBeNull();
+        captured!.Strategy.Should().Be(CollaborationStrategy.WeightedVoting);
+        captured.MinimumParticipants.Should().Be(3);
+        captured.MinimumConfidence.Should().Be(0.75);
+        captured.ParticipantAgentIds.Should().BeEquivalentTo(new[] { "w1", "w2", "d1" });
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_ShouldExposeConflictProtocolInMetadata()
+    {
+        var logger = new Mock<ILogger<RequestCollaborationTool>>();
+        var collaboration = new Mock<IAgentCollaborationService>();
+        var registry = new Mock<IAgentRegistry>();
+
+        registry.Setup(r => r.GetAllAgents()).Returns(new[]
+        {
+            CreateAgent("a", AgentRank.Worker, AgentStatus.Idle),
+            CreateAgent("b", AgentRank.Worker, AgentStatus.Idle)
+        });
+
+        collaboration
+            .Setup(s => s.RequestCollaborationAsync(It.IsAny<CollaborationRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new CollaborationResult
+            {
+                Decision = "CONFLICT_UNRESOLVED",
+                Confidence = 0.0,
+                AgreementScore = 0.0,
+                ParticipantCount = 2,
+                Strategy = CollaborationStrategy.Consensus,
+                AggregatedReasoning = "Unresolved",
+                ConflictClass = "unresolved",
+                ConflictReasonCode = "max_rounds_exhausted",
+                NextAction = "supervisor_manual_adjudication",
+                NeedsSupervisorIntervention = true
+            });
+
+        var tool = new RequestCollaborationTool(logger.Object, collaboration.Object, registry.Object);
+
+        var result = await tool.ExecuteAsync(new Dictionary<string, object>
+        {
+            ["task"] = "Need decision",
+            ["agent_id"] = "init"
+        });
+
+        result.Success.Should().BeTrue();
+        result.Metadata["conflict_class"].Should().Be("unresolved");
+        result.Metadata["conflict_reason_code"].Should().Be("max_rounds_exhausted");
+        result.Metadata["needs_supervisor_intervention"].Should().Be(true);
+    }
 }

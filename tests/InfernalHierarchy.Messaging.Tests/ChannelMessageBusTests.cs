@@ -1,5 +1,6 @@
 using FluentAssertions;
 using InfernalHierarchy.Core.Entities;
+using InfernalHierarchy.Core.Interfaces;
 using InfernalHierarchy.Messaging.Bus;
 using Microsoft.Extensions.Logging;
 using Moq;
@@ -9,6 +10,32 @@ namespace InfernalHierarchy.Messaging.Tests;
 
 public class ChannelMessageBusTests
 {
+    private sealed class InMemoryFailedOperationStoreForTests : IFailedOperationStore
+    {
+        public List<FailedOperationRecord> Records { get; } = new();
+
+        public Task RecordAsync(FailedOperationRecord record, CancellationToken ct = default)
+        {
+            Records.Add(record);
+            return Task.CompletedTask;
+        }
+
+        public Task<IReadOnlyList<FailedOperationRecord>> GetRecentAsync(int limit, bool pendingOnly, CancellationToken ct = default)
+            => Task.FromResult<IReadOnlyList<FailedOperationRecord>>(Records);
+
+        public Task<FailedOperationRecord?> GetByIdAsync(string id, CancellationToken ct = default)
+            => Task.FromResult<FailedOperationRecord?>(Records.FirstOrDefault(r => r.Id == id));
+
+        public Task<FailedOperationRecord?> TryStartReplayAsync(string id, string requestedBy, CancellationToken ct = default)
+            => Task.FromResult<FailedOperationRecord?>(null);
+
+        public Task MarkReplaySucceededAsync(string id, CancellationToken ct = default) => Task.CompletedTask;
+
+        public Task MarkReplayFailedAsync(string id, string reasonCode, string? error, CancellationToken ct = default) => Task.CompletedTask;
+
+        public FailedOperationStats GetStats() => new(Records.Count, Records.Count, 0, 0);
+    }
+
     private readonly ChannelMessageBus _messageBus;
 
     public ChannelMessageBusTests()
@@ -95,6 +122,83 @@ public class ChannelMessageBusTests
         // Assert
         receivedMessages.Should().HaveCount(1);
         receivedMessages[0].Type.Should().Be(MessageType.Broadcast);
+    }
+
+    [Fact]
+    public async Task SubscribeToBroadcastsAsync_ShouldFanOutToAllSubscribers_ExactlyOnce()
+    {
+        var subscriberOneCts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+        var subscriberTwoCts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+
+        var subscriberOne = new List<AgentMessage>();
+        var subscriberTwo = new List<AgentMessage>();
+
+        var subscriberOneReady = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var subscriberTwoReady = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var subscriberOneTask = Task.Run(async () =>
+        {
+            try
+            {
+                subscriberOneReady.TrySetResult(true);
+                await foreach (var msg in _messageBus.SubscribeToBroadcastsAsync(subscriberOneCts.Token))
+                {
+                    subscriberOne.Add(msg);
+                }
+            }
+            catch (OperationCanceledException)
+            {
+            }
+        });
+
+        var subscriberTwoTask = Task.Run(async () =>
+        {
+            try
+            {
+                subscriberTwoReady.TrySetResult(true);
+                await foreach (var msg in _messageBus.SubscribeToBroadcastsAsync(subscriberTwoCts.Token))
+                {
+                    subscriberTwo.Add(msg);
+                }
+            }
+            catch (OperationCanceledException)
+            {
+            }
+        });
+
+        await Task.WhenAll(subscriberOneReady.Task, subscriberTwoReady.Task);
+        await Task.Delay(100);
+
+        var b1 = new AgentMessage
+        {
+            Id = "broadcast-1",
+            FromAgentId = "system",
+            ToAgentId = null,
+            Type = MessageType.Broadcast,
+            Content = "B1"
+        };
+
+        var b2 = new AgentMessage
+        {
+            Id = "broadcast-2",
+            FromAgentId = "system",
+            ToAgentId = null,
+            Type = MessageType.Broadcast,
+            Content = "B2"
+        };
+
+        await _messageBus.PublishAsync(b1);
+        await _messageBus.PublishAsync(b2);
+
+        await Task.Delay(150);
+        subscriberOneCts.Cancel();
+        subscriberTwoCts.Cancel();
+        await Task.WhenAll(subscriberOneTask, subscriberTwoTask);
+
+        subscriberOne.Select(m => m.Id).Should().BeEquivalentTo(new[] { "broadcast-1", "broadcast-2" });
+        subscriberTwo.Select(m => m.Id).Should().BeEquivalentTo(new[] { "broadcast-1", "broadcast-2" });
+        subscriberOne.Should().OnlyHaveUniqueItems(m => m.Id);
+        subscriberTwo.Should().OnlyHaveUniqueItems(m => m.Id);
     }
 
     [Fact]
@@ -215,8 +319,20 @@ public class ChannelMessageBusTests
             }
         }, cts.Token);
 
-        await Task.Delay(50, cts.Token); // Let subscription setup and channel be created
-        _messageBus.ActiveChannelCount.Should().Be(1);
+        // Let subscription setup and channel be created (can be racy on loaded CI agents).
+        var started = false;
+        for (var i = 0; i < 40; i++)
+        {
+            if (_messageBus.ActiveChannelCount == 1)
+            {
+                started = true;
+                break;
+            }
+
+            await Task.Delay(25, cts.Token);
+        }
+
+        started.Should().BeTrue("subscription should create an agent channel before cleanup assertions");
 
         // Act
         await _messageBus.PublishAsync(new AgentMessage
@@ -296,5 +412,76 @@ public class ChannelMessageBusTests
         }
 
         received.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task PublishAsync_WithRejectPolicy_ShouldRejectWhenQueueIsFull()
+    {
+        var failedStore = new InMemoryFailedOperationStoreForTests();
+        var bus = new ChannelMessageBus(
+            Mock.Of<ILogger<ChannelMessageBus>>(),
+            queueCapacity: 1,
+            overflowPolicy: Core.Configuration.MessageQueueOverflowPolicy.Reject,
+            failedOperations: failedStore);
+
+        await bus.PublishAsync(new AgentMessage
+        {
+            FromAgentId = "sender",
+            ToAgentId = "agent-overflow",
+            Type = MessageType.Task,
+            Content = "first"
+        });
+
+        var act = async () => await bus.PublishAsync(new AgentMessage
+        {
+            FromAgentId = "sender",
+            ToAgentId = "agent-overflow",
+            Type = MessageType.Task,
+            Content = "second"
+        });
+
+        await act.Should().ThrowAsync<InvalidOperationException>();
+        bus.RejectedMessages.Should().Be(1);
+        bus.TargetedQueueDepth.Should().Be(1);
+        failedStore.Records.Should().ContainSingle(r =>
+            r.Kind == FailedOperationKind.MessagePublish &&
+            r.ReasonCode == "queue_reject");
+    }
+
+    [Fact]
+    public async Task PublishAsync_WithDropOldestPolicy_ShouldKeepNewestMessage()
+    {
+        var bus = new ChannelMessageBus(
+            Mock.Of<ILogger<ChannelMessageBus>>(),
+            queueCapacity: 1,
+            overflowPolicy: Core.Configuration.MessageQueueOverflowPolicy.DropOldest);
+
+        await bus.PublishAsync(new AgentMessage
+        {
+            Id = "m1",
+            FromAgentId = "sender",
+            ToAgentId = "agent-drop",
+            Type = MessageType.Task,
+            Content = "old"
+        });
+
+        await bus.PublishAsync(new AgentMessage
+        {
+            Id = "m2",
+            FromAgentId = "sender",
+            ToAgentId = "agent-drop",
+            Type = MessageType.Task,
+            Content = "new"
+        });
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+        await foreach (var msg in bus.SubscribeAsync("agent-drop", cts.Token))
+        {
+            msg.Id.Should().Be("m2");
+            break;
+        }
+
+        bus.DroppedMessages.Should().BeGreaterOrEqualTo(1);
+        bus.TargetedQueueDepth.Should().Be(0);
     }
 }

@@ -236,6 +236,13 @@ public class ToolAuthorizationService : IToolAuthorizationService
                 WhitelistedAgents = new(),
                 BlacklistedAgents = new()
             },
+            ["request_skill_pack"] = new()
+            {
+                Enabled = true,
+                AllowedRanks = new() { AgentRank.Supreme, AgentRank.Prince, AgentRank.Duke },
+                WhitelistedAgents = new(),
+                BlacklistedAgents = new()
+            },
             ["create_agent_from_template"] = new()
             {
                 Enabled = true,
@@ -261,6 +268,20 @@ public class ToolAuthorizationService : IToolAuthorizationService
             {
                 Enabled = true,
                 AllowedRanks = new() { AgentRank.Supreme, AgentRank.Prince, AgentRank.Duke },
+                WhitelistedAgents = new(),
+                BlacklistedAgents = new()
+            },
+            ["custom_tool_list"] = new()
+            {
+                Enabled = true,
+                AllowedRanks = new() { AgentRank.Supreme, AgentRank.Prince, AgentRank.Duke },
+                WhitelistedAgents = new(),
+                BlacklistedAgents = new()
+            },
+            ["custom_tool_delete"] = new()
+            {
+                Enabled = true,
+                AllowedRanks = new() { AgentRank.Supreme, AgentRank.Prince },
                 WhitelistedAgents = new(),
                 BlacklistedAgents = new()
             },
@@ -314,6 +335,20 @@ public class ToolAuthorizationService : IToolAuthorizationService
                 BlacklistedAgents = new()
             },
             ["http_request"] = new()
+            {
+                Enabled = false,
+                AllowedRanks = new() { AgentRank.Supreme, AgentRank.Prince, AgentRank.Duke },
+                WhitelistedAgents = new(),
+                BlacklistedAgents = new()
+            },
+            ["graphql_request"] = new()
+            {
+                Enabled = false,
+                AllowedRanks = new() { AgentRank.Supreme, AgentRank.Prince, AgentRank.Duke },
+                WhitelistedAgents = new(),
+                BlacklistedAgents = new()
+            },
+            ["sql_query_readonly"] = new()
             {
                 Enabled = false,
                 AllowedRanks = new() { AgentRank.Supreme, AgentRank.Prince, AgentRank.Duke },

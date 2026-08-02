@@ -40,6 +40,7 @@ public sealed class AgentStatusChangeProjectionServiceTests
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
         await sut.StartAsync(cts.Token);
+        await Task.Delay(100, cts.Token);
 
         await bus.PublishAsync(new AgentMessage
         {

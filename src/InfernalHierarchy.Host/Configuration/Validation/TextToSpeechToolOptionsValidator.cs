@@ -12,7 +12,13 @@ public sealed class TextToSpeechToolOptionsValidator : IValidateOptions<TextToSp
 
         var failures = new List<string>();
 
-        if (options.UsePiperNet)
+        if (options.UseSidecar)
+        {
+            if (options.SidecarBaseUrl is null || !options.SidecarBaseUrl.IsAbsoluteUri) failures.Add("TextToSpeech:SidecarBaseUrl must be an absolute URI when UseSidecar=true");
+            if (options.SidecarTimeoutMs <= 0) failures.Add("TextToSpeech:SidecarTimeoutMs must be > 0 when UseSidecar=true");
+            if (string.IsNullOrWhiteSpace(options.SidecarSpeakPath)) failures.Add("TextToSpeech:SidecarSpeakPath is required when UseSidecar=true");
+        }
+        else if (options.UsePiperNet)
         {
             if (string.IsNullOrWhiteSpace(options.PiperVoicePath)) failures.Add("TextToSpeech:PiperVoicePath is required when TextToSpeech:UsePiperNet=true");
         }

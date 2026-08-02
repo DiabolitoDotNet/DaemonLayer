@@ -228,4 +228,24 @@ public class CollaborationResult
     /// Gets or sets winning response (if applicable)
     /// </summary>
     public AgentResponse? WinningResponse { get; set; }
+
+    /// <summary>
+    /// Optional conflict classification (e.g. none, tie, low_confidence, unresolved).
+    /// </summary>
+    public string ConflictClass { get; set; } = "none";
+
+    /// <summary>
+    /// Optional structured reason code for conflict handling.
+    /// </summary>
+    public string ConflictReasonCode { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Suggested next action for orchestrator/supervisor.
+    /// </summary>
+    public string NextAction { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Indicates whether supervisor intervention is recommended.
+    /// </summary>
+    public bool NeedsSupervisorIntervention { get; set; }
 }

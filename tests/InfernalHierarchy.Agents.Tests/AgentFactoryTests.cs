@@ -160,4 +160,62 @@ public class AgentFactoryTests
 
         await act.Should().NotThrowAsync();
     }
+
+    [Fact]
+    public async Task CreateAgentAsync_ShouldApplyBaseSkillPacks_WhenPolicyAndCatalogAreProvided()
+    {
+        var persona = new Persona
+        {
+            Name = "Vassago",
+            DemonTitle = "The Revealer",
+            SystemPrompt = "You are Vassago",
+            AvailableTools = new[] { "read_memory" },
+            Specializations = new[] { "Analysis" }
+        };
+
+        _mockPersonaLoader.Setup(x => x.LoadPersonaAsync("Vassago", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(persona);
+
+        var catalog = new Mock<ISkillPackCatalog>();
+        catalog.Setup(x => x.GetByIdAsync("implementation-engineering", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new SkillPack
+            {
+                Id = "implementation-engineering",
+                Enabled = true,
+                AllowedRanks = new[] { "Duke" },
+                AdditionalTools = new[] { "web_search" },
+                AdditionalSpecializations = new[] { "Code implementation" },
+                PromptFragments = new[] { "Always verify with tests." }
+            });
+
+        var policy = new Mock<IAgentSkillAssignmentPolicy>();
+        policy.Setup(x => x.SelectInitialSkillPackIdsAsync(
+                It.IsAny<Persona>(),
+                AgentRank.Duke,
+                It.IsAny<string?>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new[] { "implementation-engineering" });
+
+        var factory = new AgentFactory(
+            _mockPersonaLoader.Object,
+            _mockMessageBus.Object,
+            _mockSharedMemory.Object,
+            _mockToolRegistry.Object,
+            _mockRegistry.Object,
+            _ollamaClient,
+            _mockLogger.Object,
+            _mockLoggerFactory.Object,
+            eventSink: null,
+            critiqueOptions: null,
+            skillPackCatalog: catalog.Object,
+            skillAssignmentPolicy: policy.Object);
+
+        var agent = await factory.CreateAgentAsync("Vassago", AgentRank.Duke);
+
+        agent.Persona.AvailableTools.Should().Contain("read_memory");
+        agent.Persona.AvailableTools.Should().Contain("web_search");
+        agent.Persona.Specializations.Should().Contain("Code implementation");
+        agent.Persona.CustomInstructions.Should().ContainKey("assigned_skill_packs");
+        agent.Persona.SystemPrompt.Should().Contain("Skill Pack Guidance");
+    }
 }

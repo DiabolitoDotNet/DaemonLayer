@@ -46,6 +46,23 @@ public sealed class OllamaOptionsValidator : IValidateOptions<OllamaOptions>
                 options.Temperature);
         }
 
+        if (options.EnableModelRoutingPolicy)
+        {
+            for (var i = 0; i < options.ModelRoutes.Count; i++)
+            {
+                var route = options.ModelRoutes[i];
+                if (string.IsNullOrWhiteSpace(route.Model))
+                {
+                    errors.Add($"Ollama:ModelRoutes[{i}]:Model is required when routing is enabled");
+                }
+
+                if (route.MaxLatencyMs < 0)
+                {
+                    errors.Add($"Ollama:ModelRoutes[{i}]:MaxLatencyMs must be >= 0");
+                }
+            }
+        }
+
         return errors.Count == 0 ? ValidateOptionsResult.Success : ValidateOptionsResult.Fail(errors);
     }
 }

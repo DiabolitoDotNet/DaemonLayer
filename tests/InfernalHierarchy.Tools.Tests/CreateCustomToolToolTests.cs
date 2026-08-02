@@ -260,6 +260,28 @@ public sealed class CreateCustomToolToolTests
 
         public Task<IReadOnlyList<CustomToolDefinition>> GetAllAsync(CancellationToken ct = default)
             => Task.FromResult<IReadOnlyList<CustomToolDefinition>>(_byId.Values.ToList());
+
+        public Task<bool> DeleteByIdAsync(string id, CancellationToken ct = default)
+        {
+            if (!_byId.Remove(id, out var removed))
+            {
+                return Task.FromResult(false);
+            }
+
+            _idByName.Remove(removed.ToolName);
+            return Task.FromResult(true);
+        }
+
+        public Task<bool> DeleteByNameAsync(string toolName, CancellationToken ct = default)
+        {
+            if (!_idByName.TryGetValue(toolName, out var id))
+            {
+                return Task.FromResult(false);
+            }
+
+            _idByName.Remove(toolName);
+            return Task.FromResult(_byId.Remove(id));
+        }
     }
 
     private sealed class TestOptionsMonitor<T> : Microsoft.Extensions.Options.IOptionsMonitor<T>

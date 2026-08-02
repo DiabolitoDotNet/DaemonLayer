@@ -23,6 +23,7 @@ public sealed record ReActTaskProcessorContext(
     RagOptions RagOptions,
     IVectorMemory? VectorMemory,
     IAgentCollaborationService? CollaborationService,
+    IAgentSkillRuntimeStore? RuntimeSkillStore,
     IAgentEventSink? EventSink,
     Action<AgentStatus> SetStatus,
     Func<AgentMessage, CancellationToken, Task<string>> BuildBaseContextAsync,

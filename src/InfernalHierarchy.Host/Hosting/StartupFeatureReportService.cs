@@ -13,6 +13,7 @@ internal sealed class StartupFeatureReportService : IHostedService
     private readonly IOptions<ToolMarketplaceOptions> _toolMarketplaceOptions;
     private readonly IOptions<ToolResultCacheOptions> _toolCacheOptions;
     private readonly IOptions<OpenTelemetryExportOptions> _openTelemetryOptions;
+    private readonly IOptions<OperatorApiOptions> _operatorApiOptions;
     private readonly ILogger<StartupFeatureReportService> _logger;
 
     public StartupFeatureReportService(
@@ -27,6 +28,7 @@ internal sealed class StartupFeatureReportService : IHostedService
         IOptions<ToolMarketplaceOptions> toolMarketplaceOptions,
         IOptions<ToolResultCacheOptions> toolCacheOptions,
         IOptions<OpenTelemetryExportOptions> openTelemetryOptions,
+        IOptions<OperatorApiOptions> operatorApiOptions,
         ILogger<StartupFeatureReportService> logger)
     {
         _httpOptions = httpOptions;
@@ -40,6 +42,7 @@ internal sealed class StartupFeatureReportService : IHostedService
         _toolMarketplaceOptions = toolMarketplaceOptions;
         _toolCacheOptions = toolCacheOptions;
         _openTelemetryOptions = openTelemetryOptions;
+        _operatorApiOptions = operatorApiOptions;
         _logger = logger;
     }
 
@@ -56,6 +59,7 @@ internal sealed class StartupFeatureReportService : IHostedService
         var toolMarketplace = _toolMarketplaceOptions.Value;
         var toolCache = _toolCacheOptions.Value;
         var openTelemetry = _openTelemetryOptions.Value;
+        var operatorApi = _operatorApiOptions.Value;
 
         _logger.LogInformation(
             "Startup features | http={HttpEnabled} urls={HttpUrls} ui={UiEnabled} ws={WebSocketsEnabled} voice={VoiceEnabled} voice_copilot={VoiceCopilotEnabled} vector_memory={VectorMemoryEnabled} memory_pruning={MemoryPruningEnabled} memory_learning={MemoryLearningEnabled} tool_marketplace={ToolMarketplaceEnabled} tool_cache={ToolCacheEnabled} tool_cache_clear_on_startup={ToolCacheClearOnStartup} otel_console={OtelConsoleEnabled} otel_otlp={OtelOtlpEnabled}",
@@ -74,8 +78,66 @@ internal sealed class StartupFeatureReportService : IHostedService
             openTelemetry.Console.Enabled,
             openTelemetry.Otlp.Enabled);
 
+        if (http.Enabled
+            && IsPublicBinding(http.Urls)
+            && (!ui.LocalOnly || !webSockets.LocalOnly)
+            && string.IsNullOrWhiteSpace(operatorApi.ApiKey))
+        {
+            _logger.LogWarning(
+                "⚠️ Public HTTP binding detected with non-local operational endpoints and no OperatorApi:ApiKey. Set OperatorApi:ApiKey or re-enable local-only protections.");
+        }
+
+        if (!vectorMemory.Enabled)
+        {
+            _logger.LogWarning("Vector memory is disabled; configured Qdrant settings are inert until VectorMemoryOptions:Enabled=true.");
+        }
+
+        if (!toolCache.Enabled && toolCache.ClearOnStartup)
+        {
+            _logger.LogWarning("Tool cache clear-on-startup is enabled while the tool cache itself is disabled; ClearOnStartup is inert.");
+        }
+
+        if (!voice.Enabled && voiceCopilot.Enabled)
+        {
+            _logger.LogWarning("VoiceCopilot is enabled while Voice is disabled; voice copilot runtime behavior is inert until Voice:Enabled=true.");
+        }
+
+        if (!memoryLearning.Enabled)
+        {
+            _logger.LogWarning("Memory learning is disabled; learning-related configuration will not take effect until MemoryLearningOptions:Enabled=true.");
+        }
+
         return Task.CompletedTask;
     }
 
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+    private static bool IsPublicBinding(string urls)
+    {
+        if (string.IsNullOrWhiteSpace(urls))
+        {
+            return false;
+        }
+
+        var parts = urls.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        foreach (var part in parts)
+        {
+            if (!Uri.TryCreate(part, UriKind.Absolute, out var uri))
+            {
+                continue;
+            }
+
+            var host = uri.Host;
+            if (host.Equals("localhost", StringComparison.OrdinalIgnoreCase)
+                || host.Equals("127.0.0.1", StringComparison.OrdinalIgnoreCase)
+                || host.Equals("::1", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            return true;
+        }
+
+        return false;
+    }
 }

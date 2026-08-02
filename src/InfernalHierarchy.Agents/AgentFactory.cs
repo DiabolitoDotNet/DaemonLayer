@@ -28,6 +28,9 @@ public class AgentFactory : IAgentFactory
     private readonly MultiModelLlmClient? _multiModelLlmClient;
     private readonly IAgentCollaborationService? _collaborationService;
     private readonly IAgentQuotaService? _agentQuotaService;
+    private readonly ISkillPackCatalog? _skillPackCatalog;
+    private readonly IAgentSkillAssignmentPolicy? _skillAssignmentPolicy;
+    private readonly IAgentSkillRuntimeStore? _skillRuntimeStore;
     private readonly IActionParser? _actionParser;
     private readonly IActionInputParser? _actionInputParser;
     private readonly IActionExecutor? _actionExecutor;
@@ -61,7 +64,10 @@ public class AgentFactory : IAgentFactory
         MultiModelLlmClient? multiModelLlmClient = null,
         IAgentCollaborationService? collaborationService = null,
         IAgentQuotaService? agentQuotaService = null,
-        IReActTaskProcessor? taskProcessor = null)
+        IReActTaskProcessor? taskProcessor = null,
+        ISkillPackCatalog? skillPackCatalog = null,
+        IAgentSkillAssignmentPolicy? skillAssignmentPolicy = null,
+        IAgentSkillRuntimeStore? skillRuntimeStore = null)
         : this(
             personaLoader,
             messageBus,
@@ -81,8 +87,11 @@ public class AgentFactory : IAgentFactory
             tokenUsageTracker,
             multiModelLlmClient,
             collaborationService,
-                agentQuotaService,
-            taskProcessor)
+            agentQuotaService,
+            taskProcessor,
+            skillPackCatalog,
+            skillAssignmentPolicy,
+            skillRuntimeStore)
     {
         _vectorMemory = vectorMemory;
         _ragOptions = ragOptions.Value;
@@ -122,7 +131,10 @@ public class AgentFactory : IAgentFactory
         ILogger<AgentFactory> logger,
         ILoggerFactory loggerFactory,
         IAgentEventSink? eventSink,
-        IOptions<CritiqueOptions>? critiqueOptions = null)
+        IOptions<CritiqueOptions>? critiqueOptions = null,
+        ISkillPackCatalog? skillPackCatalog = null,
+        IAgentSkillAssignmentPolicy? skillAssignmentPolicy = null,
+        IAgentSkillRuntimeStore? skillRuntimeStore = null)
     {
         _personaLoader = personaLoader;
         _messageBus = messageBus;
@@ -148,6 +160,9 @@ public class AgentFactory : IAgentFactory
         _promptBuilder = null;
         _loopRunner = null;
         _taskProcessor = null;
+        _skillPackCatalog = skillPackCatalog;
+        _skillAssignmentPolicy = skillAssignmentPolicy;
+        _skillRuntimeStore = skillRuntimeStore;
     }
 
     public AgentFactory(
@@ -170,7 +185,10 @@ public class AgentFactory : IAgentFactory
         MultiModelLlmClient? multiModelLlmClient,
         IAgentCollaborationService? collaborationService,
         IAgentQuotaService? agentQuotaService,
-        IReActTaskProcessor? taskProcessor)
+        IReActTaskProcessor? taskProcessor,
+        ISkillPackCatalog? skillPackCatalog,
+        IAgentSkillAssignmentPolicy? skillAssignmentPolicy,
+        IAgentSkillRuntimeStore? skillRuntimeStore)
         : this(
             personaLoader,
             messageBus,
@@ -193,6 +211,9 @@ public class AgentFactory : IAgentFactory
         _collaborationService = collaborationService;
         _agentQuotaService = agentQuotaService;
         _taskProcessor = taskProcessor;
+        _skillPackCatalog = skillPackCatalog;
+        _skillAssignmentPolicy = skillAssignmentPolicy;
+        _skillRuntimeStore = skillRuntimeStore;
     }
 
     public async Task<IAgent> CreateAgentAsync(string personaName, AgentRank rank, string? parentId = null, CancellationToken ct = default)
@@ -213,7 +234,7 @@ public class AgentFactory : IAgentFactory
         return await CreateAgentAsync(persona, rank, parentId, personaPath: $"souls/{personaKey}.json", ct);
     }
 
-    public Task<IAgent> CreateAgentAsync(Persona persona, AgentRank rank, string? parentId = null, string? personaPath = null, CancellationToken ct = default)
+    public async Task<IAgent> CreateAgentAsync(Persona persona, AgentRank rank, string? parentId = null, string? personaPath = null, CancellationToken ct = default)
     {
         if (persona == null) throw new ArgumentNullException(nameof(persona));
 
@@ -224,12 +245,14 @@ public class AgentFactory : IAgentFactory
 
         _logger.LogInformation("🔨 Creating agent from dynamic persona: {PersonaName} with rank {Rank} (PersonaPath={PersonaPath})", persona.Name, rank, resolvedPersonaPath);
 
-        return Task.FromResult(CreateAgentFromPersona(persona, personaKey, rank, parentId, resolvedPersonaPath));
+        return await CreateAgentFromPersonaAsync(persona, personaKey, rank, parentId, resolvedPersonaPath, ct);
     }
 
-    private IAgent CreateAgentFromPersona(Persona persona, string personaKey, AgentRank rank, string? parentId, string? personaPathOverride = null)
+    private async Task<IAgent> CreateAgentFromPersonaAsync(Persona persona, string personaKey, AgentRank rank, string? parentId, string? personaPathOverride = null, CancellationToken ct = default)
     {
         _agentQuotaService?.EnsureCanCreateAgent(rank);
+
+        var effectivePersona = await ApplyBaseSkillPacksAsync(persona, rank, parentId, ct);
 
         // Telegram routes messages to the main agent using a stable id ("lucifer").
         // Keep this id stable to preserve routing and avoid orphaned channels.
@@ -251,7 +274,7 @@ public class AgentFactory : IAgentFactory
 
         var agent = new ReActAgent(
             agentEntity,
-            persona,
+            effectivePersona,
             _messageBus,
             _sharedMemory,
             _toolRegistry,
@@ -272,7 +295,8 @@ public class AgentFactory : IAgentFactory
             _reportGenerator,
             _promptBuilder,
             _loopRunner,
-            _taskProcessor);
+            _taskProcessor,
+            runtimeSkillStore: _skillRuntimeStore);
 
         TryAppendAgentEvent(
             agentEntity.Id,
@@ -283,11 +307,104 @@ public class AgentFactory : IAgentFactory
                 ["name"] = agentEntity.Name,
                 ["rank"] = agentEntity.Rank.ToString(),
                 ["parent_agent_id"] = agentEntity.ParentAgentId ?? string.Empty,
-                ["persona_path"] = agentEntity.PersonaPath
+                ["persona_path"] = agentEntity.PersonaPath,
+                ["assigned_skill_packs"] = effectivePersona.CustomInstructions.TryGetValue("assigned_skill_packs", out var assigned)
+                    ? assigned
+                    : string.Empty
             });
 
         RegisterAgent(agent);
         return agent;
+    }
+
+    private async Task<Persona> ApplyBaseSkillPacksAsync(Persona persona, AgentRank rank, string? parentId, CancellationToken ct)
+    {
+        if (_skillAssignmentPolicy == null || _skillPackCatalog == null)
+        {
+            return persona;
+        }
+
+        var selectedPackIds = await _skillAssignmentPolicy.SelectInitialSkillPackIdsAsync(persona, rank, parentId, ct);
+        if (selectedPackIds.Count == 0)
+        {
+            return persona;
+        }
+
+        var tools = new HashSet<string>(persona.AvailableTools, StringComparer.OrdinalIgnoreCase);
+        var specializations = new HashSet<string>(persona.Specializations, StringComparer.OrdinalIgnoreCase);
+        var instructions = new Dictionary<string, string>(persona.CustomInstructions, StringComparer.OrdinalIgnoreCase);
+        var promptFragments = new List<string>();
+        var applied = new List<string>();
+
+        foreach (var packId in selectedPackIds)
+        {
+            var pack = await _skillPackCatalog.GetByIdAsync(packId, ct);
+            if (pack == null || !pack.Enabled)
+            {
+                continue;
+            }
+
+            if (pack.AllowedRanks.Count > 0 && !pack.AllowedRanks.Any(r => string.Equals(r, rank.ToString(), StringComparison.OrdinalIgnoreCase)))
+            {
+                continue;
+            }
+
+            foreach (var tool in pack.AdditionalTools)
+            {
+                if (!string.IsNullOrWhiteSpace(tool))
+                {
+                    tools.Add(tool.Trim());
+                }
+            }
+
+            foreach (var specialization in pack.AdditionalSpecializations)
+            {
+                if (!string.IsNullOrWhiteSpace(specialization))
+                {
+                    specializations.Add(specialization.Trim());
+                }
+            }
+
+            foreach (var kv in pack.CustomInstructions)
+            {
+                instructions[$"skill.{pack.Id}.{kv.Key}"] = kv.Value;
+            }
+
+            foreach (var fragment in pack.PromptFragments)
+            {
+                if (!string.IsNullOrWhiteSpace(fragment))
+                {
+                    promptFragments.Add(fragment.Trim());
+                }
+            }
+
+            applied.Add(pack.Id);
+        }
+
+        if (applied.Count == 0)
+        {
+            return persona;
+        }
+
+        instructions["assigned_skill_packs"] = string.Join(",", applied.Distinct(StringComparer.OrdinalIgnoreCase));
+
+        var mergedPrompt = persona.SystemPrompt;
+        if (promptFragments.Count > 0)
+        {
+            mergedPrompt = $"{persona.SystemPrompt}{Environment.NewLine}{Environment.NewLine}# Skill Pack Guidance{Environment.NewLine}- {string.Join(Environment.NewLine + "- ", promptFragments)}";
+        }
+
+        return new Persona
+        {
+            Name = persona.Name,
+            DemonTitle = persona.DemonTitle,
+            SystemPrompt = mergedPrompt,
+            ModelOverride = persona.ModelOverride,
+            Personality = persona.Personality,
+            AvailableTools = tools.OrderBy(t => t, StringComparer.OrdinalIgnoreCase).ToArray(),
+            Specializations = specializations.OrderBy(s => s, StringComparer.OrdinalIgnoreCase).ToArray(),
+            CustomInstructions = instructions
+        };
     }
 
     public IAgent? GetAgent(string agentId) => _registry.GetAgent(agentId);

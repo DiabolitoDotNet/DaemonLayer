@@ -46,6 +46,26 @@ internal static class UiInterface
             return Results.Text(DashboardAssets.IndexHtml, "text/html; charset=utf-8");
         });
 
+        app.MapGet("/ui/timeline", (HttpContext ctx) =>
+        {
+            if (!IsAllowed(ctx, uiOptions))
+            {
+                return Forbid();
+            }
+
+            return Results.Text(DashboardAssets.IndexHtml, "text/html; charset=utf-8");
+        });
+
+        app.MapGet("/ui/playground", (HttpContext ctx) =>
+        {
+            if (!IsAllowed(ctx, uiOptions))
+            {
+                return Forbid();
+            }
+
+            return Results.Text(DashboardAssets.IndexHtml, "text/html; charset=utf-8");
+        });
+
         app.MapGet("/ui/docs", (HttpContext ctx) =>
         {
             if (!IsAllowed(ctx, uiOptions))

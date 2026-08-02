@@ -1,0 +1,20 @@
+{
+  "id": "team-coordination",
+  "name": "Team Coordination",
+  "version": "1.0.0",
+  "description": "Coordination baseline for Prince-level agents managing specialist branches.",
+  "riskLevel": "Medium",
+  "enabled": true,
+  "priority": 20,
+  "tags": ["coordination", "delegation", "consensus"],
+  "allowedRanks": ["Prince"],
+  "additionalTools": ["request_collaboration", "request_skill_pack", "read_memory", "write_memory", "web_search"],
+  "additionalSpecializations": ["Parallel branch coordination", "Conflict mediation"],
+  "promptFragments": [
+    "Use structured checkpoints before concluding collaborative branches.",
+    "Capture dissent and confidence gaps explicitly."
+  ],
+  "customInstructions": {
+    "collaborationMode": "parallel-research-then-adjudicate"
+  }
+}

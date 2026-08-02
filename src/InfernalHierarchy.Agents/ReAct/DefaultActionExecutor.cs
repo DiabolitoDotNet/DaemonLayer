@@ -51,7 +51,8 @@ public sealed class DefaultActionExecutor : IActionExecutor
         }
 
         if (toolName.Contains("memory", StringComparison.OrdinalIgnoreCase) ||
-            toolName.Contains("agent", StringComparison.OrdinalIgnoreCase))
+            toolName.Contains("agent", StringComparison.OrdinalIgnoreCase) ||
+            toolName.Contains("skill", StringComparison.OrdinalIgnoreCase))
         {
             parameters["agent_id"] = context.AgentId;
             parameters["agent_rank"] = context.AgentRank;

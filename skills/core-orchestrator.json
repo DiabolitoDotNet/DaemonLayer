@@ -1,0 +1,21 @@
+{
+  "id": "core-orchestrator",
+  "name": "Core Orchestrator",
+  "version": "1.0.0",
+  "description": "Strategic orchestration baseline for top-level manager agents.",
+  "riskLevel": "Medium",
+  "enabled": true,
+  "priority": 10,
+  "tags": ["orchestration", "planning", "governance"],
+  "allowedRanks": ["Supreme"],
+  "additionalTools": ["request_collaboration", "request_skill_pack", "create_sub_agent", "read_memory", "write_memory"],
+  "additionalSpecializations": ["Multi-agent planning", "Risk arbitration"],
+  "promptFragments": [
+    "Prioritize task decomposition, role assignment, and explicit acceptance criteria.",
+    "Escalate high-risk or low-confidence decisions before irreversible actions."
+  ],
+  "customInstructions": {
+    "workflow": "Plan -> delegate -> verify -> synthesize",
+    "qualityGate": "Require explicit evidence links in final synthesis"
+  }
+}

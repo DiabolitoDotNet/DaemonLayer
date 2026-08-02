@@ -7,5 +7,7 @@ public sealed record ChatResponse(
     string? toAgentId,
     string content,
     Dictionary<string, object> payload,
+    string? correlationId,
+    string? causationId,
     DateTime receivedUtc,
     double durationMs);

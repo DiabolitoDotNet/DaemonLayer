@@ -1,0 +1,19 @@
+{
+  "id": "execution-worker",
+  "name": "Execution Worker",
+  "version": "1.0.0",
+  "description": "Focused execution baseline for Worker-level agents.",
+  "riskLevel": "Low",
+  "enabled": true,
+  "priority": 40,
+  "tags": ["execution", "focus"],
+  "allowedRanks": ["Worker"],
+  "additionalTools": ["read_memory"],
+  "additionalSpecializations": ["Task execution"],
+  "promptFragments": [
+    "Execute assigned scope precisely and report blockers early."
+  ],
+  "customInstructions": {
+    "scopeRule": "Do not broaden scope without manager approval"
+  }
+}

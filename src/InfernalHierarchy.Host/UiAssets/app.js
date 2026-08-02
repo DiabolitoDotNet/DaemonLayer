@@ -18,6 +18,8 @@ function wsUrl() {
 function currentPage() {
   const p = (location.pathname || '/ui').toLowerCase();
   if (p.endsWith('/ui/perf')) return 'perf';
+  if (p.endsWith('/ui/timeline')) return 'timeline';
+  if (p.endsWith('/ui/playground')) return 'playground';
   if (p.endsWith('/ui/personas')) return 'personas';
   if (p.endsWith('/ui/docs')) return 'docs';
   if (p.endsWith('/ui/migrate')) return 'migrate';
@@ -38,6 +40,8 @@ function setActiveNav() {
   const pages = {
     home: qs('page-home'),
     perf: qs('page-perf'),
+    timeline: qs('page-timeline'),
+    playground: qs('page-playground'),
     personas: qs('page-personas'),
     docs: qs('page-docs'),
     migrate: qs('page-migrate'),
@@ -1258,6 +1262,137 @@ async function downloadSelectedTrace() {
   }
 }
 
+// Timeline
+const timelineRefresh = qs('timelineRefresh');
+const timelineMinutes = qs('timelineMinutes');
+const timelineLimit = qs('timelineLimit');
+const timelineSummary = qs('timelineSummary');
+const timelineList = qs('timelineList');
+const timelineDetail = qs('timelineDetail');
+
+async function refreshTimeline() {
+  if (!timelineList) return;
+
+  const minutes = ((timelineMinutes && timelineMinutes.value) || '').trim();
+  const limit = ((timelineLimit && timelineLimit.value) || '').trim();
+  const qsItems = [];
+  if (minutes) qsItems.push(`minutes=${encodeURIComponent(minutes)}`);
+  if (limit) qsItems.push(`limit=${encodeURIComponent(limit)}`);
+  const query = qsItems.length > 0 ? `?${qsItems.join('&')}` : '';
+
+  timelineList.textContent = '';
+  if (timelineDetail) timelineDetail.textContent = '';
+
+  try {
+    const json = await fetch(`/api/perf/timeline${query}`).then(r => r.json());
+    const items = (json && json.items) ? json.items : [];
+    const summary = (json && json.summary) ? json.summary : null;
+
+    if (timelineSummary && summary) {
+      timelineSummary.textContent = `items=${summary.items || 0} reasoning=${summary.reasoning || 0} tool=${summary.tool || 0} task=${summary.task || 0}`;
+    }
+
+    if (!items || items.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'pill';
+      empty.textContent = 'No timeline items in selected window.';
+      timelineList.appendChild(empty);
+      return;
+    }
+
+    for (const it of items) {
+      const div = document.createElement('div');
+      div.className = 'listItem';
+      const ts = it.timestampUtc ? new Date(it.timestampUtc).toLocaleTimeString() : '--';
+      const tool = it.toolName ? ` | ${it.toolName}` : '';
+      div.innerHTML = `<span class="mono">${ts}</span> | <span class="mono">${it.agentId || '-'}</span> | ${it.kind || '-'} | ${it.label || '-'}${tool}`;
+      div.onclick = () => {
+        if (timelineDetail) timelineDetail.textContent = pretty(it);
+      };
+      timelineList.appendChild(div);
+    }
+  } catch (e) {
+    if (timelineDetail) timelineDetail.textContent = String(e);
+  }
+}
+
+if (timelineRefresh) timelineRefresh.onclick = refreshTimeline;
+
+// Playground
+const pgName = qs('pgName');
+const pgAgent = qs('pgAgent');
+const pgTimeout = qs('pgTimeout');
+const pgPrompt = qs('pgPrompt');
+const pgCreateRun = qs('pgCreateRun');
+const pgRefresh = qs('pgRefresh');
+const pgScenarios = qs('pgScenarios');
+const pgRuns = qs('pgRuns');
+
+async function refreshPlaygroundScenarios() {
+  if (!pgScenarios) return;
+  pgScenarios.textContent = '';
+
+  try {
+    const json = await fetch('/api/playground/scenarios?limit=100').then(r => r.json());
+    const items = (json && json.items) ? json.items : [];
+
+    if (!items || items.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'pill';
+      empty.textContent = 'No scenarios yet.';
+      pgScenarios.appendChild(empty);
+      return;
+    }
+
+    for (const s of items) {
+      const div = document.createElement('div');
+      div.className = 'listItem';
+      div.innerHTML = `<span class="mono">${s.scenarioId}</span> | ${s.name} | agent=${s.toAgentId}`;
+      div.onclick = async () => {
+        if (pgRuns) pgRuns.textContent = 'Loading runs...';
+        const runs = await fetch(`/api/playground/scenarios/${encodeURIComponent(s.scenarioId)}/runs?limit=20`).then(r => r.json());
+        if (pgRuns) pgRuns.textContent = pretty(runs);
+      };
+      pgScenarios.appendChild(div);
+    }
+  } catch (e) {
+    if (pgRuns) pgRuns.textContent = String(e);
+  }
+}
+
+async function createAndRunPlaygroundScenario() {
+  const name = ((pgName && pgName.value) || '').trim();
+  const prompt = ((pgPrompt && pgPrompt.value) || '').trim();
+  const toAgentId = ((pgAgent && pgAgent.value) || 'lucifer').trim();
+  const timeoutMsRaw = ((pgTimeout && pgTimeout.value) || '').trim();
+
+  if (!name || !prompt) {
+    if (pgRuns) pgRuns.textContent = 'Scenario name and prompt are required.';
+    return;
+  }
+
+  const timeoutMs = timeoutMsRaw ? parseInt(timeoutMsRaw, 10) : 180000;
+  if (pgRuns) pgRuns.textContent = 'Running scenario...';
+
+  const res = await fetch('/api/playground/scenarios', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ name, prompt, toAgentId, timeoutMs }),
+  });
+  const text = await res.text();
+
+  try {
+    if (pgRuns) pgRuns.textContent = pretty(JSON.parse(text));
+  } catch {
+    if (pgRuns) pgRuns.textContent = text;
+  }
+
+  await refreshPlaygroundScenarios();
+}
+
+if (pgRefresh) pgRefresh.onclick = refreshPlaygroundScenarios;
+if (pgCreateRun) pgCreateRun.onclick = createAndRunPlaygroundScenario;
+
 // Personas
 const personaRefresh = qs('personaRefresh');
 const personaName = qs('personaName');
@@ -1537,6 +1672,8 @@ if (migImport) migImport.onclick = importMigrationBundle;
 // boot
 setActiveNav();
 refreshSystem();
+if (currentPage() === 'timeline') refreshTimeline();
+if (currentPage() === 'playground') refreshPlaygroundScenarios();
 refreshPersonaList();
 refreshMigrationAgents();
 

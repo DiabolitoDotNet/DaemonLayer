@@ -1,5 +1,8 @@
 using LMSupply;
 using LMSupply.Synthesizer;
+using System.Collections.Concurrent;
+using System.Text;
+using System.Text.Json;
 
 namespace InfernalHierarchy.Tools.Tools.Voice;
 
@@ -7,24 +10,35 @@ public sealed class TextToSpeechTool : ITool, IAsyncDisposable
 {
     private readonly TextToSpeechToolOptions _options;
     private readonly IProcessRunner _runner;
+    private readonly IHttpClientFactory? _httpClientFactory;
     private readonly ILogger<TextToSpeechTool> _logger;
 
     private readonly SemaphoreSlim _piperInitLock = new(1, 1);
-    private ISynthesizerModel? _piperModel;
+    private readonly ConcurrentDictionary<string, ISynthesizerModel> _piperModels = new(StringComparer.OrdinalIgnoreCase);
 
     public TextToSpeechTool(
         IOptions<TextToSpeechToolOptions> options,
         IProcessRunner runner,
         ILogger<TextToSpeechTool> logger)
+        : this(options, runner, httpClientFactory: null, logger)
+    {
+    }
+
+    public TextToSpeechTool(
+        IOptions<TextToSpeechToolOptions> options,
+        IProcessRunner runner,
+        IHttpClientFactory? httpClientFactory,
+        ILogger<TextToSpeechTool> logger)
     {
         _options = options.Value;
         _runner = runner;
+        _httpClientFactory = httpClientFactory;
         _logger = logger;
     }
 
     public string Name => "tts_speak";
 
-    public string Description => "Synthesize speech to an audio file (local-first). Params: text.";
+    public string Description => "Synthesize speech to an audio file (local-first). Params: text, language (optional).";
 
     public async Task<ToolResult> ExecuteAsync(Dictionary<string, object> parameters, CancellationToken ct = default)
     {
@@ -54,10 +68,16 @@ public sealed class TextToSpeechTool : ITool, IAsyncDisposable
         }
 
         var outputPath = Path.Combine(root, $"tts_{Guid.NewGuid():N}{ext}");
+        var voiceSelection = TextToSpeechLanguageRouting.Resolve(_options, parameters, text);
+
+        if (_options.UseSidecar)
+        {
+            return await ExecuteWithSidecarAsync(text, voiceSelection.LanguageTag, outputPath, ct).ConfigureAwait(false);
+        }
 
         if (_options.UsePiperNet)
         {
-            if (string.IsNullOrWhiteSpace(_options.PiperVoicePath))
+            if (string.IsNullOrWhiteSpace(voiceSelection.PiperVoicePath))
             {
                 return Fail("TextToSpeech:PiperVoicePath is required when TextToSpeech:UsePiperNet=true");
             }
@@ -71,12 +91,16 @@ public sealed class TextToSpeechTool : ITool, IAsyncDisposable
 
             try
             {
-                var synthesizer = await GetOrCreatePiperSynthesizerAsync(threadCount, warmup: _options.PiperWarmupOnLoad, ct).ConfigureAwait(false);
+                var synthesizer = await GetOrCreatePiperSynthesizerAsync(
+                    voiceSelection.PiperVoicePath,
+                    threadCount,
+                    warmup: _options.PiperWarmupOnLoad,
+                    ct).ConfigureAwait(false);
 
                 var synthOptions = new SynthesizeOptions
                 {
                     OutputFormat = AudioFormat.Wav,
-                    SpeakerId = _options.PiperSpeakerId,
+                    SpeakerId = voiceSelection.SpeakerId,
                     Speed = speed
                 };
 
@@ -106,7 +130,10 @@ public sealed class TextToSpeechTool : ITool, IAsyncDisposable
                     {
                         ["output_path"] = outputPath,
                         ["provider"] = "piper_net",
-                        ["speaker_id"] = _options.PiperSpeakerId,
+                        ["speaker_id"] = voiceSelection.SpeakerId,
+                        ["voice_path"] = voiceSelection.PiperVoicePath,
+                        ["language"] = string.IsNullOrWhiteSpace(voiceSelection.LanguageTag) ? "auto" : voiceSelection.LanguageTag,
+                        ["language_auto_detected"] = voiceSelection.AutoDetectedLanguage,
                         ["speed"] = speed,
                         ["bytes"] = wavBytes.Length
                     }
@@ -123,7 +150,12 @@ public sealed class TextToSpeechTool : ITool, IAsyncDisposable
                     Success = false,
                     Output = string.Empty,
                     Error = $"Piper.Net TTS failed: {ex.Message}",
-                    Metadata = new Dictionary<string, object> { ["provider"] = "piper_net" }
+                    Metadata = new Dictionary<string, object>
+                    {
+                        ["provider"] = "piper_net",
+                        ["voice_path"] = voiceSelection.PiperVoicePath,
+                        ["language"] = string.IsNullOrWhiteSpace(voiceSelection.LanguageTag) ? "auto" : voiceSelection.LanguageTag
+                    }
                 };
             }
         }
@@ -186,6 +218,8 @@ public sealed class TextToSpeechTool : ITool, IAsyncDisposable
             Metadata = new Dictionary<string, object>
             {
                 ["output_path"] = outputPath,
+                ["language"] = string.IsNullOrWhiteSpace(voiceSelection.LanguageTag) ? "auto" : voiceSelection.LanguageTag,
+                ["language_auto_detected"] = voiceSelection.AutoDetectedLanguage,
                 ["duration_ms"] = (long)result.Duration.TotalMilliseconds,
                 ["truncated"] = result.Truncated
             }
@@ -226,9 +260,9 @@ public sealed class TextToSpeechTool : ITool, IAsyncDisposable
         }
     }
 
-    private async Task<ISynthesizerModel> GetOrCreatePiperSynthesizerAsync(int threadCount, CancellationToken ct)
+    private async Task<ISynthesizerModel> GetOrCreatePiperSynthesizerAsync(string voicePath, int threadCount, CancellationToken ct)
     {
-        return await GetOrCreatePiperSynthesizerAsync(threadCount, warmup: true, ct).ConfigureAwait(false);
+        return await GetOrCreatePiperSynthesizerAsync(voicePath, threadCount, warmup: true, ct).ConfigureAwait(false);
     }
 
     public async Task<bool> WarmupAsync(CancellationToken ct = default)
@@ -246,23 +280,29 @@ public sealed class TextToSpeechTool : ITool, IAsyncDisposable
         var threadCount = _options.PiperThreadCount;
         if (threadCount < 0) threadCount = 0;
 
-        await GetOrCreatePiperSynthesizerAsync(threadCount, warmup: true, ct).ConfigureAwait(false);
+        await GetOrCreatePiperSynthesizerAsync(_options.PiperVoicePath, threadCount, warmup: true, ct).ConfigureAwait(false);
+
+        if (_options.EnableLanguageVoiceSelection && !string.IsNullOrWhiteSpace(_options.FrenchPiperVoicePath))
+        {
+            await GetOrCreatePiperSynthesizerAsync(_options.FrenchPiperVoicePath, threadCount, warmup: true, ct).ConfigureAwait(false);
+        }
+
         return true;
     }
 
-    private async Task<ISynthesizerModel> GetOrCreatePiperSynthesizerAsync(int threadCount, bool warmup, CancellationToken ct)
+    private async Task<ISynthesizerModel> GetOrCreatePiperSynthesizerAsync(string voicePath, int threadCount, bool warmup, CancellationToken ct)
     {
-        if (_piperModel is not null)
+        if (_piperModels.TryGetValue(voicePath, out var existing))
         {
-            return _piperModel;
+            return existing;
         }
 
         await _piperInitLock.WaitAsync(ct).ConfigureAwait(false);
         try
         {
-            if (_piperModel is not null)
+            if (_piperModels.TryGetValue(voicePath, out existing))
             {
-                return _piperModel;
+                return existing;
             }
 
             var modelOptions = new SynthesizerOptions
@@ -271,14 +311,14 @@ public sealed class TextToSpeechTool : ITool, IAsyncDisposable
                 ThreadCount = threadCount == 0 ? Environment.ProcessorCount : threadCount
             };
 
-            _logger.LogInformation("🔊 Loading Piper.Net voice model: {VoicePath}", _options.PiperVoicePath);
-            _piperModel = await LocalSynthesizer.LoadAsync(_options.PiperVoicePath, modelOptions).ConfigureAwait(false);
+            _logger.LogInformation("🔊 Loading Piper.Net voice model: {VoicePath}", voicePath);
+            var model = await LocalSynthesizer.LoadAsync(voicePath, modelOptions).ConfigureAwait(false);
 
             if (warmup)
             {
                 try
                 {
-                    await _piperModel.WarmupAsync(ct).ConfigureAwait(false);
+                    await model.WarmupAsync(ct).ConfigureAwait(false);
                 }
                 catch (OperationCanceledException) when (ct.IsCancellationRequested)
                 {
@@ -290,7 +330,8 @@ public sealed class TextToSpeechTool : ITool, IAsyncDisposable
                 }
             }
 
-            return _piperModel;
+            _piperModels[voicePath] = model;
+            return model;
         }
         finally
         {
@@ -298,31 +339,98 @@ public sealed class TextToSpeechTool : ITool, IAsyncDisposable
         }
     }
 
-    private async Task DisposePiperModelAsync()
+    private async Task DisposePiperModelsAsync()
     {
-        var model = _piperModel;
-        _piperModel = null;
-        if (model is null)
+        if (_piperModels.IsEmpty)
         {
             return;
         }
 
-        try
+        foreach (var voicePath in _piperModels.Keys.ToArray())
         {
-            if (model is IAsyncDisposable asyncDisposable)
+            if (!_piperModels.TryRemove(voicePath, out var model))
             {
-                await asyncDisposable.DisposeAsync().ConfigureAwait(false);
-                return;
+                continue;
             }
 
-            if (model is IDisposable disposable)
+            try
             {
-                disposable.Dispose();
+                if (model is IAsyncDisposable asyncDisposable)
+                {
+                    await asyncDisposable.DisposeAsync().ConfigureAwait(false);
+                    continue;
+                }
+
+                if (model is IDisposable disposable)
+                {
+                    disposable.Dispose();
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to dispose Piper.Net model for {VoicePath}", voicePath);
             }
         }
-        catch (Exception ex)
+    }
+
+    private async Task DisposePiperModelAsync() => await DisposePiperModelsAsync().ConfigureAwait(false);
+
+    private async Task<ToolResult> ExecuteWithSidecarAsync(string text, string? language, string outputPath, CancellationToken ct)
+    {
+        if (_httpClientFactory is null)
         {
-            _logger.LogWarning(ex, "Failed to dispose Piper.Net model");
+            return Fail("Voice sidecar mode requires IHttpClientFactory");
         }
+
+        var endpoint = BuildSidecarEndpoint(_options.SidecarBaseUrl, _options.SidecarSpeakPath);
+        using var client = _httpClientFactory.CreateClient();
+        client.Timeout = TimeSpan.FromMilliseconds(_options.SidecarTimeoutMs > 0 ? _options.SidecarTimeoutMs : 120_000);
+
+        var payload = new Dictionary<string, object?>
+        {
+            ["text"] = text,
+            ["language"] = language
+        };
+
+        using var content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
+        using var response = await client.PostAsync(endpoint, content, ct).ConfigureAwait(false);
+        if (!response.IsSuccessStatusCode)
+        {
+            var err = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+            return Fail($"Sidecar TTS failed: {(int)response.StatusCode} {err}");
+        }
+
+        var bytes = await response.Content.ReadAsByteArrayAsync(ct).ConfigureAwait(false);
+        if (bytes.Length == 0)
+        {
+            return Fail("Sidecar TTS returned empty audio payload");
+        }
+
+        await File.WriteAllBytesAsync(outputPath, bytes, ct).ConfigureAwait(false);
+
+        return new ToolResult
+        {
+            Success = true,
+            Output = outputPath,
+            Metadata = new Dictionary<string, object>
+            {
+                ["output_path"] = outputPath,
+                ["provider"] = "voice_sidecar",
+                ["endpoint"] = endpoint.ToString(),
+                ["bytes"] = bytes.Length,
+                ["language"] = string.IsNullOrWhiteSpace(language) ? "auto" : language
+            }
+        };
+    }
+
+    private static Uri BuildSidecarEndpoint(Uri baseUrl, string path)
+    {
+        var trimmed = string.IsNullOrWhiteSpace(path) ? "/speak" : path.Trim();
+        if (Uri.TryCreate(trimmed, UriKind.Absolute, out var absolute))
+        {
+            return absolute;
+        }
+
+        return new Uri(baseUrl, trimmed.StartsWith('/') ? trimmed : "/" + trimmed);
     }
 }

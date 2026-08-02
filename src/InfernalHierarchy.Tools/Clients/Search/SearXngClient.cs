@@ -7,15 +7,18 @@ public sealed class SearXngClient : ISearXngClient
     private readonly HttpClient _httpClient;
     private readonly ILogger<SearXngClient> _logger;
     private readonly SearXNGOptions _options;
+    private readonly GlobalExceptionHandler? _exceptionHandler;
 
     public SearXngClient(
         HttpClient httpClient,
         IOptions<SearXNGOptions> options,
-        ILogger<SearXngClient> logger)
+        ILogger<SearXngClient> logger,
+        GlobalExceptionHandler? exceptionHandler = null)
     {
         _httpClient = httpClient;
         _options = options.Value;
         _logger = logger;
+        _exceptionHandler = exceptionHandler;
     }
 
     public async Task<WebSearchResponse> SearchAsync(string query, int count, CancellationToken ct = default)
@@ -25,9 +28,26 @@ public sealed class SearXngClient : ISearXngClient
             var baseUrl = _options.BaseUrl.ToString().TrimEnd('/');
             var url = $"{baseUrl}/search?q={Uri.EscapeDataString(query)}&format=json&language=en";
 
-            var response = await _httpClient.GetAsync(url, ct).ConfigureAwait(false);
+            var response = await ExecuteWithResilienceAsync(
+                async token =>
+                {
+                    var resp = await _httpClient.GetAsync(url, token).ConfigureAwait(false);
+                    if (!resp.IsSuccessStatusCode && IsTransientStatus(resp.StatusCode))
+                    {
+                        throw new HttpRequestException(
+                            $"SearXNG transient response {(int)resp.StatusCode} ({resp.StatusCode})",
+                            inner: null,
+                            statusCode: resp.StatusCode);
+                    }
+
+                    return resp;
+                },
+                operationName: "searxng_search",
+                ct).ConfigureAwait(false);
+
             if (!response.IsSuccessStatusCode)
             {
+
                 var body = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
                 _logger.LogWarning(
                     "SearXNG returned {StatusCode}. Body: {Body}",
@@ -64,6 +84,27 @@ public sealed class SearXngClient : ISearXngClient
             _logger.LogError(ex, "SearXNG search failed");
             return new WebSearchResponse(Array.Empty<WebSearchResultItem>(), ex.Message);
         }
+    }
+
+    private async Task<T> ExecuteWithResilienceAsync<T>(
+        Func<CancellationToken, Task<T>> operation,
+        string operationName,
+        CancellationToken ct)
+    {
+        if (_exceptionHandler is null)
+        {
+            return await operation(ct).ConfigureAwait(false);
+        }
+
+        return await _exceptionHandler
+            .ExecuteWithHandlingAsync(operation, operationName, maxRetries: 3, ct: ct)
+            .ConfigureAwait(false);
+    }
+
+    private static bool IsTransientStatus(System.Net.HttpStatusCode status)
+    {
+        var code = (int)status;
+        return code >= 500 || code == 429 || code == 408;
     }
 
     private sealed class SearXngResponse

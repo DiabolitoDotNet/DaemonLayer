@@ -1,6 +1,6 @@
 # InfernalHierarchy – Completed Work Log
 
-> **Last Updated:** February 13, 2026
+> **Last Updated:** August 1, 2026
 >
 > This file contains items/features that are **implemented / completed** and were moved out of `TODO.md` to keep the TODO list focused on remaining work.
 >
@@ -271,3 +271,71 @@
 - GraphQL API
 - CQRS
 - Saga pattern
+
+---
+
+## ✅ Roadmap Sync (Aug 1, 2026)
+
+The roadmap in `TODO.md` was synchronized so completed work is now tracked here.
+
+### P0-P2 Delivery Blocks Completed ✅
+- P0 correctness/safety: broadcast fan-out, queue/backpressure policy, non-local endpoint auth guard, runtime execution limits.
+- P1 production readiness: resilience policy wiring, dead-letter + replay budget, CI/release workflows, GraphQL status ADR.
+- P1 workflow/teamwork: quality script, test taxonomy, change-impact matrix, incident runbooks, skill catalog governance, collaboration artifact persistence, conflict protocol, ReAct checkpoints, collaboration templates.
+- P2 observability/hygiene: correlation/causation propagation, queue/supervisor/tool-timeout metrics, actionable readiness payloads, startup inert-config warnings, active feature matrix, SLOs and alert playbooks.
+
+### P3 Tools and Ecosystem (Implemented) ✅
+- GraphQL-first integration tooling and auth helpers:
+  - Added `graphql_request` tool with host allowlist, auth header helpers, read-only operation guardrails, and optional introspection blocking.
+  - Configured via `GraphQlTool` options and `ToolPermissions`.
+- Read-only SQL query tool with strict guardrails:
+  - Added `sql_query_readonly` tool with single-statement/read-only enforcement, forbidden keyword checks, row/cell limits, and allowlisted connection string policy.
+  - Configured via `SqlReadOnlyTool` options and `ToolPermissions`.
+- Custom tool management meta-tools:
+  - Added `custom_tool_list` and `custom_tool_delete` tools.
+  - Added runtime tool unregister support in `IToolRegistry` and persisted delete support in `ICustomToolStore`.
+
+### P3 Voice and UX (Incremental) ✅
+- French TTS quality improvements with language-specific voice selection:
+  - Added optional routing by language for `tts_speak` (`language` parameter + lightweight auto-detection for French text).
+  - Added French Piper overrides in `TextToSpeech` options (`FrenchPiperVoicePath`, `FrenchPiperSpeakerId`).
+  - Added per-voice Piper model caching/warmup support so default and French voices can both be preloaded and reused.
+
+### P3 LLM and Multimodal (Incremental) ✅
+- Model routing policy by task type and latency budget:
+  - Added routing policy options in Ollama config (`EnableModelRoutingPolicy`, `ModelRoutes`).
+  - Added routing capability contract (`IModelRoutingLlmClient`) with typed hint (`LlmRoutingHint`).
+  - Implemented policy-driven model selection in `OllamaClient` for both streaming and non-streaming calls.
+  - Wired Voice Copilot to pass task type + latency budget hints so low-latency voice replies can target faster models.
+
+### P3 Strategic Enhancements (Completed) ✅
+- Vision-model support for image-aware tasks:
+  - Added `IImageLlmClient` optional capability and Ollama multimodal request path.
+  - Added `vision_describe` tool with strict local-root/extension/size constraints and bounded outputs.
+  - Added `Vision` options + startup validation.
+- Voice sidecar mode:
+  - Added sidecar routing options to `VoiceTranscription` and `TextToSpeech`.
+  - Added optional HTTP delegation path in `audio_transcribe` and `tts_speak` while preserving local execution fallback.
+  - Added `voice_sidecar` health check for readiness diagnostics.
+- Agent playground:
+  - Added in-memory scenario/run store service (`AgentPlaygroundService`).
+  - Added operator APIs for create/list/run/replay (`/api/playground/*`).
+  - Added UI page `/ui/playground` for quick scenario simulation.
+- Reasoning/tool timeline debugging views:
+  - Added timeline API (`/api/perf/timeline`) merging task/tool/reasoning checkpoint signals.
+  - Emitted ReAct checkpoints into event stream for timeline continuity.
+  - Added UI page `/ui/timeline` to inspect timeline entries and metadata.
+- Plugin SDK for contributors:
+  - Added starter scaffold in `templates/plugin-sdk`.
+  - Added onboarding guide `Documentation/Plugin-SDK.md`.
+
+### Validation ✅
+- New targeted tests added and passing:
+  - `GraphQlRequestToolTests`
+  - `SqlReadOnlyQueryToolTests`
+  - `CustomToolManagementToolsTests`
+  - `TextToSpeechLanguageRoutingTests`
+  - `OllamaModelRoutingPolicyTests`
+  - `VisionDescribeToolTests`
+  - `VoiceAndVisionOptionsValidatorTests`
+- Impacted host/tool tests also pass with interface updates.

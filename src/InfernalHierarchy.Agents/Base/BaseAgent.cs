@@ -167,7 +167,9 @@ public abstract class BaseAgent : IAgent
                         FromAgentId = Id,
                         ToAgentId = message.FromAgentId,
                         Type = MessageType.Report,
-                        Content = $"❌ Error processing task: {ex.Message}"
+                        Content = $"❌ Error processing task: {ex.Message}",
+                        CorrelationId = message.CorrelationId ?? message.Id,
+                        CausationId = message.Id
                     };
 
                     try
@@ -239,7 +241,8 @@ public abstract class BaseAgent : IAgent
                 Type = MessageType.Notification,
                 Content = $"[{AgentStatusChangedEventName}] {Name} ({Rank}) {oldStatus} -> {newStatus}",
                 Payload = payload,
-                Timestamp = DateTime.UtcNow
+                Timestamp = DateTime.UtcNow,
+                CorrelationId = Guid.NewGuid().ToString("N")
             };
 
             await _messageBus.PublishAsync(message, ct).ConfigureAwait(false);

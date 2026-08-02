@@ -76,7 +76,8 @@ public class ReActAgent : BaseAgentImpl
         IReActLoopRunner? loopRunner = null,
         IReActTaskProcessor? taskProcessor = null,
         IRagContextEnricher? ragContextEnricher = null,
-        IAgentEventAppender? agentEventAppender = null)
+        IAgentEventAppender? agentEventAppender = null,
+        IAgentSkillRuntimeStore? runtimeSkillStore = null)
         : base(agent, persona, messageBus, sharedMemory, toolRegistry, logger)
     {
         _vectorMemory = vectorMemory;
@@ -115,6 +116,7 @@ public class ReActAgent : BaseAgentImpl
             RagOptions: _ragOptions,
             VectorMemory: _vectorMemory,
             CollaborationService: collaborationService,
+            RuntimeSkillStore: runtimeSkillStore,
             EventSink: eventSink,
             SetStatus: s => this.SetStatus(s, reason: "react"),
             BuildBaseContextAsync: (message, token) => base.BuildContextAsync(message, token),
@@ -302,7 +304,7 @@ public class ReActAgent : BaseAgentImpl
         {
             depth++;
             var parent = _agentFactory.GetAgent(currentParentId!);
-            if (parent is BaseAgent ba && !string.IsNullOrWhiteSpace(ba.ParentAgentId))
+            if (parent is BaseAgentImpl ba && !string.IsNullOrWhiteSpace(ba.ParentAgentId))
             {
                 currentParentId = ba.ParentAgentId;
                 continue;

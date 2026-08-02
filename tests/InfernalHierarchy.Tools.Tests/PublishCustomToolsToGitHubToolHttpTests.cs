@@ -106,6 +106,12 @@ public sealed class PublishCustomToolsToGitHubToolHttpTests
 
         public Task<IReadOnlyList<CustomToolDefinition>> GetAllAsync(CancellationToken ct = default)
             => Task.FromResult(_defs);
+
+        public Task<bool> DeleteByIdAsync(string id, CancellationToken ct = default)
+            => Task.FromResult(false);
+
+        public Task<bool> DeleteByNameAsync(string toolName, CancellationToken ct = default)
+            => Task.FromResult(false);
     }
 
     private sealed class FakeHttpClientFactory : IHttpClientFactory

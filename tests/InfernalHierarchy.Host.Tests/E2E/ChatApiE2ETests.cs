@@ -2,6 +2,7 @@ using System.Net.Http.Json;
 using FluentAssertions;
 using InfernalHierarchy.Core.Interfaces;
 using InfernalHierarchy.Host.Api;
+using InfernalHierarchy.Host.Security;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
@@ -15,6 +16,7 @@ public sealed class ChatApiE2ETests
     {
         using var factory = new InfernalHierarchyTestWebAppFactory();
         var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add(OperationalAuthGuard.HeaderName, "test-operator-key");
 
         var llm = factory.Services.GetRequiredService<ScriptedLlmClient>();
         llm.Enqueue("Lucifer",
@@ -33,6 +35,8 @@ public sealed class ChatApiE2ETests
         body.Should().NotBeNull();
         body!.fromAgentId.Should().Be("lucifer");
         body.content.Should().Contain("Hello from Lucifer");
+        body.correlationId.Should().NotBeNullOrWhiteSpace();
+        response.Headers.Should().Contain(h => h.Key == "X-Correlation-Id");
     }
 
     [Fact]
@@ -40,6 +44,7 @@ public sealed class ChatApiE2ETests
     {
         using var factory = new InfernalHierarchyTestWebAppFactory();
         var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add(OperationalAuthGuard.HeaderName, "test-operator-key");
 
         var llm = factory.Services.GetRequiredService<ScriptedLlmClient>();
         llm.Enqueue("Lucifer",
@@ -73,6 +78,7 @@ public sealed class ChatApiE2ETests
     {
         using var factory = new InfernalHierarchyTestWebAppFactory();
         var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add(OperationalAuthGuard.HeaderName, "test-operator-key");
 
         var llm = factory.Services.GetRequiredService<ScriptedLlmClient>();
 
@@ -111,6 +117,20 @@ public sealed class ChatApiE2ETests
         registry.GetAgentsByRank(InfernalHierarchy.Core.Entities.AgentRank.Duke)
             .Any(a => a.Name.Equals("Vassago", StringComparison.OrdinalIgnoreCase))
             .Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task ApiChat_WhenNonLocalWithoutOperatorKey_ReturnsUnauthorized()
+    {
+        using var factory = new InfernalHierarchyTestWebAppFactory();
+        var client = factory.CreateClient();
+
+        var response = await client.PostAsJsonAsync("/api/chat", new ChatRequest(
+            Message: "Say hello",
+            ToAgentId: "lucifer",
+            TimeoutMs: 10_000));
+
+        response.StatusCode.Should().Be(System.Net.HttpStatusCode.Unauthorized);
     }
 
     private static async Task WaitForAgentAsync(IServiceProvider services, string agentId)

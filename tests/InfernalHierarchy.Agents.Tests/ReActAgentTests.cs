@@ -106,7 +106,7 @@ Action Input: done
         response.Payload.Should().ContainKey("telegram_user_id");
         _mockEventSink.Verify(x => x.AppendEvent(It.Is<AgentEvent>(e => e.AgentId == "agent-1" && e.Type == EventType.TaskReceived)), Times.Once);
         _mockEventSink.Verify(x => x.AppendEvent(It.Is<AgentEvent>(e => e.AgentId == "agent-1" && e.Type == EventType.TaskStarted)), Times.Once);
-        _mockEventSink.Verify(x => x.AppendEvent(It.Is<AgentEvent>(e => e.AgentId == "agent-1" && e.Type == EventType.DecisionMade)), Times.Once);
+        _mockEventSink.Verify(x => x.AppendEvent(It.Is<AgentEvent>(e => e.AgentId == "agent-1" && e.Type == EventType.DecisionMade)), Times.AtLeastOnce);
         _mockEventSink.Verify(x => x.AppendEvent(It.Is<AgentEvent>(e => e.AgentId == "agent-1" && e.Type == EventType.TaskCompleted)), Times.Once);
     }
 

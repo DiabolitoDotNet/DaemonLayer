@@ -1,0 +1,15 @@
+{
+  "id": "hierarchical_risk_review",
+  "version": "1.0.0",
+  "description": "Use hierarchical review for high-risk operations where senior ranks can override.",
+  "strategy": "Hierarchical",
+  "minParticipants": 2,
+  "minConfidence": 0.7,
+  "participantRanks": ["prince", "duke", "worker"],
+  "includeThinking": false,
+  "workflow": [
+    "risk_collection",
+    "hierarchical_review",
+    "final_adjudication"
+  ]
+}

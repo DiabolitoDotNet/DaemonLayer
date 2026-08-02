@@ -17,6 +17,7 @@ Un système distribué d'agents LLM locaux fonctionnant avec Ollama, organisés 
 - ✅ **Interface** : Telegram Bot full-duplex
 - ✅ **Tools dynamiques** : web_search, create_sub_agent, memory, telegram
 - ✅ **Personas JSON** : Chargement dynamique des âmes démoniaques
+- ✅ **Skill Catalog JSON** : Packs de compétences réutilisables assignés par politique
 - ✅ **Supervision** : AgentSupervisor détecte les agents bloqués (replan) et peut préempter un sous-agent après replan si aucune progression
 - ✅ **.NET 10** : Dernière version avec performance optimisée
 
@@ -35,6 +36,7 @@ InfernalHierarchy/
 │   ├── InfernalHierarchy.Messaging/     # MessageBus (Channels)
 │   ├── InfernalHierarchy.Personas/      # Chargement des âmes (JSON)
 │   └── InfernalHierarchy.Telegram/      # Service Telegram Bot
+├── skills/                               # Skill packs JSON (catalogue réutilisable)
 ├── souls/                                # Personas JSON des agents
 └── InfernalHierarchy.sln
 ```
@@ -178,6 +180,35 @@ Les personas se trouvent dans `souls/*.json`. Structure :
 }
 ```
 
+### Skill Catalog et Gouvernance d'Assignation
+
+Les skill packs se trouvent dans `skills/*.json`.
+
+Modèle de gouvernance par défaut:
+
+- **Manager (Lucifer)** assigne la base persona + skill packs initiaux selon le rang.
+- **Agent** peut demander des skill packs temporaires pour une tâche.
+- **Policy service** approuve/refuse/escalade selon le rang et le niveau de risque.
+- **Autonomie complète**: les escalades de skills peuvent être auto-approuvées par l'agent principal (`lucifer`) sans validation humaine.
+
+Configuration associée dans `appsettings.json`:
+
+```json
+{
+  "SkillsCatalog": {
+    "DirectoryPath": "skills"
+  },
+  "AgentSkillAssignment": {
+    "Enabled": true,
+    "AutoAssignBaseSkills": true,
+    "AutoApproveEscalationsByMainAgent": true,
+    "MainAgentId": "lucifer",
+    "AllowSelfServiceSkillRequests": true,
+    "EscalateRiskLevelAtOrAbove": "High"
+  }
+}
+```
+
 ## 🛠️ Fonctionnalités Principales
 
 ### Outils Disponibles (Tools)
@@ -187,7 +218,22 @@ Les personas se trouvent dans `souls/*.json`. Structure :
 - **read_memory / write_memory** - Accès à la mémoire partagée LiteDB
 - **send_telegram** - Envoi de messages aux utilisateurs
 - **request_collaboration** - Collaboration multi-agents (consensus / vote pondéré)
+- **request_skill_pack** - Demande d'activation temporaire d'un skill pack (policy: approve / deny / escalate)
+- **graphql_request** - Requêtes GraphQL en mode sécurisé (allowlist hôtes + guardrails read-only)
+- **sql_query_readonly** - Requêtes SQL read-only avec garde-fous stricts (single statement + mots-clés interdits)
+- **custom_tool_list / custom_tool_delete** - Gestion des custom tools persistés (inventaire / suppression + unregister runtime)
+- **vision_describe** - Analyse d'images locales avec modèle multimodal (garde-fous chemin/extensions/taille)
 - **prompt_ab_test** - A/B testing de prompts (comparaison de variantes + rapport JSON)
+
+### Voice Sidecar + UI Opérateur
+
+- Mode sidecar optionnel pour `audio_transcribe` et `tts_speak` (délégation HTTP configurable, fallback local conservé).
+- Dashboard étendu avec pages `/ui/timeline` (raisonnement + outils) et `/ui/playground` (scénarios/replay agents).
+
+### Plugin SDK
+
+- Starter SDK pour contributeurs tiers: `templates/plugin-sdk`
+- Guide d'intégration: `Documentation/Plugin-SDK.md`
 
 ### Mémoire Partagée (LiteDB)
 
@@ -200,7 +246,125 @@ Trois collections principales :
 
 - **MessageBus** basé sur `System.Threading.Channels`
 - Messages typés (Task, Report, Query, Command, Notification)
-- Support broadcast et messages ciblés
+- Support broadcast fan-out (chaque abonné actif reçoit chaque broadcast une fois)
+- Files bornées configurables + politique d'overflow (`Block`, `DropOldest`, `Reject`)
+- Métriques exposées: profondeur des files ciblées/broadcast et compteurs drop/reject
+
+Exemple de configuration:
+
+```json
+{
+  "MessageBus": {
+    "QueueCapacity": 1000,
+    "OverflowPolicy": "Block"
+  }
+}
+```
+
+### Limites d'exécution Runtime
+
+- Les exécutions d'outils passent par une limite de concurrence + budget de timeout appliqués par `ResourceLimitService`.
+- En cas de dépassement, la réponse d'outil est explicite (`resource_limit_timeout=true`) et journalisée.
+- Les tests de charge valident l'absence de croissance non bornée de la concurrence d'exécution.
+
+### Résilience I/O externe
+
+- Les appels Ollama, recherche web (SearXNG/Brave) et `http_request` appliquent une stratégie retry/backoff pour erreurs transitoires.
+- Les envois email passent par un décorateur résilient (`ResilientEmailSender`) avec retry policy.
+- Les erreurs permanentes (ex: requêtes HTTP 4xx non transitoires, erreurs d'argument) ne sont pas retraitées inutilement.
+
+### Dead-letter et replay sécurisé
+
+- Les échecs de publication de messages (ex: overflow policy `Reject`) et les échecs d'exécution d'outils sont persistés dans un store dead-letter avec `reason_code`.
+- Chaque entrée dead-letter inclut un budget de replay (`RetryBudget`) et un compteur d'essais pour éviter les boucles infinies de relecture.
+- API opérateur:
+  - `GET /api/ops/deadletters` pour consulter les entrées et stats.
+  - `POST /api/ops/deadletters/{id}/replay` pour rejouer de manière contrôlée.
+- Métriques exposées:
+  - compteurs `deadletter.created.*`, `deadletter.replay.attempt`, `deadletter.replay.succeeded`, `deadletter.replay.failed.*`
+  - gauges `deadletter.total`, `deadletter.pending`, `deadletter.replayed`, `deadletter.replay_failed`
+
+### Collaboration renforcée (P1)
+
+- Les sessions de collaboration sont persistées dans la mémoire partagée avec un `collaboration_id` (démarrage, réponses, résultat final).
+- Le protocole de conflit est explicite dans les résultats: `conflict_class`, `conflict_reason_code`, `next_action`, `needs_supervisor_intervention`.
+- Les templates de collaboration supportés par `request_collaboration`:
+  - `parallel_research_adjudicate`
+  - `debate_then_synthesize`
+  - `hierarchical_risk_review`
+- Références templates versionnées: `templates/collaboration/`.
+
+### Checkpoints ReAct (plan/exécution/vérification)
+
+- Les branches ReAct émettent des checkpoints sémantiques (`plan`, `execution`, `verification`).
+- Les checkpoints sont persistés dans la mémoire partagée (`category=react.checkpoint`) avec:
+  - `branch_id` (id du message de tâche)
+  - `collaboration_id` (si présent)
+- Cela permet au superviseur de distinguer une progression réelle d'une boucle stérile.
+
+### Corrélation et causalité
+
+- Les messages internes portent désormais des champs explicites `CorrelationId` et `CausationId`.
+- Les entrées HTTP et WebSocket créent ou propagent un `X-Correlation-Id` stable.
+- Les réponses agents et projections internes conservent la chaîne de causalité via l'enveloppe `AgentMessage`.
+
+### Métriques P2 supplémentaires
+
+- Santé des files du bus: `message_bus.queue.*`, `message_bus.channels.active`, `message_bus.messages.dropped`, `message_bus.messages.rejected`.
+- Supervision: `supervisor.interventions.*`, `supervisor.detected.stalled`, `supervisor.detected.looping`.
+- Timeouts d'outils: `tools.timeout.total`.
+
+### Readiness exploitable
+
+- `/health/ready` expose désormais un résumé actionnable avec `failingDependencies` et `hint` par dépendance dégradée ou indisponible.
+
+### P2 documentation opérationnelle
+
+- Matrice active des fonctionnalités: `Documentation/Active-Feature-Matrix.md`
+- SLOs: `Documentation/SLOs.md`
+- Alert playbooks: `Documentation/Alert-Playbooks.md`
+
+### CI/CD - Fast lane et Full lane
+
+- Workflow GitHub Actions: `.github/workflows/ci.yml`
+- **Fast lane**: restore, build, build avec analyzers, tests ciblés (`Core`, `Messaging`, `Tools`).
+- **Full lane**: build + suite complète `dotnet test InfernalHierarchy.sln -c Release`.
+- En cas d'échec, publication automatique des artefacts (`*.trx`, `TestResults`, sorties build Release) pour diagnostic.
+
+### Release workflow + smoke container
+
+- Workflow GitHub Actions: `.github/workflows/release.yml`
+- Déclenchement: `push` sur tags `v*` et `workflow_dispatch`.
+- Étapes clés:
+  - build image Docker
+  - démarrage conteneur smoke
+  - vérification `/health/ready`
+  - smoke `/api/chat` (200 ou timeout contrôlé 504)
+  - upload artefacts en cas d'échec + logs conteneur
+
+### Commande locale qualité
+
+- Script standard: `scripts/quality.ps1`
+- Chaîne exécutée: restore -> build release -> analyzers -> fast tests -> full tests.
+- Option: `-SkipFullTests` pour boucle locale plus rapide.
+
+### Statut GraphQL
+
+- Décision P1: GraphQL est classé archive/expérimental et hors surface runtime supportée.
+- ADR associée: `Documentation/ADRs/0007-graphql-surface-status.md`.
+
+### Auth des endpoints opérationnels
+
+- En mode `LocalOnly=true`, les endpoints opérationnels restent accessibles uniquement en loopback.
+- En mode `LocalOnly=false`, les endpoints opérationnels (`/api/chat`, `/api/tools`, `/api/events`, `/metrics`, `/ws`) exigent la clé d'opérateur via header `X-Infernal-Operator-Key`.
+
+```json
+{
+  "OperatorApi": {
+    "ApiKey": "change-me"
+  }
+}
+```
 
 ## 📝 Architecture Technique
 

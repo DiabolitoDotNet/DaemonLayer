@@ -1,0 +1,15 @@
+{
+  "id": "parallel_research_adjudicate",
+  "version": "1.0.0",
+  "description": "Workers research in parallel, then a higher-rank adjudication via weighted voting.",
+  "strategy": "WeightedVoting",
+  "minParticipants": 3,
+  "minConfidence": 0.75,
+  "participantRanks": ["worker", "duke"],
+  "includeThinking": false,
+  "workflow": [
+    "parallel_research",
+    "evidence_exchange",
+    "weighted_adjudication"
+  ]
+}

@@ -41,6 +41,18 @@ internal static class HostAddOptions
         builder.Services.AddOptions<HierarchyOptions>()
             .Bind(builder.Configuration.GetSection("Hierarchy"))
             .ValidateOnStart();
+        builder.Services.AddOptions<SkillCatalogOptions>()
+            .Bind(builder.Configuration.GetSection("SkillsCatalog"))
+            .ValidateOnStart();
+        builder.Services.AddOptions<AgentSkillAssignmentOptions>()
+            .Bind(builder.Configuration.GetSection("AgentSkillAssignment"))
+            .ValidateOnStart();
+        builder.Services.AddOptions<MessageBusOptions>()
+            .Bind(builder.Configuration.GetSection("MessageBus"))
+            .ValidateOnStart();
+        builder.Services.AddOptions<FailedOperationHandlingOptions>()
+            .Bind(builder.Configuration.GetSection("FailedOperations"))
+            .ValidateOnStart();
     }
 
     private static void AddSearchAndProviderOptions(WebApplicationBuilder builder)
@@ -76,11 +88,20 @@ internal static class HostAddOptions
         builder.Services.AddOptions<HttpRequestToolOptions>()
             .Bind(builder.Configuration.GetSection("HttpTool"))
             .ValidateOnStart();
+        builder.Services.AddOptions<GraphQlToolOptions>()
+            .Bind(builder.Configuration.GetSection("GraphQlTool"))
+            .ValidateOnStart();
+        builder.Services.AddOptions<SqlReadOnlyToolOptions>()
+            .Bind(builder.Configuration.GetSection("SqlReadOnlyTool"))
+            .ValidateOnStart();
         builder.Services.AddOptions<CodeExecutionToolOptions>()
             .Bind(builder.Configuration.GetSection("CodeExecution"))
             .ValidateOnStart();
         builder.Services.AddOptions<ToolMarketplaceOptions>()
             .Bind(builder.Configuration.GetSection("ToolMarketplace"))
+            .ValidateOnStart();
+        builder.Services.AddOptions<VisionToolOptions>()
+            .Bind(builder.Configuration.GetSection("Vision"))
             .ValidateOnStart();
     }
 

@@ -34,6 +34,7 @@ public sealed class VoiceCopilotService
     private readonly ILlmClient _llm;
     private readonly IStreamingLlmClient? _streamingLlm;
     private readonly ITunableLlmClient? _tunableLlm;
+    private readonly IModelRoutingLlmClient? _routingLlm;
     private readonly ILogger<VoiceCopilotService> _logger;
 
     private readonly ConcurrentDictionary<string, SessionState> _sessions = new();
@@ -48,6 +49,7 @@ public sealed class VoiceCopilotService
         _llm = llm;
         _streamingLlm = llm as IStreamingLlmClient;
         _tunableLlm = llm as ITunableLlmClient;
+        _routingLlm = llm as IModelRoutingLlmClient;
         _logger = logger;
     }
 
@@ -111,8 +113,25 @@ public sealed class VoiceCopilotService
         VoiceCopilotOptions options,
         CancellationToken ct)
     {
+        var routingHint = new LlmRoutingHint
+        {
+            TaskType = options.RoutingTaskType,
+            LatencyBudgetMs = options.LatencyBudgetMs > 0 ? options.LatencyBudgetMs : null
+        };
+
         if (_streamingLlm is null)
         {
+            if (_routingLlm is not null)
+            {
+                return await _routingLlm.GetCompletionWithRoutingAsync(
+                    systemPrompt,
+                    userMessage,
+                    routingHint,
+                    temperature: options.Temperature,
+                    maxTokens: options.MaxTokens,
+                    ct: ct).ConfigureAwait(false);
+            }
+
             if (_tunableLlm is null)
             {
                 return await _llm.GetCompletionAsync(systemPrompt, userMessage, ct).ConfigureAwait(false);
@@ -128,9 +147,11 @@ public sealed class VoiceCopilotService
 
         var sb = new StringBuilder(capacity: 256);
 
-        IAsyncEnumerable<string> stream = _tunableLlm is null
-            ? _streamingLlm.GetStreamingCompletionAsync(systemPrompt, userMessage, ct)
-            : _tunableLlm.GetStreamingCompletionWithOptionsAsync(systemPrompt, userMessage, options.Temperature, options.MaxTokens, ct);
+        IAsyncEnumerable<string> stream = _routingLlm is not null
+            ? _routingLlm.GetStreamingCompletionWithRoutingAsync(systemPrompt, userMessage, routingHint, options.Temperature, options.MaxTokens, ct)
+            : _tunableLlm is null
+                ? _streamingLlm.GetStreamingCompletionAsync(systemPrompt, userMessage, ct)
+                : _tunableLlm.GetStreamingCompletionWithOptionsAsync(systemPrompt, userMessage, options.Temperature, options.MaxTokens, ct);
 
         await foreach (var chunk in stream.WithCancellation(ct))
         {
@@ -154,6 +175,17 @@ public sealed class VoiceCopilotService
         // Some models/servers can stream only non-user-visible fields (e.g., reasoning) or otherwise produce
         // no content chunks. Fall back to a non-streaming completion so we still return a usable reply.
         _logger.LogWarning("Streaming completion yielded no content; falling back to non-streaming completion.");
+        if (_routingLlm is not null)
+        {
+            return await _routingLlm.GetCompletionWithRoutingAsync(
+                systemPrompt,
+                userMessage,
+                routingHint,
+                temperature: options.Temperature,
+                maxTokens: options.MaxTokens,
+                ct: ct).ConfigureAwait(false);
+        }
+
         if (_tunableLlm is null)
         {
             return await _llm.GetCompletionAsync(systemPrompt, userMessage, ct).ConfigureAwait(false);

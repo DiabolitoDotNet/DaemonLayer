@@ -11,6 +11,33 @@ public class OllamaOptions
     public int RequestTimeoutSeconds { get; set; } = 600;
     public int MaxTokens { get; set; } = 4096;
     public double Temperature { get; set; } = 0.7;
+    public bool EnableModelRoutingPolicy { get; set; } = false;
+    public List<OllamaModelRoute> ModelRoutes { get; set; } = new();
+}
+
+public class OllamaModelRoute
+{
+    /// <summary>
+    /// Logical task family. Use "*" as wildcard.
+    /// </summary>
+    public string TaskType { get; set; } = "*";
+
+    /// <summary>
+    /// If set (>0), the route applies only when request latency budget is &lt;= this value.
+    /// Use 0 for task-only catch-all routes.
+    /// </summary>
+    public int MaxLatencyMs { get; set; } = 0;
+
+    /// <summary>
+    /// Target model name for this route.
+    /// </summary>
+    public string Model { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Secondary ordering key when multiple routes match.
+    /// Lower means preferred.
+    /// </summary>
+    public int Priority { get; set; } = 100;
 }
 
 /// <summary>

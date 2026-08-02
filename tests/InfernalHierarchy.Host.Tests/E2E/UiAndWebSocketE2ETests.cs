@@ -4,6 +4,7 @@ using System.Text.Json;
 using System.IO;
 using FluentAssertions;
 using InfernalHierarchy.Core.Interfaces;
+using InfernalHierarchy.Host.Security;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
@@ -38,6 +39,7 @@ public sealed class UiAndWebSocketE2ETests
         await WaitForAgentAsync(factory.Services, "lucifer");
 
         var wsClient = factory.Server.CreateWebSocketClient();
+        wsClient.ConfigureRequest = req => req.Headers[OperationalAuthGuard.HeaderName] = "test-operator-key";
         using var socket = await wsClient.ConnectAsync(new Uri("ws://localhost/ws"), CancellationToken.None);
 
         var request = JsonSerializer.Serialize(new { type = "task", toAgentId = "lucifer", content = "Say hello" });

@@ -23,6 +23,16 @@ public sealed class VoiceCopilotOptions
     public int MaxTokens { get; set; } = 140;
 
     /// <summary>
+    /// Latency target budget (ms) passed to model routing policy.
+    /// </summary>
+    public int LatencyBudgetMs { get; set; } = 1400;
+
+    /// <summary>
+    /// Routing task type for voice interactions.
+    /// </summary>
+    public string RoutingTaskType { get; set; } = "voice";
+
+    /// <summary>
     /// Hard cap on reply characters after post-processing.
     /// </summary>
     public int MaxReplyChars { get; set; } = 320;

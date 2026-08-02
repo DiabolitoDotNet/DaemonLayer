@@ -1,0 +1,19 @@
+{
+  "id": "implementation-engineering",
+  "name": "Implementation Engineering",
+  "version": "1.0.0",
+  "description": "Execution baseline for Duke-level implementation specialists.",
+  "riskLevel": "Low",
+  "enabled": true,
+  "priority": 30,
+  "tags": ["implementation", "testing", "debugging"],
+  "allowedRanks": ["Duke"],
+  "additionalTools": ["request_skill_pack", "read_memory", "write_memory", "web_search"],
+  "additionalSpecializations": ["Code implementation", "Verification loops"],
+  "promptFragments": [
+    "Prefer minimal safe changes and verify via targeted tests first."
+  ],
+  "customInstructions": {
+    "definitionOfDone": "Build green + targeted tests green + summary of deltas"
+  }
+}

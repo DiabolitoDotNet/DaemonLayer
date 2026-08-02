@@ -1,80 +1,31 @@
-# InfernalHierarchy – TODO (Pending Work Only)
+# InfernalHierarchy - TODO Roadmap
 
-> **Last Updated:** August 1, 2026
-> **Scope:** This file lists only work that is still open, still relevant, or still under-documented.
-> **Completed items moved to:** `COMPLETED.md`
+> Last Updated: 2026-08-01
+> Source of truth for pending work aligned with README mission.
 
----
-
-## 📋 Table of Contents
-1. [Now (Next Sprint)](#-now---next-sprint)
-2. [Active Gaps / Known Limitations](#-active-gaps--known-limitations)
-3. [Operational Runbooks](#-operational-runbooks)
-4. [Should Have (Production Readiness)](#-should-have---production-readiness)
-5. [Could Have (Future Enhancements)](#-could-have---future-enhancements)
+Completed items belong in COMPLETED.md. Keep this file focused on open work only.
 
 ---
 
-## 🔴 NOW - Next Sprint
+## Current Focus
 
-No immediate next-sprint items are currently tracked here.
-
-Promote the next highest-priority work from the sections below when needed.
-
----
-
-## 🔧 Active Gaps / Known Limitations
-
-No additional active gaps are currently tracked here.
+P0, P1, and P2 roadmap blocks are implemented and tracked in COMPLETED.md.
+The remaining roadmap work is P3 strategic enhancements below.
 
 ---
 
-## 🧰 Operational Runbooks
+## P3 - Strategic Enhancements
 
-No additional operational runbooks are currently required.
-
----
-
-## 🎯 SHOULD HAVE - Production Readiness
-
-No additional `Should Have` items are currently open.
+All P3 items are now implemented and tracked in COMPLETED.md.
 
 ---
 
-## 💡 COULD HAVE - Future Enhancements
+## Next Recommended Order
 
-### Tool Ecosystem
-- [ ] **API integration tools**
-  - GraphQL-first client + auth helpers (REST is already covered by `http_request`).
+See COMPLETED.md for implementation details and validation notes.
 
-- [ ] **Database query tools**
-  - Read-only SQL query execution.
+---
 
-- [ ] **Meta tools complémentaires pour custom tools**
-  - `custom_tool_list`
-  - `custom_tool_delete`
-  - Goal: operate custom tools without opening LiteDB manually.
+## Deferred / Parking Lot
 
-### LLM Enhancements
-- [ ] **Vision model support**
-  - Image analysis with multimodal models.
-
-### UI & Interfaces
-- [ ] **Improve French TTS voice quality (accent/language)**
-  - Current French output can still sound too US-accented.
-  - Goal: select a French-capable voice/model or replace the backend.
-
-- [ ] **Voice sidecar services (later)**
-  - Keep STT/TTS models hot and isolate CPU/RAM from the Host.
-  - Preserve the current local/in-container path as fallback.
-
-### Developer Experience
-- [ ] **Agent playground**
-  - Interactive testing environment.
-
-- [ ] **Debugging tools**
-  - Better step-through visibility into agent reasoning and tool decisions.
-
-- [ ] **Plugin SDK**
-  - Third-party tool development kit.
-
+- None currently parked.

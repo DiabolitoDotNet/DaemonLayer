@@ -7,6 +7,26 @@ public sealed class VoiceTranscriptionToolOptions
     public bool Enabled { get; set; } = false;
 
     /// <summary>
+    /// If true, transcription is delegated to an external voice sidecar HTTP service.
+    /// </summary>
+    public bool UseSidecar { get; set; } = false;
+
+    /// <summary>
+    /// Base URL of the voice sidecar service.
+    /// </summary>
+    public Uri SidecarBaseUrl { get; set; } = new("http://localhost:5091");
+
+    /// <summary>
+    /// Relative or absolute endpoint used for sidecar transcription.
+    /// </summary>
+    public string SidecarTranscribePath { get; set; } = "/transcribe";
+
+    /// <summary>
+    /// Timeout used for sidecar transcription calls.
+    /// </summary>
+    public int SidecarTimeoutMs { get; set; } = 120_000;
+
+    /// <summary>
     /// Path to a local transcription executable (e.g., whisper.cpp CLI).
     /// </summary>
     public string ExecutablePath { get; set; } = string.Empty;

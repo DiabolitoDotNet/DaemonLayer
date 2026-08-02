@@ -15,21 +15,24 @@ internal static class HostMapEndpoints
         VoiceApi.Map(app, voiceOptions);
 
         HealthEndpoints.Map(app);
-        MetricsEndpoint.Map(app);
+        MetricsEndpoint.Map(app, uiOptions);
 
         PerfApi.Map(app, uiOptions);
+        TimelineApi.Map(app, uiOptions);
         AgentsApi.Map(app, uiOptions);
 
-        ToolsApi.Map(app);
-        EventsApi.Map(app);
+        ToolsApi.Map(app, uiOptions);
+        EventsApi.Map(app, uiOptions);
+        DeadLettersApi.Map(app, uiOptions);
 
         PersonasApi.Map(app, uiOptions);
         DocsApi.Map(app, uiOptions);
+        PlaygroundApi.Map(app, uiOptions);
 
         OperatorVectorApi.Map(app);
 
         app.MapGet("/", () => Results.Text("InfernalHierarchy is running"));
 
-        ChatApi.Map(app);
+        ChatApi.Map(app, uiOptions);
     }
 }

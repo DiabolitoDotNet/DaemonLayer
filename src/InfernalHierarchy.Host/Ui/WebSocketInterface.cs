@@ -6,6 +6,7 @@ using InfernalHierarchy.Core.Entities;
 using InfernalHierarchy.Core.Serialization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
+using System.Diagnostics;
 
 namespace InfernalHierarchy.Host.Ui;
 
@@ -19,19 +20,22 @@ internal static class WebSocketInterface
             HttpContext context,
             IMessageBus messageBus,
             IOptions<WebSocketInterfaceOptions> optionsAccessor,
+            IOptions<OperatorApiOptions> operatorOptionsAccessor,
             ILoggerFactory loggerFactory,
             CancellationToken ct) =>
         {
             var options = optionsAccessor.Value;
+            var operatorOptions = operatorOptionsAccessor.Value;
 
             if (!options.Enabled)
             {
                 return Results.NotFound();
             }
 
-            if (options.LocalOnly && !LoopbackGuard.IsLoopback(context.Connection.RemoteIpAddress))
+            var forbid = OperationalAuthGuard.ForbidIfUnauthorized(context, options.LocalOnly, operatorOptions.ApiKey);
+            if (forbid is not null)
             {
-                return Results.StatusCode(StatusCodes.Status403Forbidden);
+                return forbid;
             }
 
             if (!context.WebSockets.IsWebSocketRequest)
@@ -124,6 +128,8 @@ internal static class WebSocketInterface
                 to = msg.ToAgentId,
                 type = msg.Type.ToString(),
                 content = msg.Content,
+                correlationId = msg.CorrelationId,
+                causationId = msg.CausationId,
                 receivedUtc = DateTime.UtcNow,
                 payload = SanitizePayload(msg.Payload)
             };
@@ -228,6 +234,7 @@ internal static class WebSocketInterface
                 ToAgentId = toAgentId,
                 Type = MessageType.Task,
                 Content = content,
+                CorrelationId = ResolveCorrelationId(),
                 Payload = new Dictionary<string, object>
                 {
                     ["transport"] = "websocket",
@@ -237,6 +244,14 @@ internal static class WebSocketInterface
 
             await messageBus.PublishAsync(agentMessage, ct);
         }
+    }
+
+    private static string ResolveCorrelationId()
+    {
+        var traceId = Activity.Current?.TraceId.ToString();
+        return string.IsNullOrWhiteSpace(traceId)
+            ? Guid.NewGuid().ToString("N")
+            : traceId;
     }
 
     private static Dictionary<string, object?> SanitizePayload(Dictionary<string, object> payload)

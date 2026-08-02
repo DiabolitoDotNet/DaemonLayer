@@ -1,19 +1,32 @@
 
+using System.Text.Json;
+
 namespace InfernalHierarchy.Tools.Tools.Voice;
 
 public sealed class AudioTranscribeTool : ITool
 {
     private readonly VoiceTranscriptionToolOptions _options;
     private readonly IProcessRunner _runner;
+    private readonly IHttpClientFactory? _httpClientFactory;
     private readonly ILogger<AudioTranscribeTool> _logger;
 
     public AudioTranscribeTool(
         IOptions<VoiceTranscriptionToolOptions> options,
         IProcessRunner runner,
         ILogger<AudioTranscribeTool> logger)
+        : this(options, runner, httpClientFactory: null, logger)
+    {
+    }
+
+    public AudioTranscribeTool(
+        IOptions<VoiceTranscriptionToolOptions> options,
+        IProcessRunner runner,
+        IHttpClientFactory? httpClientFactory,
+        ILogger<AudioTranscribeTool> logger)
     {
         _options = options.Value;
         _runner = runner;
+        _httpClientFactory = httpClientFactory;
         _logger = logger;
     }
 
@@ -28,9 +41,9 @@ public sealed class AudioTranscribeTool : ITool
             return Fail("Audio transcription tool is disabled (VoiceTranscription:Enabled=false)");
         }
 
-        if (string.IsNullOrWhiteSpace(_options.ExecutablePath))
+        if (!_options.UseSidecar && string.IsNullOrWhiteSpace(_options.ExecutablePath))
         {
-            return Fail("VoiceTranscription:ExecutablePath is required when enabled");
+            return Fail("VoiceTranscription:ExecutablePath is required when enabled and UseSidecar=false");
         }
 
         var path = GetString(parameters, "path");
@@ -65,6 +78,11 @@ public sealed class AudioTranscribeTool : ITool
         }
 
         Directory.CreateDirectory(root);
+
+        if (_options.UseSidecar)
+        {
+            return await ExecuteWithSidecarAsync(fullPath, ct).ConfigureAwait(false);
+        }
 
         var inputPath = fullPath;
         string? convertedPath = null;
@@ -205,6 +223,73 @@ public sealed class AudioTranscribeTool : ITool
     {
         var root = rootDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
         return filePath.StartsWith(root, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private async Task<ToolResult> ExecuteWithSidecarAsync(string fullPath, CancellationToken ct)
+    {
+        if (_httpClientFactory is null)
+        {
+            return Fail("Voice sidecar mode requires IHttpClientFactory");
+        }
+
+        var endpoint = BuildSidecarEndpoint(_options.SidecarBaseUrl, _options.SidecarTranscribePath);
+        using var client = _httpClientFactory.CreateClient();
+        client.Timeout = TimeSpan.FromMilliseconds(_options.SidecarTimeoutMs > 0 ? _options.SidecarTimeoutMs : 120_000);
+
+        await using var fileStream = File.OpenRead(fullPath);
+        using var content = new MultipartFormDataContent();
+        content.Add(new StreamContent(fileStream), "file", Path.GetFileName(fullPath));
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, endpoint)
+        {
+            Content = content
+        };
+
+        using var response = await client.SendAsync(request, ct).ConfigureAwait(false);
+        var body = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+        if (!response.IsSuccessStatusCode)
+        {
+            return Fail($"Sidecar transcription failed: {(int)response.StatusCode} {body}");
+        }
+
+        var transcript = body;
+        if (response.Content.Headers.ContentType?.MediaType?.Contains("json", StringComparison.OrdinalIgnoreCase) == true)
+        {
+            try
+            {
+                using var doc = JsonDocument.Parse(body);
+                if (doc.RootElement.TryGetProperty("transcript", out var t))
+                {
+                    transcript = t.GetString() ?? string.Empty;
+                }
+            }
+            catch
+            {
+                transcript = body;
+            }
+        }
+
+        return new ToolResult
+        {
+            Success = true,
+            Output = transcript.Trim(),
+            Metadata = new Dictionary<string, object>
+            {
+                ["provider"] = "voice_sidecar",
+                ["endpoint"] = endpoint.ToString()
+            }
+        };
+    }
+
+    private static Uri BuildSidecarEndpoint(Uri baseUrl, string path)
+    {
+        var trimmed = string.IsNullOrWhiteSpace(path) ? "/transcribe" : path.Trim();
+        if (Uri.TryCreate(trimmed, UriKind.Absolute, out var absolute))
+        {
+            return absolute;
+        }
+
+        return new Uri(baseUrl, trimmed.StartsWith('/') ? trimmed : "/" + trimmed);
     }
 
     private static ToolResult Fail(string message) => new() { Success = false, Output = string.Empty, Error = message };

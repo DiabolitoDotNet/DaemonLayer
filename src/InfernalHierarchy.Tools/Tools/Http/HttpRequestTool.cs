@@ -8,15 +8,18 @@ public sealed class HttpRequestTool : ITool
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly HttpRequestToolOptions _options;
     private readonly ILogger<HttpRequestTool> _logger;
+    private readonly GlobalExceptionHandler? _exceptionHandler;
 
     public HttpRequestTool(
         IHttpClientFactory httpClientFactory,
         IOptions<HttpRequestToolOptions> options,
-        ILogger<HttpRequestTool> logger)
+        ILogger<HttpRequestTool> logger,
+        GlobalExceptionHandler? exceptionHandler = null)
     {
         _httpClientFactory = httpClientFactory;
         _options = options.Value;
         _logger = logger;
+        _exceptionHandler = exceptionHandler;
     }
 
     public string Name => "http_request";
@@ -57,44 +60,32 @@ public sealed class HttpRequestTool : ITool
             return Fail($"HTTP method '{method}' is not allowed");
         }
 
-        using var request = new HttpRequestMessage(new HttpMethod(method), uri);
-
         var headers = GetDictionary(parameters, "headers");
-        if (headers != null)
-        {
-            foreach (var (k, v) in headers)
-            {
-                if (string.IsNullOrWhiteSpace(k) || v is null)
-                {
-                    continue;
-                }
-
-                // Very small header hardening.
-                if (k.Equals("Host", StringComparison.OrdinalIgnoreCase))
-                {
-                    continue;
-                }
-
-                if (!request.Headers.TryAddWithoutValidation(k, v))
-                {
-                    // Fallback to content headers, if content exists later.
-                }
-            }
-        }
-
         var body = GetString(parameters, "body");
-        if (body != null)
-        {
-            var contentType = GetString(parameters, "content_type") ?? "application/json";
-            request.Content = new StringContent(body, Encoding.UTF8, contentType);
-        }
+        var contentType = GetString(parameters, "content_type") ?? "application/json";
 
         var client = _httpClientFactory.CreateClient(nameof(HttpRequestTool));
         client.Timeout = TimeSpan.FromMilliseconds(_options.TimeoutMs);
 
         try
         {
-            using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
+            using var response = await ExecuteWithResilienceAsync(
+                async token =>
+                {
+                    using var request = CreateRequest(method, uri, headers, body, contentType);
+                    var resp = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, token).ConfigureAwait(false);
+                    if (!resp.IsSuccessStatusCode && IsTransientStatus(resp.StatusCode))
+                    {
+                        throw new HttpRequestException(
+                            $"Transient HTTP failure {(int)resp.StatusCode} ({resp.StatusCode})",
+                            inner: null,
+                            statusCode: resp.StatusCode);
+                    }
+
+                    return resp;
+                },
+                operationName: "http_request_tool",
+                ct).ConfigureAwait(false);
 
             var status = (int)response.StatusCode;
 
@@ -128,6 +119,62 @@ public sealed class HttpRequestTool : ITool
         {
             return Fail(ex.Message);
         }
+    }
+
+    private async Task<T> ExecuteWithResilienceAsync<T>(
+        Func<CancellationToken, Task<T>> operation,
+        string operationName,
+        CancellationToken ct)
+    {
+        if (_exceptionHandler is null)
+        {
+            return await operation(ct).ConfigureAwait(false);
+        }
+
+        return await _exceptionHandler
+            .ExecuteWithHandlingAsync(operation, operationName, maxRetries: 3, ct: ct)
+            .ConfigureAwait(false);
+    }
+
+    private static bool IsTransientStatus(System.Net.HttpStatusCode status)
+    {
+        var code = (int)status;
+        return code >= 500 || code == 429 || code == 408;
+    }
+
+    private static HttpRequestMessage CreateRequest(
+        string method,
+        Uri uri,
+        Dictionary<string, string?>? headers,
+        string? body,
+        string contentType)
+    {
+        var request = new HttpRequestMessage(new HttpMethod(method), uri);
+
+        if (headers != null)
+        {
+            foreach (var (k, v) in headers)
+            {
+                if (string.IsNullOrWhiteSpace(k) || v is null)
+                {
+                    continue;
+                }
+
+                if (k.Equals("Host", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                _ = request.Headers.TryAddWithoutValidation(k, v);
+            }
+        }
+
+        if (body != null)
+        {
+            request.Content = new StringContent(body, Encoding.UTF8, contentType);
+        }
+
+        return request;
     }
 
     private bool IsSchemeAllowed(Uri uri)

@@ -41,6 +41,13 @@ public sealed class DefaultReActLoopRunner : IReActLoopRunner
 
         history.AppendLine($"Task: {context.Task}\n");
 
+        await TryEmitCheckpointAsync(context, new ReActCheckpoint(
+            Phase: "plan",
+            Label: "task_received",
+            Detail: context.Task,
+            Iteration: 0,
+            OccurredAtUtc: DateTime.UtcNow), ct).ConfigureAwait(false);
+
         if (forcedInvocation.ToolName is not null)
         {
             history.AppendLine($"Observation: Detected explicit tool invocation request for '{forcedInvocation.ToolName}'.");
@@ -78,7 +85,21 @@ public sealed class DefaultReActLoopRunner : IReActLoopRunner
                 toolCalls.Add(exec.ToolCall);
             }
 
+            await TryEmitCheckpointAsync(context, new ReActCheckpoint(
+                Phase: "execution",
+                Label: "forced_tool_invocation",
+                Detail: $"tool={forcedInvocation.ToolName};success={exec.Success}",
+                Iteration: 1,
+                OccurredAtUtc: DateTime.UtcNow), ct).ConfigureAwait(false);
+
             context.Logger.LogInformation("👁️ {Observation}", exec.Observation);
+
+            await TryEmitCheckpointAsync(context, new ReActCheckpoint(
+                Phase: "verification",
+                Label: "forced_invocation_completed",
+                Detail: exec.Observation,
+                Iteration: 1,
+                OccurredAtUtc: DateTime.UtcNow), ct).ConfigureAwait(false);
 
             return new ReActLoopResult(
                 FinalAnswer: ObservationToFinalAnswer(exec.Observation),
@@ -185,6 +206,13 @@ public sealed class DefaultReActLoopRunner : IReActLoopRunner
 
                 context.Logger.LogInformation("💭 Thought: {Thought}", thought);
                 context.Logger.LogInformation("⚡ Action: {Action}", action);
+
+                await TryEmitCheckpointAsync(context, new ReActCheckpoint(
+                    Phase: "plan",
+                    Label: "iteration_planned",
+                    Detail: $"action={action}",
+                    Iteration: iterations,
+                    OccurredAtUtc: DateTime.UtcNow), ct).ConfigureAwait(false);
 
                 consecutiveParseFailures = 0;
 
@@ -304,6 +332,13 @@ public sealed class DefaultReActLoopRunner : IReActLoopRunner
                         continue;
                     }
 
+                    await TryEmitCheckpointAsync(context, new ReActCheckpoint(
+                        Phase: "verification",
+                        Label: "final_answer_ready",
+                        Detail: actionInput,
+                        Iteration: iterations,
+                        OccurredAtUtc: DateTime.UtcNow), ct).ConfigureAwait(false);
+
                     return new ReActLoopResult(
                         FinalAnswer: actionInput,
                         Reasoning: thought,
@@ -328,6 +363,13 @@ public sealed class DefaultReActLoopRunner : IReActLoopRunner
                 try
                 {
                     context.SetStatus(AgentStatus.ActingWithTool);
+
+                    await TryEmitCheckpointAsync(context, new ReActCheckpoint(
+                        Phase: "execution",
+                        Label: "tool_execution_started",
+                        Detail: action,
+                        Iteration: iterations,
+                        OccurredAtUtc: DateTime.UtcNow), ct).ConfigureAwait(false);
 
                     var exec = await context.ActionExecutor.ExecuteAsync(new ActionExecutionContext(
                         ToolRegistry: context.ToolRegistry,
@@ -357,6 +399,13 @@ public sealed class DefaultReActLoopRunner : IReActLoopRunner
 
                     history.AppendLine(exec.Observation);
                     context.Logger.LogInformation("👁️ {Observation}", exec.Observation);
+
+                    await TryEmitCheckpointAsync(context, new ReActCheckpoint(
+                        Phase: "execution",
+                        Label: "tool_execution_completed",
+                        Detail: $"tool={action};success={exec.Success}",
+                        Iteration: iterations,
+                        OccurredAtUtc: DateTime.UtcNow), ct).ConfigureAwait(false);
 
                     lastToolName = action;
                     lastToolSignature = toolSignature;
@@ -403,6 +452,12 @@ public sealed class DefaultReActLoopRunner : IReActLoopRunner
                                 if (emailExec.Success)
                                 {
                                     emailSendSucceeded = true;
+                                    await TryEmitCheckpointAsync(context, new ReActCheckpoint(
+                                        Phase: "verification",
+                                        Label: "terminal_side_effect_completed",
+                                        Detail: TerminalToolEmailSend,
+                                        Iteration: iterations,
+                                        OccurredAtUtc: DateTime.UtcNow), ct).ConfigureAwait(false);
                                     return new ReActLoopResult(
                                         FinalAnswer: "C’est fait — l’email a bien été envoyé.",
                                         Reasoning: thought,
@@ -440,6 +495,13 @@ public sealed class DefaultReActLoopRunner : IReActLoopRunner
                     {
                         emailSendSucceeded = true;
 
+                        await TryEmitCheckpointAsync(context, new ReActCheckpoint(
+                            Phase: "verification",
+                            Label: "terminal_side_effect_completed",
+                            Detail: TerminalToolEmailSend,
+                            Iteration: iterations,
+                            OccurredAtUtc: DateTime.UtcNow), ct).ConfigureAwait(false);
+
                         // email_send is an external side effect; always stop after success to avoid duplicates.
                         return new ReActLoopResult(
                             FinalAnswer: "C’est fait — l’email a bien été envoyé.",
@@ -451,6 +513,13 @@ public sealed class DefaultReActLoopRunner : IReActLoopRunner
                     if (exec.Success && IsTerminalTool(action, context.ReActOptions))
                     {
                         context.Logger.LogInformation("✅ Terminal tool '{Tool}' succeeded; stopping ReAct loop", action);
+
+                        await TryEmitCheckpointAsync(context, new ReActCheckpoint(
+                            Phase: "verification",
+                            Label: "terminal_tool_completed",
+                            Detail: action,
+                            Iteration: iterations,
+                            OccurredAtUtc: DateTime.UtcNow), ct).ConfigureAwait(false);
 
                         var finalAnswer = string.Equals(action, TerminalToolEmailSend, StringComparison.OrdinalIgnoreCase)
                             ? "C’est fait — l’email a bien été envoyé."
@@ -492,11 +561,35 @@ public sealed class DefaultReActLoopRunner : IReActLoopRunner
             context.AgentName,
             MaxIterations);
 
+        await TryEmitCheckpointAsync(context, new ReActCheckpoint(
+            Phase: "verification",
+            Label: "max_iterations_reached",
+            Detail: $"max_iterations={MaxIterations}",
+            Iteration: iterations,
+            OccurredAtUtc: DateTime.UtcNow), ct).ConfigureAwait(false);
+
         return new ReActLoopResult(
             FinalAnswer: $"Task incomplete after {MaxIterations} iterations. Partial progress:\n{history}",
             Reasoning: "Reached maximum iteration limit",
             Iterations: iterations,
             ToolCalls: toolCalls);
+    }
+
+    private static async Task TryEmitCheckpointAsync(ReActLoopContext context, ReActCheckpoint checkpoint, CancellationToken ct)
+    {
+        if (context.EmitCheckpoint is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await context.EmitCheckpoint(checkpoint, ct).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            context.Logger.LogDebug(ex, "Failed to emit ReAct checkpoint {Label}", checkpoint.Label);
+        }
     }
 
     private static string BuildToolSignature(string toolName, string actionInputText, Dictionary<string, object>? actionInputObject)

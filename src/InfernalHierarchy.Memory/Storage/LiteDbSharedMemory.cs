@@ -135,6 +135,29 @@ public sealed class LiteDbSharedMemory : ISharedMemory, IToolResultCacheStore, I
         return Task.FromResult<IReadOnlyList<CustomToolDefinition>>(tools);
     }
 
+    public Task<bool> DeleteByIdAsync(string id, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(id))
+        {
+            return Task.FromResult(false);
+        }
+
+        var removed = CustomTools.Delete(id.Trim());
+        return Task.FromResult(removed);
+    }
+
+    public Task<bool> DeleteByNameAsync(string toolName, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(toolName))
+        {
+            return Task.FromResult(false);
+        }
+
+        var normalized = toolName.Trim();
+        var removed = CustomTools.DeleteMany(x => x.ToolName == normalized);
+        return Task.FromResult(removed > 0);
+    }
+
     #endregion
 
     #region Tool Result Cache

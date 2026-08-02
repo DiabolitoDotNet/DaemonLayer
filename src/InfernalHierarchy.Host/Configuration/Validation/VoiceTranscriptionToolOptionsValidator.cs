@@ -12,7 +12,17 @@ public sealed class VoiceTranscriptionToolOptionsValidator : IValidateOptions<Vo
 
         var failures = new List<string>();
 
-        if (string.IsNullOrWhiteSpace(options.ExecutablePath)) failures.Add("VoiceTranscription:ExecutablePath is required when enabled");
+        if (options.UseSidecar)
+        {
+            if (options.SidecarBaseUrl is null || !options.SidecarBaseUrl.IsAbsoluteUri) failures.Add("VoiceTranscription:SidecarBaseUrl must be an absolute URI when UseSidecar=true");
+            if (options.SidecarTimeoutMs <= 0) failures.Add("VoiceTranscription:SidecarTimeoutMs must be > 0 when UseSidecar=true");
+            if (string.IsNullOrWhiteSpace(options.SidecarTranscribePath)) failures.Add("VoiceTranscription:SidecarTranscribePath is required when UseSidecar=true");
+        }
+        else
+        {
+            if (string.IsNullOrWhiteSpace(options.ExecutablePath)) failures.Add("VoiceTranscription:ExecutablePath is required when enabled and UseSidecar=false");
+        }
+
         if (options.TimeoutMs <= 0) failures.Add("VoiceTranscription:TimeoutMs must be > 0");
         if (options.MaxOutputBytes <= 0) failures.Add("VoiceTranscription:MaxOutputBytes must be > 0");
         if (options.MaxInputBytes <= 0) failures.Add("VoiceTranscription:MaxInputBytes must be > 0");

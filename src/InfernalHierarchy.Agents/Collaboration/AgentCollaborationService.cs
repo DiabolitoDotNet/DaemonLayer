@@ -1,7 +1,9 @@
 using System.Collections.Concurrent;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Channels;
 using InfernalHierarchy.Agents.Collaboration.Strategies;
+using InfernalHierarchy.Core.Serialization;
 
 namespace InfernalHierarchy.Agents.Collaboration;
 
@@ -21,6 +23,7 @@ public class AgentCollaborationService : IAgentCollaborationService
     private readonly ConcurrentDictionary<string, DateTime> _roundStartTimes;
     private readonly ConcurrentDictionary<string, Channel<AgentResponse>> _responseChannels;
     private readonly IReadOnlyDictionary<CollaborationStrategy, IAggregationStrategy> _aggregationStrategies;
+    private readonly ISharedMemory? _sharedMemory;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="AgentCollaborationService"/> class.
@@ -32,7 +35,7 @@ public class AgentCollaborationService : IAgentCollaborationService
         ILogger<AgentCollaborationService> logger,
         IMessageBus messageBus,
         IAgentRegistry agentRegistry)
-        : this(logger, messageBus, agentRegistry, CreateDefaultStrategies())
+        : this(logger, messageBus, agentRegistry, CreateDefaultStrategies(), sharedMemory: null)
     {
     }
 
@@ -40,11 +43,13 @@ public class AgentCollaborationService : IAgentCollaborationService
         ILogger<AgentCollaborationService> logger,
         IMessageBus messageBus,
         IAgentRegistry agentRegistry,
-        IEnumerable<IAggregationStrategy> aggregationStrategies)
+        IEnumerable<IAggregationStrategy> aggregationStrategies,
+        ISharedMemory? sharedMemory = null)
     {
         _logger = logger;
         _messageBus = messageBus;
         _agentRegistry = agentRegistry;
+        _sharedMemory = sharedMemory;
         _activeCollaborations = new ConcurrentDictionary<string, CollaborationRequest>();
         _responses = new ConcurrentDictionary<string, List<AgentResponse>>();
         _collaborationRounds = new ConcurrentDictionary<string, int>();
@@ -148,6 +153,8 @@ public class AgentCollaborationService : IAgentCollaborationService
         _ = GetOrCreateResponseChannel(request.Id);
         request.Status = CollaborationStatus.InProgress;
 
+        await PersistCollaborationStartAsync(request, ct).ConfigureAwait(false);
+
         // If the caller left the default strategy, try selecting a better one based on participants/task.
         if (request.Strategy == CollaborationStrategy.Voting)
         {
@@ -172,6 +179,7 @@ public class AgentCollaborationService : IAgentCollaborationService
                 if (validResponses.Count >= request.MinimumParticipants)
                 {
                     var result = await AggregateResponsesAsync(request, validResponses, ct).ConfigureAwait(false);
+                    ApplyConflictProtocolMetadata(result, request, validResponses);
 
                     if (result.Confidence >= request.MinimumConfidence)
                     {
@@ -179,6 +187,7 @@ public class AgentCollaborationService : IAgentCollaborationService
                         request.CompletedAt = DateTime.UtcNow;
                         request.Result = result;
                         AnalyzeCollaborationHistory(request, result);
+                        await PersistCollaborationOutcomeAsync(request, result, ct).ConfigureAwait(false);
                         CleanupResponseChannel(request.Id);
                         return result;
                     }
@@ -187,12 +196,14 @@ public class AgentCollaborationService : IAgentCollaborationService
                     var resolved = await ResolveConflictAsync(validResponses, request.Strategy, request.Id, ct).ConfigureAwait(false);
                     if (resolved.Decision != "CONFLICT_UNRESOLVED_RETRY")
                     {
+                        ApplyConflictProtocolMetadata(resolved, request, validResponses);
                         request.Status = resolved.Confidence >= request.MinimumConfidence
                             ? CollaborationStatus.Completed
                             : CollaborationStatus.Failed;
                         request.CompletedAt = DateTime.UtcNow;
                         request.Result = resolved;
                         AnalyzeCollaborationHistory(request, resolved);
+                        await PersistCollaborationOutcomeAsync(request, resolved, ct).ConfigureAwait(false);
                         CleanupResponseChannel(request.Id);
                         return resolved;
                     }
@@ -219,6 +230,7 @@ public class AgentCollaborationService : IAgentCollaborationService
                     request.CompletedAt = DateTime.UtcNow;
                     request.Result = result;
                     AnalyzeCollaborationHistory(request, result);
+                    await PersistCollaborationOutcomeAsync(request, result, ct).ConfigureAwait(false);
                     CleanupResponseChannel(request.Id);
                     return result;
                 }
@@ -254,8 +266,10 @@ public class AgentCollaborationService : IAgentCollaborationService
             if (partial.Count > 0)
             {
                 var partialResult = await AggregateResponsesAsync(request, partial, ct).ConfigureAwait(false);
+                ApplyConflictProtocolMetadata(partialResult, request, partial);
                 request.Result = partialResult;
                 AnalyzeCollaborationHistory(request, partialResult);
+                await PersistCollaborationOutcomeAsync(request, partialResult, ct).ConfigureAwait(false);
                 CleanupResponseChannel(request.Id);
                 return partialResult;
             }
@@ -266,7 +280,11 @@ public class AgentCollaborationService : IAgentCollaborationService
                 Decision = "TIMEOUT",
                 Confidence = 0.0,
                 AggregatedReasoning = "Collaboration timed out before receiving sufficient responses",
-                Strategy = request.Strategy
+                Strategy = request.Strategy,
+                ConflictClass = "timeout",
+                ConflictReasonCode = "timeout_waiting_for_participants",
+                NextAction = "retry_with_longer_timeout_or_reduce_minimum_participants",
+                NeedsSupervisorIntervention = false
             };
         }
 
@@ -276,7 +294,11 @@ public class AgentCollaborationService : IAgentCollaborationService
             Decision = request.Status == CollaborationStatus.Cancelled ? "CANCELLED" : "FAILED",
             Confidence = 0.0,
             AggregatedReasoning = "Collaboration did not complete successfully",
-            Strategy = request.Strategy
+            Strategy = request.Strategy,
+            ConflictClass = request.Status == CollaborationStatus.Cancelled ? "cancelled" : "unresolved",
+            ConflictReasonCode = request.Status == CollaborationStatus.Cancelled ? "request_cancelled" : "collaboration_failed",
+            NextAction = request.Status == CollaborationStatus.Cancelled ? "restart_collaboration_if_still_needed" : "escalate_to_supervisor",
+            NeedsSupervisorIntervention = request.Status != CollaborationStatus.Cancelled
         };
     }
 
@@ -334,6 +356,8 @@ public class AgentCollaborationService : IAgentCollaborationService
             responseList.Add(response);
         }
 
+        _ = PersistCollaborationResponseAsync(requestId, response, ct);
+
         _logger.LogDebug(
             "Received collaboration response from agent {AgentId} for request {RequestId} (confidence: {Confidence:F2})",
             response.AgentId, requestId, response.Confidence);
@@ -361,6 +385,8 @@ public class AgentCollaborationService : IAgentCollaborationService
                 FromAgentId = request.InitiatorAgentId,
                 ToAgentId = participantId,
                 Timestamp = DateTime.UtcNow,
+                CorrelationId = request.Id,
+                CausationId = request.Id,
                 Payload = new Dictionary<string, object>
                 {
                     ["CollaborationId"] = request.Id,
@@ -591,7 +617,11 @@ Instruction: If you change your decision, explain why. If you keep it, explain w
                 ParticipantCount = responses.Count,
                 AgreementScore = 0.0,
                 Strategy = originalStrategy,
-                AggregatedReasoning = $"Round {currentRound + 1}/3: Agents disagreed, requesting refined responses with conflict context"
+                AggregatedReasoning = $"Round {currentRound + 1}/3: Agents disagreed, requesting refined responses with conflict context",
+                ConflictClass = "unresolved",
+                ConflictReasonCode = "requires_additional_round",
+                NextAction = "run_next_consensus_round",
+                NeedsSupervisorIntervention = false
             };
         }
 
@@ -604,8 +634,208 @@ Instruction: If you change your decision, explain why. If you keep it, explain w
             ParticipantCount = responses.Count,
             AgreementScore = 0.0,
             Strategy = originalStrategy,
-            AggregatedReasoning = "Multiple strategies and rounds failed to resolve disagreement. Manual intervention may be required."
+            AggregatedReasoning = "Multiple strategies and rounds failed to resolve disagreement. Manual intervention may be required.",
+            ConflictClass = "unresolved",
+            ConflictReasonCode = "max_rounds_exhausted",
+            NextAction = "supervisor_manual_adjudication",
+            NeedsSupervisorIntervention = true
         };
+    }
+
+    private static void ApplyConflictProtocolMetadata(
+        CollaborationResult result,
+        CollaborationRequest request,
+        List<AgentResponse> responses)
+    {
+        if (!string.IsNullOrWhiteSpace(result.ConflictClass) && !string.Equals(result.ConflictClass, "none", StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        if (responses.Count == 0)
+        {
+            result.ConflictClass = "none";
+            result.ConflictReasonCode = string.Empty;
+            result.NextAction = "none";
+            result.NeedsSupervisorIntervention = false;
+            return;
+        }
+
+        var normalized = responses
+            .Where(r => !string.IsNullOrWhiteSpace(r.Response))
+            .GroupBy(r => r.Response.Trim(), StringComparer.OrdinalIgnoreCase)
+            .Select(g => g.Count())
+            .OrderByDescending(c => c)
+            .ToList();
+
+        var hasTie = normalized.Count > 1 && normalized[0] == normalized[1];
+        var lowConfidence = result.Confidence < request.MinimumConfidence;
+
+        if (!hasTie && !lowConfidence)
+        {
+            result.ConflictClass = "none";
+            result.ConflictReasonCode = string.Empty;
+            result.NextAction = "none";
+            result.NeedsSupervisorIntervention = false;
+            return;
+        }
+
+        if (hasTie)
+        {
+            result.ConflictClass = "tie";
+            result.ConflictReasonCode = "decision_tie";
+            result.NextAction = "escalate_strategy_or_supervisor";
+            result.NeedsSupervisorIntervention = false;
+            return;
+        }
+
+        result.ConflictClass = "low_confidence";
+        result.ConflictReasonCode = "confidence_below_threshold";
+        result.NextAction = "request_more_evidence_or_escalate";
+        result.NeedsSupervisorIntervention = false;
+    }
+
+    private async Task PersistCollaborationStartAsync(CollaborationRequest request, CancellationToken ct)
+    {
+        if (_sharedMemory is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var content = JsonSerializer.Serialize(new
+            {
+                collaboration_id = request.Id,
+                event_type = "collaboration_started",
+                strategy = request.Strategy.ToString(),
+                initiator_agent_id = request.InitiatorAgentId,
+                participants = request.ParticipantAgentIds,
+                minimum_participants = request.MinimumParticipants,
+                minimum_confidence = request.MinimumConfidence,
+                timeout_seconds = request.Timeout.TotalSeconds,
+                task = request.Task
+            }, JsonDefaults.Web);
+
+            await _sharedMemory.AddFactAsync(new Fact
+            {
+                CreatedBy = request.InitiatorAgentId,
+                Category = "collaboration.timeline",
+                Content = content,
+                Source = "agent_collaboration_service",
+                Confidence = 1.0,
+                Visibility = MemoryVisibility.Public
+            }, ct).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to persist collaboration start artifact for {CollaborationId}", request.Id);
+        }
+    }
+
+    private async Task PersistCollaborationResponseAsync(string requestId, AgentResponse response, CancellationToken ct)
+    {
+        if (_sharedMemory is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var content = JsonSerializer.Serialize(new
+            {
+                collaboration_id = requestId,
+                event_type = "collaboration_response",
+                round = response.Round,
+                agent_id = response.AgentId,
+                agent_rank = response.AgentRank.ToString(),
+                confidence = response.Confidence,
+                response = response.Response,
+                reasoning = response.Reasoning,
+                processing_time_ms = response.ProcessingTimeMs,
+                timestamp_utc = response.Timestamp
+            }, JsonDefaults.Web);
+
+            await _sharedMemory.AddFactAsync(new Fact
+            {
+                CreatedBy = response.AgentId,
+                Category = "collaboration.timeline",
+                Content = content,
+                Source = "agent_collaboration_service",
+                Confidence = Math.Max(0.0, Math.Min(1.0, response.Confidence)),
+                Visibility = MemoryVisibility.Public
+            }, ct).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to persist collaboration response artifact for {CollaborationId}", requestId);
+        }
+    }
+
+    private async Task PersistCollaborationOutcomeAsync(CollaborationRequest request, CollaborationResult result, CancellationToken ct)
+    {
+        if (_sharedMemory is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var groupedResponses = result.Responses
+                .GroupBy(r => r.Response)
+                .ToDictionary(g => g.Key, g => g.Count(), StringComparer.OrdinalIgnoreCase);
+
+            var assumptions = result.Responses
+                .Select(r => r.Reasoning)
+                .Where(r => !string.IsNullOrWhiteSpace(r))
+                .Take(5)
+                .ToList();
+
+            var outcomeContent = JsonSerializer.Serialize(new
+            {
+                collaboration_id = request.Id,
+                event_type = "collaboration_completed",
+                status = request.Status.ToString(),
+                task = request.Task,
+                strategy = result.Strategy.ToString(),
+                participants = request.ParticipantAgentIds,
+                participant_count = result.ParticipantCount,
+                decision = result.Decision,
+                confidence = result.Confidence,
+                agreement_score = result.AgreementScore,
+                conflict_class = result.ConflictClass,
+                conflict_reason_code = result.ConflictReasonCode,
+                next_action = result.NextAction,
+                needs_supervisor_intervention = result.NeedsSupervisorIntervention,
+                assumptions = assumptions,
+                evidence = groupedResponses,
+                completed_at_utc = request.CompletedAt
+            }, JsonDefaults.Web);
+
+            await _sharedMemory.AddDecisionAsync(new Decision
+            {
+                CreatedBy = request.InitiatorAgentId,
+                Context = $"collaboration_id={request.Id}; task={request.Task}",
+                Action = result.Decision,
+                Reasoning = outcomeContent,
+                Outcome = request.Status.ToString(),
+                Visibility = MemoryVisibility.Public
+            }, ct).ConfigureAwait(false);
+
+            await _sharedMemory.AddFactAsync(new Fact
+            {
+                CreatedBy = request.InitiatorAgentId,
+                Category = "collaboration.timeline",
+                Content = outcomeContent,
+                Source = "agent_collaboration_service",
+                Confidence = Math.Max(0.0, Math.Min(1.0, result.Confidence)),
+                Visibility = MemoryVisibility.Public
+            }, ct).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to persist collaboration outcome artifact for {CollaborationId}", request.Id);
+        }
     }
 
     /// <summary>

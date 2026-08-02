@@ -15,4 +15,8 @@ public interface ICustomToolStore
     Task<CustomToolDefinition?> GetByNameAsync(string toolName, CancellationToken ct = default);
 
     Task<IReadOnlyList<CustomToolDefinition>> GetAllAsync(CancellationToken ct = default);
+
+    Task<bool> DeleteByIdAsync(string id, CancellationToken ct = default);
+
+    Task<bool> DeleteByNameAsync(string toolName, CancellationToken ct = default);
 }

@@ -7,6 +7,44 @@ namespace InfernalHierarchy.Tools.Tools.Collaboration;
 /// </summary>
 public class RequestCollaborationTool : ITool
 {
+    private sealed record CollaborationTemplateDefinition(
+        string Name,
+        CollaborationStrategy Strategy,
+        int MinParticipants,
+        double MinConfidence,
+        string ParticipantRanks,
+        bool IncludeThinking,
+        string Description);
+
+    private static readonly IReadOnlyDictionary<string, CollaborationTemplateDefinition> Templates =
+        new Dictionary<string, CollaborationTemplateDefinition>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["parallel_research_adjudicate"] = new(
+                Name: "parallel_research_adjudicate",
+                Strategy: CollaborationStrategy.WeightedVoting,
+                MinParticipants: 3,
+                MinConfidence: 0.75,
+                ParticipantRanks: "worker,duke",
+                IncludeThinking: false,
+                Description: "Run parallel research by workers, then weighted adjudication."),
+            ["debate_then_synthesize"] = new(
+                Name: "debate_then_synthesize",
+                Strategy: CollaborationStrategy.Consensus,
+                MinParticipants: 2,
+                MinConfidence: 0.8,
+                ParticipantRanks: "worker,duke",
+                IncludeThinking: true,
+                Description: "Collect opposing proposals, then converge through synthesis rounds."),
+            ["hierarchical_risk_review"] = new(
+                Name: "hierarchical_risk_review",
+                Strategy: CollaborationStrategy.Hierarchical,
+                MinParticipants: 2,
+                MinConfidence: 0.7,
+                ParticipantRanks: "prince,duke,worker",
+                IncludeThinking: false,
+                Description: "Use hierarchical override for high-risk or high-impact decisions.")
+        };
+
     private readonly ILogger<RequestCollaborationTool> _logger;
     private readonly IAgentCollaborationService _collaborationService;
     private readonly IAgentRegistry _agentRegistry;
@@ -26,6 +64,7 @@ public class RequestCollaborationTool : ITool
     public string Description => "Request collaboration and consensus from multiple agents for complex decisions. " +
         "Use when you need input from other agents or want to reach consensus. " +
         "Parameters: task (string, required), strategy (voting/weighted/consensus/highest_confidence/hierarchical, default: weighted), " +
+        "template (parallel_research_adjudicate/debate_then_synthesize/hierarchical_risk_review, optional), " +
         "min_participants (int, default: 2), min_confidence (double, default: 0.7), participant_ranks (comma-separated ranks, optional), " +
         "timeout_seconds (int, default: 120), include_thinking (bool, default: false).";
 
@@ -55,8 +94,20 @@ public class RequestCollaborationTool : ITool
                 };
             }
 
+            var templateName = parameters.GetValueOrDefault("template")?.ToString();
+            var template = TryGetTemplate(templateName);
+
             // Extract strategy
-            var strategyStr = parameters.GetValueOrDefault("strategy", "weighted")?.ToString()?.ToLowerInvariant() ?? "weighted";
+            var defaultStrategy = template?.Strategy switch
+            {
+                CollaborationStrategy.Voting => "voting",
+                CollaborationStrategy.Consensus => "consensus",
+                CollaborationStrategy.HighestConfidence => "highest_confidence",
+                CollaborationStrategy.Hierarchical => "hierarchical",
+                _ => "weighted"
+            };
+
+            var strategyStr = parameters.GetValueOrDefault("strategy", defaultStrategy ?? "weighted")?.ToString()?.ToLowerInvariant() ?? "weighted";
             var strategy = strategyStr switch
             {
                 "voting" => CollaborationStrategy.Voting,
@@ -67,7 +118,7 @@ public class RequestCollaborationTool : ITool
             };
 
             // Extract min participants
-            var minParticipants = 2;
+            var minParticipants = template?.MinParticipants ?? 2;
             if (parameters.TryGetValue("min_participants", out var minParticipantsObj))
             {
                 if (minParticipantsObj is int minParticipantsInt)
@@ -83,7 +134,7 @@ public class RequestCollaborationTool : ITool
             minParticipants = Math.Max(2, Math.Min(10, minParticipants)); // Clamp 2-10
 
             // Extract min confidence
-            var minConfidence = 0.7;
+            var minConfidence = template?.MinConfidence ?? 0.7;
             if (parameters.TryGetValue("min_confidence", out var minConfidenceObj))
             {
                 if (minConfidenceObj is double minConfidenceDouble)
@@ -116,7 +167,7 @@ public class RequestCollaborationTool : ITool
             timeoutSeconds = Math.Max(5, Math.Min(600, timeoutSeconds));
 
             // Select participants: by default only pick Idle agents.
-            var includeThinking = false;
+            var includeThinking = template?.IncludeThinking ?? false;
             if (parameters.TryGetValue("include_thinking", out var includeThinkingObj) && includeThinkingObj != null)
             {
                 if (includeThinkingObj is bool includeThinkingBool)
@@ -137,10 +188,13 @@ public class RequestCollaborationTool : ITool
 
             // Determine participant agents
             var participants = new List<string>();
-            if (parameters.TryGetValue("participant_ranks", out var ranksObj))
+            var rankSelector = parameters.TryGetValue("participant_ranks", out var ranksObj)
+                ? ranksObj?.ToString()
+                : template?.ParticipantRanks;
+
+            if (!string.IsNullOrWhiteSpace(rankSelector))
             {
-                var ranksStr = ranksObj?.ToString() ?? string.Empty;
-                var ranks = ranksStr.Split(',', StringSplitOptions.RemoveEmptyEntries)
+                var ranks = rankSelector.Split(',', StringSplitOptions.RemoveEmptyEntries)
                     .Select(r => r.Trim().ToLowerInvariant())
                     .ToList();
 
@@ -207,11 +261,20 @@ public class RequestCollaborationTool : ITool
             // Format result
             var resultJson = JsonSerializer.Serialize(new
             {
+                collaboration_id = request.Id,
                 decision = result.Decision,
                 confidence = Math.Round(result.Confidence, 2),
                 agreement_score = Math.Round(result.AgreementScore, 2),
                 participant_count = result.ParticipantCount,
                 strategy = result.Strategy.ToString(),
+                template = template?.Name,
+                conflict = new
+                {
+                    @class = result.ConflictClass,
+                    reason_code = result.ConflictReasonCode,
+                    next_action = result.NextAction,
+                    needs_supervisor_intervention = result.NeedsSupervisorIntervention
+                },
                 reasoning = result.AggregatedReasoning.Length > 500 
                     ? result.AggregatedReasoning[..500] + "..." 
                     : result.AggregatedReasoning
@@ -220,7 +283,16 @@ public class RequestCollaborationTool : ITool
             return new ToolResult
             {
                 Success = true,
-                Output = $"Collaboration completed:\n{resultJson}"
+                Output = $"Collaboration completed:\n{resultJson}",
+                Metadata =
+                {
+                    ["collaboration_id"] = request.Id,
+                    ["template"] = template?.Name ?? string.Empty,
+                    ["conflict_class"] = result.ConflictClass,
+                    ["conflict_reason_code"] = result.ConflictReasonCode,
+                    ["next_action"] = result.NextAction,
+                    ["needs_supervisor_intervention"] = result.NeedsSupervisorIntervention
+                }
             };
         }
         catch (Exception ex)
@@ -232,5 +304,17 @@ public class RequestCollaborationTool : ITool
                 Error = $"Collaboration failed: {ex.Message}"
             };
         }
+    }
+
+    private static CollaborationTemplateDefinition? TryGetTemplate(string? templateName)
+    {
+        if (string.IsNullOrWhiteSpace(templateName))
+        {
+            return null;
+        }
+
+        return Templates.TryGetValue(templateName.Trim(), out var template)
+            ? template
+            : null;
     }
 }

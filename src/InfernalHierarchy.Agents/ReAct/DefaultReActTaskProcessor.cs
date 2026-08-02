@@ -1,4 +1,6 @@
 using System.Text.RegularExpressions;
+using System.Text.Json;
+using InfernalHierarchy.Core.Serialization;
 
 namespace InfernalHierarchy.Agents.ReAct;
 
@@ -17,7 +19,8 @@ public sealed class DefaultReActTaskProcessor : IReActTaskProcessor
 
     public async Task<AgentMessage> ProcessAsync(ReActTaskProcessorContext context, AgentMessage task, CancellationToken ct)
     {
-        var effectiveContext = context with { Persona = BuildEffectivePersonaForTask(context.Persona, task) };
+        var overlay = context.RuntimeSkillStore?.GetOverlay(context.AgentId, DateTime.UtcNow);
+        var effectiveContext = context with { Persona = BuildEffectivePersonaForTask(context.Persona, task, overlay) };
 
         _eventAppender.TryAppendTaskEvent(context.EventSink, context.AgentId, context.AgentRank, task, EventType.TaskReceived, "Task received");
 
@@ -84,7 +87,9 @@ public sealed class DefaultReActTaskProcessor : IReActTaskProcessor
                     FromAgentId = effectiveContext.AgentId,
                     ToAgentId = task.FromAgentId,
                     Type = MessageType.Report,
-                    Content = response
+                    Content = response,
+                    CorrelationId = task.CorrelationId ?? task.Id,
+                    CausationId = task.Id
                 };
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -115,7 +120,9 @@ public sealed class DefaultReActTaskProcessor : IReActTaskProcessor
                     ToAgentId = task.FromAgentId,
                     Type = MessageType.Report,
                     Content = $"❌ Error: {ex.Message}",
-                    Payload = new Dictionary<string, object>(task.Payload ?? new Dictionary<string, object>())
+                    Payload = new Dictionary<string, object>(task.Payload ?? new Dictionary<string, object>()),
+                    CorrelationId = task.CorrelationId ?? task.Id,
+                    CausationId = task.Id
                 };
             }
         }
@@ -140,7 +147,7 @@ public sealed class DefaultReActTaskProcessor : IReActTaskProcessor
 
             systemContext = AppendRuntimeConstraints(systemContext, effectiveContext.Persona, task);
 
-            var result = await RunLoopAsync(effectiveContext, systemContext, effectiveTaskContent, ct).ConfigureAwait(false);
+            var result = await RunLoopAsync(effectiveContext, systemContext, effectiveTaskContent, task, ct).ConfigureAwait(false);
 
             await effectiveContext.SharedMemory.AddDecisionAsync(new Decision
             {
@@ -181,7 +188,9 @@ public sealed class DefaultReActTaskProcessor : IReActTaskProcessor
                 ToAgentId = task.FromAgentId,
                 Type = MessageType.Report,
                 Content = result.FinalAnswer,
-                Payload = responsePayload
+                Payload = responsePayload,
+                CorrelationId = task.CorrelationId ?? task.Id,
+                CausationId = task.Id
             };
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -212,12 +221,14 @@ public sealed class DefaultReActTaskProcessor : IReActTaskProcessor
                 ToAgentId = task.FromAgentId,
                 Type = MessageType.Report,
                 Content = $"❌ Error: {ex.Message}",
-                Payload = new Dictionary<string, object>(task.Payload ?? new Dictionary<string, object>())
+                Payload = new Dictionary<string, object>(task.Payload ?? new Dictionary<string, object>()),
+                CorrelationId = task.CorrelationId ?? task.Id,
+                CausationId = task.Id
             };
         }
     }
 
-    private static Persona BuildEffectivePersonaForTask(Persona persona, AgentMessage task)
+    private static Persona BuildEffectivePersonaForTask(Persona persona, AgentMessage task, AgentSkillRuntimeOverlay? overlay)
     {
         var isHttp = task.Payload is not null
             && task.Payload.TryGetValue("transport", out var transportObj)
@@ -225,6 +236,10 @@ public sealed class DefaultReActTaskProcessor : IReActTaskProcessor
             && string.Equals(transportObj.ToString(), "http", StringComparison.OrdinalIgnoreCase);
 
         var tools = persona.AvailableTools.AsEnumerable();
+        if (overlay is not null && overlay.AdditionalTools.Count > 0)
+        {
+            tools = tools.Concat(overlay.AdditionalTools);
+        }
 
         if (persona.AvailableTools.Contains("send_telegram", StringComparer.OrdinalIgnoreCase))
         {
@@ -241,9 +256,39 @@ public sealed class DefaultReActTaskProcessor : IReActTaskProcessor
             tools = tools.Where(t => !string.Equals(t, "send_agent_message", StringComparison.OrdinalIgnoreCase));
         }
 
-        var filtered = tools.ToArray();
+        var filtered = tools
+            .Where(t => !string.IsNullOrWhiteSpace(t))
+            .Select(t => t.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
 
-        if (filtered.SequenceEqual(persona.AvailableTools, StringComparer.OrdinalIgnoreCase))
+        var specializations = persona.Specializations;
+        if (overlay is not null && overlay.AdditionalSpecializations.Count > 0)
+        {
+            specializations = specializations
+                .Concat(overlay.AdditionalSpecializations)
+                .Where(s => !string.IsNullOrWhiteSpace(s))
+                .Select(s => s.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+        }
+
+        var customInstructions = new Dictionary<string, string>(persona.CustomInstructions, StringComparer.OrdinalIgnoreCase);
+        var mergedSystemPrompt = persona.SystemPrompt;
+        if (overlay is not null && overlay.PromptFragments.Count > 0)
+        {
+            mergedSystemPrompt = $"{mergedSystemPrompt}{Environment.NewLine}{Environment.NewLine}# Temporary Skill Guidance{Environment.NewLine}- {string.Join(Environment.NewLine + "- ", overlay.PromptFragments)}";
+        }
+
+        if (overlay is not null && overlay.ActiveSkillPackIds.Count > 0)
+        {
+            customInstructions["runtime_skill_packs"] = string.Join(",", overlay.ActiveSkillPackIds);
+        }
+
+        if (filtered.SequenceEqual(persona.AvailableTools, StringComparer.OrdinalIgnoreCase)
+            && ReferenceEquals(specializations, persona.Specializations)
+            && string.Equals(mergedSystemPrompt, persona.SystemPrompt, StringComparison.Ordinal)
+            && customInstructions.Count == persona.CustomInstructions.Count)
         {
             return persona;
         }
@@ -252,12 +297,12 @@ public sealed class DefaultReActTaskProcessor : IReActTaskProcessor
         {
             Name = persona.Name,
             DemonTitle = persona.DemonTitle,
-            SystemPrompt = persona.SystemPrompt,
+            SystemPrompt = mergedSystemPrompt,
             ModelOverride = persona.ModelOverride,
             Personality = persona.Personality,
-            Specializations = persona.Specializations,
+            Specializations = specializations,
             AvailableTools = filtered,
-            CustomInstructions = new Dictionary<string, string>(persona.CustomInstructions)
+            CustomInstructions = customInstructions
         };
     }
 
@@ -402,8 +447,13 @@ public sealed class DefaultReActTaskProcessor : IReActTaskProcessor
         return !string.IsNullOrWhiteSpace(command);
     }
 
-    private async Task<ReActResult> RunLoopAsync(ReActTaskProcessorContext context, string systemContext, string task, CancellationToken ct)
+    private async Task<ReActResult> RunLoopAsync(ReActTaskProcessorContext context, string systemContext, string task, AgentMessage sourceTask, CancellationToken ct)
     {
+        async Task EmitCheckpointAsync(ReActCheckpoint checkpoint, CancellationToken token)
+        {
+            await PersistCheckpointAsync(context, sourceTask, checkpoint, token).ConfigureAwait(false);
+        }
+
         var loopContext = new ReActLoopContext(
             SystemContext: systemContext,
             Task: task,
@@ -418,7 +468,8 @@ public sealed class DefaultReActTaskProcessor : IReActTaskProcessor
             AgentName: context.AgentName,
             AgentRank: context.AgentRank,
             ReActOptions: context.ReActOptions,
-            PromptBuilder: context.PromptBuilder);
+            PromptBuilder: context.PromptBuilder,
+            EmitCheckpoint: EmitCheckpointAsync);
 
         var result = await context.LoopRunner.RunAsync(loopContext, ct).ConfigureAwait(false);
 
@@ -464,7 +515,9 @@ public sealed class DefaultReActTaskProcessor : IReActTaskProcessor
                 FromAgentId = context.AgentId,
                 ToAgentId = task.FromAgentId,
                 Type = MessageType.Report,
-                Content = response
+                Content = response,
+                CorrelationId = task.CorrelationId ?? task.Id,
+                CausationId = task.Id
             };
         }
         catch (Exception ex)
@@ -475,7 +528,9 @@ public sealed class DefaultReActTaskProcessor : IReActTaskProcessor
                 FromAgentId = context.AgentId,
                 ToAgentId = task.FromAgentId,
                 Type = MessageType.Report,
-                Content = $"❌ Error handling command: {ex.Message}"
+                Content = $"❌ Error handling command: {ex.Message}",
+                CorrelationId = task.CorrelationId ?? task.Id,
+                CausationId = task.Id
             };
         }
     }
@@ -527,7 +582,7 @@ public sealed class DefaultReActTaskProcessor : IReActTaskProcessor
                 logger: context.Logger,
                 ct: ct).ConfigureAwait(false);
 
-            var result = await RunLoopAsync(context, systemContext, task, ct).ConfigureAwait(false);
+            var result = await RunLoopAsync(context, systemContext, task, message, ct).ConfigureAwait(false);
 
             context.SetStatus(AgentStatus.Idle);
 
@@ -565,7 +620,9 @@ public sealed class DefaultReActTaskProcessor : IReActTaskProcessor
                 FromAgentId = context.AgentId,
                 ToAgentId = message.FromAgentId,
                 Type = MessageType.Report,
-                Content = $"Collaboration response submitted: {preview}..."
+                Content = $"Collaboration response submitted: {preview}...",
+                CorrelationId = message.CorrelationId ?? requestId,
+                CausationId = message.Id
             };
         }
         catch (Exception ex)
@@ -606,6 +663,80 @@ public sealed class DefaultReActTaskProcessor : IReActTaskProcessor
             Type = MessageType.Report,
             Content = $"❌ {errorMessage}"
         };
+
+    private static string? GetCollaborationId(AgentMessage sourceTask)
+    {
+        if (sourceTask.Payload is null)
+        {
+            return null;
+        }
+
+        if (sourceTask.Payload.TryGetValue("collaboration_id", out var collabLower))
+        {
+            return collabLower?.ToString();
+        }
+
+        if (sourceTask.Payload.TryGetValue("CollaborationId", out var collabPascal))
+        {
+            return collabPascal?.ToString();
+        }
+
+        return null;
+    }
+
+    private static async Task PersistCheckpointAsync(
+        ReActTaskProcessorContext context,
+        AgentMessage sourceTask,
+        ReActCheckpoint checkpoint,
+        CancellationToken ct)
+    {
+        var collaborationId = GetCollaborationId(sourceTask);
+        var payload = JsonSerializer.Serialize(new
+        {
+            checkpoint_type = "react",
+            phase = checkpoint.Phase,
+            label = checkpoint.Label,
+            detail = checkpoint.Detail,
+            iteration = checkpoint.Iteration,
+            occurred_at_utc = checkpoint.OccurredAtUtc,
+            branch_id = sourceTask.Id,
+            task_from_agent_id = sourceTask.FromAgentId,
+            task_to_agent_id = sourceTask.ToAgentId,
+            collaboration_id = collaborationId
+        }, JsonDefaults.Web);
+
+        await context.SharedMemory.AddFactAsync(new Fact
+        {
+            CreatedBy = context.AgentId,
+            Category = "react.checkpoint",
+            Content = payload,
+            Source = "react_loop",
+            Confidence = 1.0,
+            Visibility = MemoryVisibility.Public
+        }, ct).ConfigureAwait(false);
+
+        try
+        {
+            context.EventSink?.AppendEvent(new AgentEvent
+            {
+                AgentId = context.AgentId,
+                Type = EventType.DecisionMade,
+                Description = checkpoint.Label,
+                Metadata = new Dictionary<string, object>
+                {
+                    ["category"] = "react.checkpoint",
+                    ["task_id"] = sourceTask.Id,
+                    ["phase"] = checkpoint.Phase,
+                    ["iteration"] = checkpoint.Iteration,
+                    ["content"] = payload
+                }
+            });
+        }
+        catch
+        {
+            // best-effort eventing only
+        }
+    }
 
     private sealed record ReActResult(string FinalAnswer, string Reasoning, int Iterations, List<string> ToolCalls);
 }

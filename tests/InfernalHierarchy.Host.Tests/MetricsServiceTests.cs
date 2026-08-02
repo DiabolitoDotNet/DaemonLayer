@@ -147,4 +147,22 @@ public sealed class MetricsServiceTests
         collector.Reset();
         collector.GetAllMetrics().Should().BeEmpty();
     }
+
+    [Fact]
+    public static async Task ResourceLimitToolExecutionLimiter_ShouldIncrementTimeoutMetric()
+    {
+        var collector = new MetricsCollector();
+        var limits = new ResourceLimits { MaxConcurrentToolExecutions = 1, MaxToolExecutionTimeSeconds = 1 };
+        var service = new ResourceLimitService(limits);
+        var limiter = new ResourceLimitToolExecutionLimiter(service, collector);
+
+        var act = async () => await limiter.ExecuteAsync<int>(async ct =>
+        {
+            await Task.Delay(TimeSpan.FromSeconds(2), ct);
+            return 1;
+        }, CancellationToken.None);
+
+        await act.Should().ThrowAsync<TimeoutException>();
+        collector.GetCounter("tools.timeout.total").Should().Be(1);
+    }
 }

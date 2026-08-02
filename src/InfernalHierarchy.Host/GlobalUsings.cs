@@ -52,6 +52,7 @@ global using InfernalHierarchy.Tools.Tools.Notifications;
 global using InfernalHierarchy.Tools.Tools.Search;
 global using InfernalHierarchy.Tools.Tools.Telegram;
 global using InfernalHierarchy.Tools.Tools.Templates;
+global using InfernalHierarchy.Tools.Tools.Vision;
 global using InfernalHierarchy.Tools.Tools.Voice;
 
 global using Microsoft.AspNetCore.Builder;
