@@ -367,6 +367,82 @@ Suggested next iteration focus:
 
 ---
 
+## Autonomy 100% Closure Plan
+
+Objective: close the final gaps so agents can complete requested tasks end-to-end without human intervention.
+
+### A100.1 Apply execution profile switches automatically
+
+Status: DONE
+
+Gap:
+
+- Capability remediation already detects profile mismatch and recommends `SwitchExecutionProfile`, but the runtime previously kept using the original task profile.
+
+Implementation:
+
+- Apply remediation-selected profile directly to effective task payload before planning/loop execution.
+- Propagate switched profile into runtime constraints and tool authorization context.
+- Emit explicit applied decision event for traceability.
+
+Validation:
+
+- Build + tests on ReAct processing path.
+- Verify explainability/timeline shows switch event with `status=applied`.
+
+### A100.2 Complete cross-instance collaboration response collection
+
+Status: DONE
+
+Gap:
+
+- Federation sends collaboration requests but does not aggregate returned responses yet.
+
+Implementation:
+
+- Capture and parse remote collaboration responses from federated endpoints.
+- Aggregate confidence/decision and include source instance provenance.
+
+Validation:
+
+- Integration tests with at least 2 remote instances.
+
+### A100.3 Remove manual-only saga compensation endings
+
+Status: DONE
+
+Gap:
+
+- Failed compensation can terminate with manual intervention required.
+
+Implementation:
+
+- Add bounded compensation retries and autonomous fallback actions.
+- Emit structured failure reason codes and supervisor escalation requests.
+
+Validation:
+
+- Failure-injection scenarios showing autonomous recovery path.
+
+### A100.4 Align build/deploy autonomy tool surface
+
+Status: DONE
+
+Gap:
+
+- Execution profile allowlists include tools that are still disabled in runtime permissions/config.
+
+Implementation:
+
+- Align `ExecutionProfiles`, `ToolPermissions`, and tool-specific config toggles.
+- Ensure profile-authorized tools are actually executable.
+
+Validation:
+
+- Policy + E2E tests for representative Build and Deploy tasks.
+
+---
+
 ## Done Criteria (for each item)
 
 An item can move to COMPLETED.md only when all are true:

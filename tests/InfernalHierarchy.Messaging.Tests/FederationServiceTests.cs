@@ -245,7 +245,76 @@ public sealed class FederationServiceTests
     [Fact]
     public async Task RequestCrossInstanceCollaborationAsync_ReturnsAggregatedResult()
     {
-        var handler = new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK));
+        var handler = new StubHttpMessageHandler(request =>
+        {
+            var host = request.RequestUri?.Host ?? string.Empty;
+            var response = host.Contains("r2", StringComparison.OrdinalIgnoreCase)
+                ? new AgentResponse
+                {
+                    AgentId = "orb-2",
+                    Response = "NO",
+                    Confidence = 0.40,
+                    Reasoning = "unsafe change"
+                }
+                : new AgentResponse
+                {
+                    AgentId = "orb-1",
+                    Response = "YES",
+                    Confidence = 0.92,
+                    Reasoning = "validated by tests"
+                };
+
+            var message = new FederatedMessage
+            {
+                CorrelationId = "collab",
+                Payload = new Dictionary<string, object>
+                {
+                    ["AgentResponse"] = response
+                }
+            };
+
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = JsonContent.Create(message)
+            };
+        });
+        var sut = CreateService(handler, localInstanceId: "local");
+
+        await sut.RegisterInstanceAsync(new FederatedInstance { InstanceId = "i1", BaseUrl = "http://r1", IsActive = true, LastHeartbeat = DateTime.UtcNow });
+        await sut.RegisterInstanceAsync(new FederatedInstance { InstanceId = "i2", BaseUrl = "http://r2", IsActive = true, LastHeartbeat = DateTime.UtcNow });
+
+        var request = new CollaborationRequest
+        {
+            Id = "r1",
+            InitiatorAgentId = "lucifer",
+            Task = "t",
+            ParticipantAgentIds = ["a", "b"],
+            MinimumParticipants = 1,
+            Timeout = TimeSpan.FromSeconds(5)
+        };
+
+        var result = await sut.RequestCrossInstanceCollaborationAsync(request);
+
+        result.Decision.Should().Be("YES");
+        result.ParticipantCount.Should().Be(2);
+        result.Responses.Should().HaveCount(2);
+        result.Confidence.Should().BeApproximately(0.66, 0.001);
+        result.AggregatedReasoning.Should().Contain("i1");
+        result.AggregatedReasoning.Should().Contain("i2");
+        result.Strategy.Should().Be(request.Strategy);
+    }
+
+    [Fact]
+    public async Task RequestCrossInstanceCollaborationAsync_WhenNoRemoteResponse_ReturnsFallbackDecision()
+    {
+        var handler = new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = JsonContent.Create(new FederatedMessage
+            {
+                CorrelationId = "collab",
+                Payload = new Dictionary<string, object>()
+            })
+        });
         var sut = CreateService(handler, localInstanceId: "local");
 
         await sut.RegisterInstanceAsync(new FederatedInstance { InstanceId = "i1", BaseUrl = "http://r1", IsActive = true, LastHeartbeat = DateTime.UtcNow });
@@ -262,8 +331,10 @@ public sealed class FederationServiceTests
 
         var result = await sut.RequestCrossInstanceCollaborationAsync(request);
 
-        result.Decision.Should().Be("CROSS_INSTANCE_AGGREGATION");
-        result.Strategy.Should().Be(request.Strategy);
+        result.Decision.Should().Be("NO_CROSS_INSTANCE_RESPONSE");
+        result.ConflictReasonCode.Should().Be("cross_instance_no_responses");
+        result.NextAction.Should().Be("fallback_to_local_collaboration");
+        result.ParticipantCount.Should().Be(0);
     }
 
     [Fact]

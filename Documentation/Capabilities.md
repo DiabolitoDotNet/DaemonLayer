@@ -64,6 +64,24 @@ The host continuously monitors runtime degradation signals and can apply control
 
 Every mitigation is emitted as an auditable decision event and reflected in incident-response metrics.
 
+### 7) Federated collaboration aggregation
+
+Cross-instance collaboration can now collect remote responses and aggregate them into a single decision with source provenance:
+
+- remote responses are parsed from federated payloads,
+- final decision/confidence/agreement are computed from collected responses,
+- reasoning keeps source instance lineage for auditability.
+
+When no remote response is available in time, the system returns a structured fallback result (`cross_instance_no_responses`) with a next action for local collaboration fallback.
+
+### 8) Autonomous saga compensation recovery
+
+Saga compensation no longer ends in manual-only mode by default:
+
+- each compensation step retries with bounded attempts,
+- compensation failures emit structured reason codes,
+- saga result includes a supervisor escalation hint (`NeedsSupervisorIntervention`) and next action.
+
 ## Example workflows
 
 ### Research + synthesis

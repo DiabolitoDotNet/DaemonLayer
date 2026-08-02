@@ -45,6 +45,7 @@ public sealed class DefaultReActTaskProcessor : IReActTaskProcessor
 
         CapabilityGapAnalysisResult? gapAnalysis = null;
         CapabilityRemediationExecutionResult? remediationResult = null;
+        Dictionary<string, object> effectivePayload = new(task.Payload ?? new Dictionary<string, object>());
 
         if (task.Type is MessageType.Task or MessageType.Query or MessageType.Command)
         {
@@ -69,8 +70,22 @@ public sealed class DefaultReActTaskProcessor : IReActTaskProcessor
                 var refreshedOverlay = context.RuntimeSkillStore?.GetOverlay(context.AgentId, DateTime.UtcNow);
                 effectivePersona = BuildEffectivePersonaForTask(effectiveContext.Persona, task, refreshedOverlay);
                 effectiveContext = effectiveContext with { Persona = effectivePersona };
+
+                if (TryResolveSwitchedExecutionProfile(remediationResult, out var switchedProfile, out var switchReasonCode))
+                {
+                    effectivePayload["execution_profile"] = switchedProfile;
+                    effectivePayload["profile"] = switchedProfile;
+
+                    TryAppendExecutionProfileSwitchEvent(
+                        effectiveContext,
+                        task,
+                        switchedProfile,
+                        switchReasonCode);
+                }
             }
         }
+
+        var effectiveTask = CloneTaskWithPayload(task, effectivePayload);
 
         var effectiveTaskContent = task.Content;
         if (IsSupervisorReplan(task))
@@ -170,10 +185,10 @@ public sealed class DefaultReActTaskProcessor : IReActTaskProcessor
 
         try
         {
-            _eventAppender.TryAppendTaskEvent(effectiveContext.EventSink, effectiveContext.AgentId, effectiveContext.AgentRank, task, EventType.TaskStarted, "Task started");
+            _eventAppender.TryAppendTaskEvent(effectiveContext.EventSink, effectiveContext.AgentId, effectiveContext.AgentRank, effectiveTask, EventType.TaskStarted, "Task started");
 
-            var baseContext = await effectiveContext.BuildBaseContextAsync(task, ct).ConfigureAwait(false);
-            var resolvedExecutionProfile = ResolveExecutionProfile(task.Payload);
+            var baseContext = await effectiveContext.BuildBaseContextAsync(effectiveTask, ct).ConfigureAwait(false);
+            var resolvedExecutionProfile = ResolveExecutionProfile(effectiveTask.Payload);
             var planning = ReActTaskComplexityAdvisor.Assess(
                 effectiveTaskContent,
                 effectiveContext.Persona.AvailableTools,
@@ -189,9 +204,9 @@ public sealed class DefaultReActTaskProcessor : IReActTaskProcessor
                 logger: effectiveContext.Logger,
                 ct: ct).ConfigureAwait(false);
 
-            systemContext = AppendRuntimeConstraints(systemContext, effectiveContext.Persona, task, planning);
+            systemContext = AppendRuntimeConstraints(systemContext, effectiveContext.Persona, effectiveTask, planning);
 
-            var result = await RunLoopAsync(effectiveContext, systemContext, effectiveTaskContent, task, ct).ConfigureAwait(false);
+            var result = await RunLoopAsync(effectiveContext, systemContext, effectiveTaskContent, effectiveTask, ct).ConfigureAwait(false);
 
             await effectiveContext.SharedMemory.AddDecisionAsync(new Decision
             {
@@ -207,7 +222,7 @@ public sealed class DefaultReActTaskProcessor : IReActTaskProcessor
                 effectiveContext.EventSink,
                 effectiveContext.AgentId,
                 effectiveContext.AgentRank,
-                task,
+                effectiveTask,
                 EventType.TaskCompleted,
                 "Task completed",
                 new Dictionary<string, object>
@@ -221,7 +236,7 @@ public sealed class DefaultReActTaskProcessor : IReActTaskProcessor
 
             effectiveContext.SetStatus(AgentStatus.Idle);
 
-            var basePayload = task.Payload ?? new Dictionary<string, object>();
+            var basePayload = effectiveTask.Payload ?? new Dictionary<string, object>();
             var responsePayload = new Dictionary<string, object>(basePayload)
             {
                 ["reasoning"] = result.Reasoning,
@@ -266,8 +281,8 @@ public sealed class DefaultReActTaskProcessor : IReActTaskProcessor
                 Type = MessageType.Report,
                 Content = result.FinalAnswer,
                 Payload = responsePayload,
-                CorrelationId = task.CorrelationId ?? task.Id,
-                CausationId = task.Id
+                CorrelationId = effectiveTask.CorrelationId ?? effectiveTask.Id,
+                CausationId = effectiveTask.Id
             };
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -283,7 +298,7 @@ public sealed class DefaultReActTaskProcessor : IReActTaskProcessor
                 effectiveContext.EventSink,
                 effectiveContext.AgentId,
                 effectiveContext.AgentRank,
-                task,
+                effectiveTask,
                 EventType.TaskFailed,
                 "Task failed",
                 new Dictionary<string, object>
@@ -298,10 +313,83 @@ public sealed class DefaultReActTaskProcessor : IReActTaskProcessor
                 ToAgentId = task.FromAgentId,
                 Type = MessageType.Report,
                 Content = $"❌ Error: {ex.Message}",
-                Payload = new Dictionary<string, object>(task.Payload ?? new Dictionary<string, object>()),
-                CorrelationId = task.CorrelationId ?? task.Id,
-                CausationId = task.Id
+                Payload = new Dictionary<string, object>(effectiveTask.Payload ?? new Dictionary<string, object>()),
+                CorrelationId = effectiveTask.CorrelationId ?? effectiveTask.Id,
+                CausationId = effectiveTask.Id
             };
+        }
+    }
+
+    private static AgentMessage CloneTaskWithPayload(AgentMessage source, Dictionary<string, object> payload)
+    {
+        return new AgentMessage
+        {
+            Id = source.Id,
+            FromAgentId = source.FromAgentId,
+            ToAgentId = source.ToAgentId,
+            Type = source.Type,
+            Content = source.Content,
+            Payload = payload,
+            Timestamp = source.Timestamp,
+            CorrelationId = source.CorrelationId,
+            CausationId = source.CausationId
+        };
+    }
+
+    private static bool TryResolveSwitchedExecutionProfile(
+        CapabilityRemediationExecutionResult remediation,
+        out string profile,
+        out string reasonCode)
+    {
+        var switchAction = remediation.AppliedActions
+            .LastOrDefault(a => a.Kind == CapabilityRemediationActionKind.SwitchExecutionProfile
+                                && !string.IsNullOrWhiteSpace(a.TargetExecutionProfile));
+
+        if (switchAction is null || string.IsNullOrWhiteSpace(switchAction.TargetExecutionProfile))
+        {
+            profile = string.Empty;
+            reasonCode = string.Empty;
+            return false;
+        }
+
+        profile = switchAction.TargetExecutionProfile.Trim();
+        reasonCode = switchAction.ReasonCode;
+        return true;
+    }
+
+    private static void TryAppendExecutionProfileSwitchEvent(
+        ReActTaskProcessorContext context,
+        AgentMessage task,
+        string profile,
+        string reasonCode)
+    {
+        if (context.EventSink is null)
+        {
+            return;
+        }
+
+        try
+        {
+            context.EventSink.AppendEvent(new AgentEvent
+            {
+                AgentId = context.AgentId,
+                Type = EventType.DecisionMade,
+                Description = "Capability remediation execution profile switch applied",
+                Metadata = new Dictionary<string, object>
+                {
+                    ["category"] = "capability.remediation",
+                    ["task_id"] = task.Id,
+                    ["reason_code"] = reasonCode,
+                    ["action_kind"] = CapabilityRemediationActionKind.SwitchExecutionProfile.ToString(),
+                    ["status"] = "applied",
+                    ["target_execution_profile"] = profile,
+                    ["note"] = $"Execution profile switched to {profile}"
+                }
+            });
+        }
+        catch
+        {
+            // best-effort eventing only
         }
     }
 

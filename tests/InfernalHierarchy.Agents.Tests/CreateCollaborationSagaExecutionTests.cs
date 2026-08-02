@@ -86,6 +86,8 @@ public sealed class CreateCollaborationSagaExecutionTests
 
         result.Success.Should().BeFalse();
         result.CompensationSuccess.Should().BeTrue();
+        result.FailureReasonCode.Should().Be("execution_step_failed");
+        result.NeedsSupervisorIntervention.Should().BeFalse();
 
         memory.Verify(m => m.AddDecisionAsync(It.IsAny<Decision>(), It.IsAny<CancellationToken>()), Times.Once);
         memory.Verify(m => m.DeleteDecisionAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Once);
@@ -117,6 +119,8 @@ public sealed class CreateCollaborationSagaExecutionTests
         var result = await saga.ExecuteAsync(CancellationToken.None);
 
         result.Success.Should().BeFalse();
+        result.CompensationSuccess.Should().BeTrue();
+        result.FailureReasonCode.Should().Be("execution_step_failed");
         memory.Verify(m => m.AddDecisionAsync(It.IsAny<Decision>(), It.IsAny<CancellationToken>()), Times.Never);
         memory.Verify(m => m.AddFactAsync(It.IsAny<Fact>(), It.IsAny<CancellationToken>()), Times.Never);
         memory.Verify(m => m.DeleteDecisionAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);

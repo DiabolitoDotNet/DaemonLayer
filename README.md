@@ -20,6 +20,8 @@ Un système distribué d'agents LLM locaux fonctionnant avec Ollama, organisés 
 - ✅ **Skill Catalog JSON** : Packs de compétences réutilisables assignés par politique
 - ✅ **Supervision** : AgentSupervisor détecte les agents bloqués (replan) et peut préempter un sous-agent après replan si aucune progression
 - ✅ **Incident response autonome** : mitigation automatique des spikes timeout/rejets queue avec replan, préemption contrôlée et réduction temporaire du débit tool
+- ✅ **Collaboration fédérée** : collecte et agrégation cross-instance des réponses avec provenance des instances distantes
+- ✅ **Saga compensation autonome** : retries bornés de compensation + escalade superviseur structurée si épuisement
 - ✅ **.NET 10** : Dernière version avec performance optimisée
 
 ## 📋 Architecture

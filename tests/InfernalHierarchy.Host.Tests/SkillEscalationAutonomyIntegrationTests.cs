@@ -14,6 +14,120 @@ namespace InfernalHierarchy.Host.Tests;
 public sealed class SkillEscalationAutonomyIntegrationTests
 {
     [Fact]
+    public async Task CapabilityRemediation_ShouldApplyExecutionProfileSwitch_ToRuntimeLoopContext()
+    {
+        var sharedMemory = new Mock<ISharedMemory>();
+        sharedMemory.Setup(x => x.AddDecisionAsync(It.IsAny<Decision>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        var loopRunner = new CapturingLoopRunner();
+
+        var analyzer = new Mock<ICapabilityGapAnalyzer>();
+        analyzer.Setup(x => x.AnalyzeAsync(
+                It.IsAny<ReActTaskProcessorContext>(),
+                It.IsAny<AgentMessage>(),
+                It.IsAny<Persona>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new CapabilityGapAnalysisResult(
+                Gaps:
+                [
+                    new CapabilityGap(
+                        Capability: "build_workflow",
+                        ReasonCode: "profile_research_blocks_build",
+                        Description: "Build requires Build profile",
+                        BlockedByProfile: true,
+                        SuggestedSkillPackId: null,
+                        SuggestedExecutionProfile: "Build")
+                ],
+                Remediations:
+                [
+                    new CapabilityRemediationAction(
+                        Kind: CapabilityRemediationActionKind.SwitchExecutionProfile,
+                        ReasonCode: "switch_to_build_profile",
+                        Capability: "build_workflow",
+                        Description: "Switch to Build profile",
+                        TargetExecutionProfile: "Build")
+                ]));
+
+        var remediator = new Mock<ICapabilityRemediationOrchestrator>();
+        remediator.Setup(x => x.ExecuteAsync(
+                It.IsAny<ReActTaskProcessorContext>(),
+                It.IsAny<AgentMessage>(),
+                It.IsAny<CapabilityGapAnalysisResult>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new CapabilityRemediationExecutionResult(
+                AppliedActions:
+                [
+                    new CapabilityRemediationAction(
+                        Kind: CapabilityRemediationActionKind.SwitchExecutionProfile,
+                        ReasonCode: "switch_to_build_profile",
+                        Capability: "build_workflow",
+                        Description: "Switch to Build profile",
+                        TargetExecutionProfile: "Build")
+                ],
+                FailedActions: Array.Empty<CapabilityRemediationAction>(),
+                NewlyAvailableTools: Array.Empty<string>(),
+                Notes: new[] { "execution profile switch applied: Build" }));
+
+        var processor = new DefaultReActTaskProcessor(
+            new DefaultRagContextEnricher(),
+            new DefaultAgentEventAppender(),
+            analyzer.Object,
+            remediator.Object);
+
+        var basePersona = new Persona
+        {
+            Name = "Agares",
+            SystemPrompt = "You are Agares.",
+            AvailableTools = new[] { "repo_analyze" },
+            Specializations = new[] { "Planning" }
+        };
+
+        var context = new ReActTaskProcessorContext(
+            AgentId: "agent-99",
+            AgentName: "Agares",
+            AgentRank: AgentRank.Duke,
+            Persona: basePersona,
+            LlmClient: Mock.Of<ILlmClient>(),
+            ToolRegistry: Mock.Of<IToolRegistry>(),
+            SharedMemory: sharedMemory.Object,
+            ActionParser: Mock.Of<IActionParser>(),
+            ActionExecutor: Mock.Of<IActionExecutor>(),
+            ReportGenerator: Mock.Of<IReportGenerator>(),
+            PromptBuilder: Mock.Of<IReActPromptBuilder>(),
+            LoopRunner: loopRunner,
+            ReActOptions: new ReActOptions { UseJsonResponse = true },
+            RagOptions: new RagOptions { Enabled = false },
+            VectorMemory: null,
+            CollaborationService: null,
+            RuntimeSkillStore: null,
+            EventSink: null,
+            SetStatus: _ => { },
+            BuildBaseContextAsync: (_, _) => Task.FromResult("base-context"),
+            Logger: Mock.Of<ILogger>());
+
+        var response = await processor.ProcessAsync(context, new AgentMessage
+        {
+            Id = Guid.NewGuid().ToString(),
+            FromAgentId = "lucifer",
+            ToAgentId = "agent-99",
+            Type = MessageType.Task,
+            Content = "Build and test project",
+            Payload = new Dictionary<string, object>
+            {
+                ["execution_profile"] = "Research"
+            }
+        }, CancellationToken.None);
+
+        response.Content.Should().Be("final-answer");
+        response.Payload["execution_profile"].Should().Be("Build");
+
+        loopRunner.CapturedContext.Should().NotBeNull();
+        loopRunner.CapturedContext!.ExecutionProfile.Should().Be("Build");
+        loopRunner.CapturedContext.SystemContext.Should().Contain("execution_profile=Build");
+    }
+
+    [Fact]
     public async Task EscalationRequest_ShouldBeAutoApproved_AndAppliedToTaskRuntimePersona()
     {
         var runtimeStore = new InMemoryAgentSkillRuntimeStore();

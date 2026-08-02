@@ -29,4 +29,19 @@ public class SagaResult
     /// Gets or sets total execution time
     /// </summary>
     public TimeSpan ExecutionTime { get; set; }
+
+    /// <summary>
+    /// Gets or sets structured reason code when saga fails.
+    /// </summary>
+    public string FailureReasonCode { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Gets or sets suggested next autonomous action when saga fails.
+    /// </summary>
+    public string NextAction { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Gets or sets whether supervisor escalation should be requested.
+    /// </summary>
+    public bool NeedsSupervisorIntervention { get; set; }
 }

@@ -8,6 +8,8 @@ namespace InfernalHierarchy.Agents.Saga;
 /// </summary>
 public abstract class SagaBase : ISaga
 {
+    private const int CompensationMaxAttempts = 3;
+
     /// <inheritdoc/>
     public string SagaId { get; } = Guid.NewGuid().ToString();
 
@@ -83,15 +85,18 @@ public abstract class SagaBase : ISaga
             context.EndTime = DateTime.UtcNow;
 
             // Compensate completed steps in reverse order
-            var compensationSuccess = await CompensateAsync(context, ct).ConfigureAwait(false);
+            var compensationOutcome = await CompensateAsync(context, ct).ConfigureAwait(false);
 
             return new SagaResult
             {
                 Success = false,
                 Context = context,
                 ErrorMessage = ex.Message,
-                CompensationSuccess = compensationSuccess,
-                ExecutionTime = context.EndTime.Value - startTime
+                CompensationSuccess = compensationOutcome.Success,
+                ExecutionTime = context.EndTime.Value - startTime,
+                FailureReasonCode = compensationOutcome.FailureReasonCode,
+                NextAction = compensationOutcome.NextAction,
+                NeedsSupervisorIntervention = compensationOutcome.NeedsSupervisorIntervention
             };
         }
     }
@@ -99,11 +104,12 @@ public abstract class SagaBase : ISaga
     /// <summary>
     /// Compensates all completed steps in reverse order
     /// </summary>
-    private async Task<bool> CompensateAsync(SagaContext context, CancellationToken ct)
+    private async Task<CompensationOutcome> CompensateAsync(SagaContext context, CancellationToken ct)
     {
         Logger.LogWarning("Starting compensation for saga {SagaName} ({SagaId})", Name, SagaId);
 
         var compensationSuccess = true;
+        var failedCompensationSteps = new List<string>();
 
         // Compensate in reverse order
         for (int i = context.CompletedSteps.Count - 1; i >= 0; i--)
@@ -111,30 +117,80 @@ public abstract class SagaBase : ISaga
             var stepName = context.CompletedSteps[i];
             var step = Steps.First(s => s.Name == stepName);
 
-            try
+            var compensated = false;
+            for (int attempt = 1; attempt <= CompensationMaxAttempts; attempt++)
             {
-                Logger.LogDebug("Compensating step: {StepName}", stepName);
-                await step.CompensateAsync(context, ct).ConfigureAwait(false);
-                context.CompensatedSteps.Add(stepName);
-                Logger.LogDebug("Step {StepName} compensated successfully", stepName);
+                try
+                {
+                    Logger.LogDebug(
+                        "Compensating step: {StepName} (attempt {Attempt}/{MaxAttempts})",
+                        stepName,
+                        attempt,
+                        CompensationMaxAttempts);
+
+                    await step.CompensateAsync(context, ct).ConfigureAwait(false);
+                    context.CompensatedSteps.Add(stepName);
+                    compensated = true;
+                    Logger.LogDebug("Step {StepName} compensated successfully", stepName);
+                    break;
+                }
+                catch (Exception ex) when (attempt < CompensationMaxAttempts)
+                {
+                    var backoff = TimeSpan.FromMilliseconds(100 * attempt);
+                    Logger.LogWarning(
+                        ex,
+                        "Compensation attempt {Attempt}/{MaxAttempts} failed for step {StepName}; retrying in {Backoff}ms",
+                        attempt,
+                        CompensationMaxAttempts,
+                        stepName,
+                        backoff.TotalMilliseconds);
+                    await Task.Delay(backoff, ct).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    Logger.LogError(
+                        ex,
+                        "Compensation failed for step {StepName} after {MaxAttempts} attempts",
+                        stepName,
+                        CompensationMaxAttempts);
+                    break;
+                }
             }
-            catch (Exception ex)
+
+            if (!compensated)
             {
-                Logger.LogError(ex, "Failed to compensate step {StepName}", stepName);
                 compensationSuccess = false;
+                failedCompensationSteps.Add(stepName);
             }
         }
 
         if (compensationSuccess)
         {
             Logger.LogInformation("Compensation completed successfully for saga {SagaName}", Name);
-        }
-        else
-        {
-            Logger.LogError("Compensation failed for saga {SagaName} - manual intervention required", Name);
+            return new CompensationOutcome(
+                Success: true,
+                FailureReasonCode: "execution_step_failed",
+                NextAction: "saga_compensated",
+                NeedsSupervisorIntervention: false);
         }
 
-        return compensationSuccess;
+        var failedStepsSummary = string.Join(",", failedCompensationSteps.OrderBy(s => s, StringComparer.Ordinal));
+        context.Data["CompensationFailureReasonCode"] = "compensation_retry_exhausted";
+        context.Data["CompensationFailedSteps"] = failedCompensationSteps;
+        context.Data["SupervisorEscalationRequested"] = true;
+
+        Logger.LogError(
+            "Compensation failed for saga {SagaName}. Reason={ReasonCode} FailedSteps={FailedSteps} EscalationRequested={EscalationRequested}",
+            Name,
+            "compensation_retry_exhausted",
+            failedStepsSummary,
+            true);
+
+        return new CompensationOutcome(
+            Success: false,
+            FailureReasonCode: "compensation_retry_exhausted",
+            NextAction: "request_supervisor_compensation_assistance",
+            NeedsSupervisorIntervention: true);
     }
 
     /// <summary>
@@ -145,4 +201,10 @@ public abstract class SagaBase : ISaga
     {
         Steps.Add(step);
     }
+
+    private sealed record CompensationOutcome(
+        bool Success,
+        string FailureReasonCode,
+        string NextAction,
+        bool NeedsSupervisorIntervention);
 }

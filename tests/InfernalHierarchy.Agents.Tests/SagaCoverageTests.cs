@@ -89,6 +89,9 @@ public sealed class SagaCoverageTests
 
         result.Success.Should().BeFalse();
         result.CompensationSuccess.Should().BeTrue();
+        result.FailureReasonCode.Should().Be("execution_step_failed");
+        result.NextAction.Should().Be("saga_compensated");
+        result.NeedsSupervisorIntervention.Should().BeFalse();
         result.Context.CompletedSteps.Should().BeEquivalentTo(["a"], o => o.WithStrictOrdering());
         result.Context.CompensatedSteps.Should().BeEquivalentTo(["a"], o => o.WithStrictOrdering());
         events.Should().BeEquivalentTo(["exec:a", "exec:b", "comp:a"], o => o.WithStrictOrdering());
@@ -106,7 +109,12 @@ public sealed class SagaCoverageTests
 
         result.Success.Should().BeFalse();
         result.CompensationSuccess.Should().BeFalse();
-        events.Should().Contain("comp:a");
+        result.FailureReasonCode.Should().Be("compensation_retry_exhausted");
+        result.NextAction.Should().Be("request_supervisor_compensation_assistance");
+        result.NeedsSupervisorIntervention.Should().BeTrue();
+        result.Context.Data["CompensationFailureReasonCode"].Should().Be("compensation_retry_exhausted");
+        result.Context.Data["SupervisorEscalationRequested"].Should().Be(true);
+        events.Count(e => e == "comp:a").Should().Be(3);
     }
 
     [Fact]

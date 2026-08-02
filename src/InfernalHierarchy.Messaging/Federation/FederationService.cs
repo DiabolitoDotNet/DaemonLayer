@@ -9,6 +9,11 @@ namespace InfernalHierarchy.Messaging.Federation;
 /// </summary>
 public class FederationService : IFederationService
 {
+    private static readonly JsonSerializerOptions CaseInsensitiveJson = new()
+    {
+        PropertyNameCaseInsensitive = true,
+    };
+
     private readonly ILogger<FederationService> _logger;
     private readonly HttpClient _httpClient;
     private readonly ConcurrentDictionary<string, FederatedInstance> _instances = new();
@@ -63,34 +68,7 @@ public class FederationService : IFederationService
     /// <inheritdoc/>
     public async Task SendMessageAsync(FederatedMessage message, CancellationToken ct = default)
     {
-        if (!_instances.TryGetValue(message.TargetInstanceId, out var targetInstance))
-        {
-            _logger.LogWarning("Target instance {InstanceId} not found", message.TargetInstanceId);
-            return;
-        }
-
-        _logger.LogDebug("Sending {MessageType} to instance {InstanceId}",
-            message.MessageType, message.TargetInstanceId);
-
-        try
-        {
-            var endpoint = $"{targetInstance.BaseUrl}/api/federation/message";
-            var response = await _httpClient.PostAsJsonAsync(endpoint, message, ct).ConfigureAwait(false);
-            response.EnsureSuccessStatusCode();
-
-            if (message.RequiresResponse)
-            {
-                var result = await response.Content.ReadFromJsonAsync<FederatedMessage>(cancellationToken: ct)
-                    .ConfigureAwait(false);
-                _logger.LogDebug("Received response from {InstanceId}: {CorrelationId}",
-                    message.TargetInstanceId, result?.CorrelationId);
-            }
-        }
-        catch (HttpRequestException ex)
-        {
-            _logger.LogError(ex, "Failed to send message to instance {InstanceId}", message.TargetInstanceId);
-            targetInstance.IsActive = false;
-        }
+        await SendMessageWithOptionalResponseAsync(message, ct).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
@@ -188,8 +166,11 @@ public class FederationService : IFederationService
 
                 try
                 {
-                    await SendMessageAsync(message, ct).ConfigureAwait(false);
-                    // TODO: Collect responses from instances
+                    var responseMessage = await SendMessageWithOptionalResponseAsync(message, ct).ConfigureAwait(false);
+                    if (TryExtractAgentResponse(responseMessage, instance.InstanceId, out var response))
+                    {
+                        responses.Add(response);
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -200,16 +181,286 @@ public class FederationService : IFederationService
 
         await Task.WhenAll(tasks).ConfigureAwait(false);
 
-        // Aggregate responses (simplified for now)
+        if (responses.IsEmpty)
+        {
+            return new CollaborationResult
+            {
+                Decision = "NO_CROSS_INSTANCE_RESPONSE",
+                Confidence = 0,
+                Responses = [],
+                ParticipantCount = 0,
+                AgreementScore = 0,
+                AggregatedReasoning = "No remote collaboration response received from active instances.",
+                Strategy = request.Strategy,
+                ConflictClass = "unresolved",
+                ConflictReasonCode = "cross_instance_no_responses",
+                NextAction = "fallback_to_local_collaboration",
+                NeedsSupervisorIntervention = false
+            };
+        }
+
+        var collectedResponses = responses.ToList();
+        var winningGroup = collectedResponses
+            .GroupBy(r => r.Response, StringComparer.OrdinalIgnoreCase)
+            .OrderByDescending(g => g.Count())
+            .ThenByDescending(g => g.Average(r => r.Confidence))
+            .First();
+
+        var winningResponse = winningGroup
+            .OrderByDescending(r => r.Confidence)
+            .First();
+
+        var overallConfidence = collectedResponses.Average(r => r.Confidence);
+        var agreementScore = (double)winningGroup.Count() / collectedResponses.Count;
+        var sourceInstances = collectedResponses
+            .Select(r => TryReadSourceInstanceFromReasoning(r.Reasoning))
+            .Where(s => !string.IsNullOrWhiteSpace(s))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Cast<string>()
+            .ToList();
+
+        var sourceSummary = sourceInstances.Count == 0
+            ? "unknown"
+            : string.Join(", ", sourceInstances.OrderBy(s => s, StringComparer.OrdinalIgnoreCase));
+
         return new CollaborationResult
         {
-            Decision = "CROSS_INSTANCE_AGGREGATION",
-            Confidence = 0.8,
-            Responses = responses.ToList(),
-            ParticipantCount = responses.Count,
-            AggregatedReasoning = $"Aggregated {responses.Count} responses from {instances.Count} instances",
+            Decision = winningResponse.Response,
+            Confidence = overallConfidence,
+            Responses = collectedResponses,
+            ParticipantCount = collectedResponses.Count,
+            AgreementScore = agreementScore,
+            WinningResponse = winningResponse,
+            AggregatedReasoning = $"Aggregated {collectedResponses.Count} cross-instance responses from [{sourceSummary}]",
             Strategy = request.Strategy
         };
+    }
+
+    private async Task<FederatedMessage?> SendMessageWithOptionalResponseAsync(
+        FederatedMessage message,
+        CancellationToken ct)
+    {
+        if (!_instances.TryGetValue(message.TargetInstanceId, out var targetInstance))
+        {
+            _logger.LogWarning("Target instance {InstanceId} not found", message.TargetInstanceId);
+            return null;
+        }
+
+        _logger.LogDebug("Sending {MessageType} to instance {InstanceId}",
+            message.MessageType, message.TargetInstanceId);
+
+        try
+        {
+            var endpoint = $"{targetInstance.BaseUrl}/api/federation/message";
+            var response = await _httpClient.PostAsJsonAsync(endpoint, message, ct).ConfigureAwait(false);
+            response.EnsureSuccessStatusCode();
+
+            if (!message.RequiresResponse)
+            {
+                return null;
+            }
+
+            var result = await response.Content.ReadFromJsonAsync<FederatedMessage>(cancellationToken: ct)
+                .ConfigureAwait(false);
+
+            _logger.LogDebug("Received response from {InstanceId}: {CorrelationId}",
+                message.TargetInstanceId, result?.CorrelationId);
+
+            return result;
+        }
+        catch (HttpRequestException ex)
+        {
+            _logger.LogError(ex, "Failed to send message to instance {InstanceId}", message.TargetInstanceId);
+            targetInstance.IsActive = false;
+            return null;
+        }
+    }
+
+    private static bool TryExtractAgentResponse(
+        FederatedMessage? responseMessage,
+        string sourceInstanceId,
+        out AgentResponse response)
+    {
+        response = new AgentResponse();
+        if (responseMessage?.Payload == null || responseMessage.Payload.Count == 0)
+        {
+            return false;
+        }
+
+        if (TryGetPayloadValue(responseMessage.Payload, "AgentResponse", out var rawAgentResponse)
+            && TryDeserializePayloadValue(rawAgentResponse, out AgentResponse? serializedAgentResponse)
+            && serializedAgentResponse != null)
+        {
+            response = serializedAgentResponse;
+            response.AgentId = AddSourceToAgentId(response.AgentId, sourceInstanceId);
+            response.Reasoning = AddSourceToReasoning(response.Reasoning, sourceInstanceId);
+            return true;
+        }
+
+        if (!TryGetPayloadString(responseMessage.Payload, "Decision", out var decision)
+            && !TryGetPayloadString(responseMessage.Payload, "Response", out decision))
+        {
+            return false;
+        }
+
+        TryGetPayloadString(responseMessage.Payload, "AgentId", out var rawAgentId);
+        TryGetPayloadDouble(responseMessage.Payload, "Confidence", out var confidence);
+        TryGetPayloadString(responseMessage.Payload, "Reasoning", out var reasoning);
+
+        response = new AgentResponse
+        {
+            AgentId = AddSourceToAgentId(rawAgentId ?? "remote-agent", sourceInstanceId),
+            Response = decision ?? string.Empty,
+            Confidence = confidence,
+            Reasoning = AddSourceToReasoning(reasoning ?? "Cross-instance response", sourceInstanceId),
+            Timestamp = DateTime.UtcNow
+        };
+
+        return true;
+    }
+
+    private static bool TryGetPayloadValue(Dictionary<string, object> payload, string key, out object? value)
+    {
+        foreach (var kvp in payload)
+        {
+            if (string.Equals(kvp.Key, key, StringComparison.OrdinalIgnoreCase))
+            {
+                value = kvp.Value;
+                return true;
+            }
+        }
+
+        value = null;
+        return false;
+    }
+
+    private static bool TryDeserializePayloadValue<T>(object? raw, out T? value)
+    {
+        value = default;
+        if (raw is null)
+        {
+            return false;
+        }
+
+        try
+        {
+            switch (raw)
+            {
+                case T typed:
+                    value = typed;
+                    return true;
+                case JsonElement json:
+                    value = json.Deserialize<T>(CaseInsensitiveJson);
+                    return value != null;
+                case string str when !string.IsNullOrWhiteSpace(str):
+                    value = JsonSerializer.Deserialize<T>(str, CaseInsensitiveJson);
+                    return value != null;
+                default:
+                    var serialized = JsonSerializer.Serialize(raw);
+                    value = JsonSerializer.Deserialize<T>(serialized, CaseInsensitiveJson);
+                    return value != null;
+            }
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static bool TryGetPayloadString(Dictionary<string, object> payload, string key, out string? value)
+    {
+        value = null;
+        if (!TryGetPayloadValue(payload, key, out var raw) || raw is null)
+        {
+            return false;
+        }
+
+        switch (raw)
+        {
+            case string str:
+                value = str;
+                return true;
+            case JsonElement json when json.ValueKind == JsonValueKind.String:
+                value = json.GetString();
+                return !string.IsNullOrWhiteSpace(value);
+            default:
+                value = raw.ToString();
+                return !string.IsNullOrWhiteSpace(value);
+        }
+    }
+
+    private static bool TryGetPayloadDouble(Dictionary<string, object> payload, string key, out double value)
+    {
+        value = 0;
+        if (!TryGetPayloadValue(payload, key, out var raw) || raw is null)
+        {
+            return false;
+        }
+
+        switch (raw)
+        {
+            case double d:
+                value = d;
+                return true;
+            case float f:
+                value = f;
+                return true;
+            case decimal m:
+                value = (double)m;
+                return true;
+            case int i:
+                value = i;
+                return true;
+            case long l:
+                value = l;
+                return true;
+            case JsonElement json when json.ValueKind == JsonValueKind.Number:
+                return json.TryGetDouble(out value);
+            case JsonElement json when json.ValueKind == JsonValueKind.String:
+                return double.TryParse(json.GetString(), out value);
+            default:
+                return double.TryParse(raw.ToString(), out value);
+        }
+    }
+
+    private static string AddSourceToReasoning(string reasoning, string sourceInstanceId)
+    {
+        if (reasoning.Contains("source_instance=", StringComparison.OrdinalIgnoreCase))
+        {
+            return reasoning;
+        }
+
+        return $"{reasoning} | source_instance={sourceInstanceId}";
+    }
+
+    private static string AddSourceToAgentId(string agentId, string sourceInstanceId)
+    {
+        if (agentId.Contains(':', StringComparison.Ordinal))
+        {
+            return agentId;
+        }
+
+        return $"{sourceInstanceId}:{agentId}";
+    }
+
+    private static string? TryReadSourceInstanceFromReasoning(string reasoning)
+    {
+        const string marker = "source_instance=";
+        var markerIndex = reasoning.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
+        if (markerIndex < 0)
+        {
+            return null;
+        }
+
+        var start = markerIndex + marker.Length;
+        if (start >= reasoning.Length)
+        {
+            return null;
+        }
+
+        var suffix = reasoning[start..];
+        var separator = suffix.IndexOfAny(['|', ';', ',', ' ']);
+        return separator < 0 ? suffix.Trim() : suffix[..separator].Trim();
     }
 
     /// <inheritdoc/>

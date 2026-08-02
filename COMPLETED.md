@@ -237,6 +237,12 @@
 
 ## ✅ Test Coverage (Moved from TODO.md)
 
+## ✅ Autonomy 100% Closure (Aug 2, 2026)
+
+- **A100.2 cross-instance collaboration closure**: `FederationService.RequestCrossInstanceCollaborationAsync` now collects and parses remote responses, aggregates decision/confidence/agreement, and preserves source-instance provenance in reasoning.
+- **A100.3 saga compensation autonomy closure**: `SagaBase` now applies bounded compensation retries and returns structured failure metadata (`FailureReasonCode`, `NextAction`, `NeedsSupervisorIntervention`) with escalation hints when retries are exhausted.
+- **Validation**: targeted messaging/agents test suites passing + full solution regression green (`dotnet test InfernalHierarchy.sln`, `EXIT:0`).
+
 ### Implemented Tests (existing)
 - Host: integration tests
 - Agents: unit tests
