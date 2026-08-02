@@ -156,6 +156,50 @@ public class TokenUsageTracker
             .OrderByDescending(r => r.Timestamp)
             .Take(count);
     }
+
+    /// <summary>
+    /// Builds optimization insights for high-latency/high-cost model paths.
+    /// </summary>
+    public TokenOptimizationReport GetOptimizationReport(
+        int highLatencyThresholdMs = 5000,
+        int minCalls = 3,
+        int topN = 10)
+    {
+        lock (_statsLock)
+        {
+            var items = _modelStats
+                .Select(kvp =>
+                {
+                    var model = kvp.Key;
+                    var stats = kvp.Value;
+                    var avgLatencyMs = stats.AverageDuration.TotalMilliseconds;
+                    var totalTokens = stats.TotalInputTokens + stats.TotalOutputTokens;
+                    var avgTokensPerCall = stats.CallCount > 0 ? (double)totalTokens / stats.CallCount : 0d;
+                    var throughput = stats.TokensPerSecond;
+                    var expensive = stats.CallCount >= minCalls && avgLatencyMs >= highLatencyThresholdMs;
+
+                    var recommendation = expensive
+                        ? "Consider routing this workload to a lower-latency model or adding tighter max_tokens/prompt compaction."
+                        : "Model path looks healthy for current traffic.";
+
+                    return new TokenOptimizationItem(
+                        model,
+                        stats.CallCount,
+                        avgLatencyMs,
+                        avgTokensPerCall,
+                        throughput,
+                        expensive,
+                        recommendation);
+                })
+                .OrderByDescending(x => x.IsHighLatencyOrCost)
+                .ThenByDescending(x => x.AverageLatencyMs)
+                .ThenByDescending(x => x.CallCount)
+                .Take(Math.Max(1, topN))
+                .ToList();
+
+            return new TokenOptimizationReport(items);
+        }
+    }
 }
 
 public class TokenUsageRecord
@@ -200,3 +244,14 @@ public class ModelPricing
     public decimal InputPricePerMillion { get; set; }
     public decimal OutputPricePerMillion { get; set; }
 }
+
+public sealed record TokenOptimizationReport(IReadOnlyList<TokenOptimizationItem> Items);
+
+public sealed record TokenOptimizationItem(
+    string ModelName,
+    int CallCount,
+    double AverageLatencyMs,
+    double AverageTokensPerCall,
+    double TokensPerSecond,
+    bool IsHighLatencyOrCost,
+    string Recommendation);

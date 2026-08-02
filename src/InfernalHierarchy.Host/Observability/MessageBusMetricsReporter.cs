@@ -34,6 +34,7 @@ internal sealed class MessageBusMetricsReporter : BackgroundService
                     _metrics.SetGauge("message_bus.messages.dropped", bus.DroppedMessages);
                     _metrics.SetGauge("message_bus.messages.rejected", bus.RejectedMessages);
                     _metrics.SetGauge("message_bus.messages.deferred", bus.DeferredMessages);
+                    _metrics.SetGauge("message_bus.messages.published", bus.PublishedMessages);
                     _metrics.SetGauge("message_bus.backpressure.active", bus.IsBackpressureActive ? 1 : 0);
                 }
             }

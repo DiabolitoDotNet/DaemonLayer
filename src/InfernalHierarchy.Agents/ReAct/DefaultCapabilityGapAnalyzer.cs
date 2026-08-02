@@ -96,6 +96,7 @@ public sealed class DefaultCapabilityGapAnalyzer : ICapabilityGapAnalyzer
         var allowedTools = new HashSet<string>(effectivePersona.AvailableTools, StringComparer.OrdinalIgnoreCase);
         var profileAllowedTools = TryReadProfileAllowedTools(task.Payload);
         var executionProfile = TryGetValue(task.Payload, "execution_profile") ?? TryGetValue(task.Payload, "profile");
+        var requiredTools = TryReadRequiredTools(task.Payload);
 
         var gaps = new List<CapabilityGap>();
         foreach (var rule in Rules)
@@ -122,6 +123,35 @@ public sealed class DefaultCapabilityGapAnalyzer : ICapabilityGapAnalyzer
                 BlockedByProfile: blockedByProfile,
                 SuggestedSkillPackId: suggestedSkillPackId,
                 SuggestedExecutionProfile: rule.PreferredProfile));
+        }
+
+        foreach (var requiredTool in requiredTools)
+        {
+            var toolRule = Rules.FirstOrDefault(r => string.Equals(r.RequiredTool, requiredTool, StringComparison.OrdinalIgnoreCase));
+
+            var hasTool = allowedTools.Contains(requiredTool);
+            var blockedByProfile = profileAllowedTools is not null && !profileAllowedTools.Contains(requiredTool);
+            if (hasTool && !blockedByProfile)
+            {
+                continue;
+            }
+
+            var capability = toolRule?.Capability ?? $"tool_{requiredTool}";
+            if (gaps.Any(g => string.Equals(g.Capability, capability, StringComparison.OrdinalIgnoreCase)))
+            {
+                continue;
+            }
+
+            var suggestedSkillPackId = await FindSkillPackForToolAsync(requiredTool, ct).ConfigureAwait(false);
+            var description = toolRule?.Description ?? $"Task explicitly requires tool '{requiredTool}'.";
+
+            gaps.Add(new CapabilityGap(
+                Capability: capability,
+                ReasonCode: blockedByProfile ? "profile_constraint_blocked_tool" : "explicit_required_tool_missing",
+                Description: description,
+                BlockedByProfile: blockedByProfile,
+                SuggestedSkillPackId: suggestedSkillPackId,
+                SuggestedExecutionProfile: toolRule?.PreferredProfile));
         }
 
         var remediations = BuildRemediations(gaps, allowedTools, executionProfile);
@@ -229,6 +259,18 @@ public sealed class DefaultCapabilityGapAnalyzer : ICapabilityGapAnalyzer
         if (string.IsNullOrWhiteSpace(raw))
         {
             return null;
+        }
+
+        var items = raw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        return new HashSet<string>(items, StringComparer.OrdinalIgnoreCase);
+    }
+
+    private static HashSet<string> TryReadRequiredTools(Dictionary<string, object>? payload)
+    {
+        var raw = TryGetValue(payload, "required_tools");
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         }
 
         var items = raw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);

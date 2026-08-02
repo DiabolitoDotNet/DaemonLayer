@@ -81,4 +81,64 @@ public sealed class OllamaModelRoutingPolicyTests
 
         model.Should().Be("dolphin3:8b");
     }
+
+    [Fact]
+    public void ResolveModel_WithAdaptiveFeedback_PrefersLowerPenaltyModel()
+    {
+        var options = new OllamaOptions
+        {
+            DefaultModel = "qwen3:8b",
+            EnableModelRoutingPolicy = true,
+            EnableAdaptiveRoutingFeedback = true,
+            ModelRoutes =
+            [
+                new OllamaModelRoute { TaskType = "coding", MaxLatencyMs = 0, Model = "slow-model", Priority = 10 },
+                new OllamaModelRoute { TaskType = "coding", MaxLatencyMs = 0, Model = "fast-model", Priority = 20 }
+            ]
+        };
+
+        var feedback = new InMemoryModelRoutingFeedbackStore();
+        for (var i = 0; i < 10; i++)
+        {
+            feedback.RecordOutcome("slow-model", success: true, TimeSpan.FromMilliseconds(5000), outputTokens: 100);
+            feedback.RecordOutcome("fast-model", success: true, TimeSpan.FromMilliseconds(600), outputTokens: 100);
+        }
+
+        var model = OllamaModelRoutingPolicy.ResolveModel(
+            options,
+            new LlmRoutingHint { TaskType = "coding", LatencyBudgetMs = 1500 },
+            feedback);
+
+        model.Should().Be("fast-model");
+    }
+
+    [Fact]
+    public void ResolveModel_WithAdaptiveFeedbackDisabled_KeepsPriorityOrder()
+    {
+        var options = new OllamaOptions
+        {
+            DefaultModel = "qwen3:8b",
+            EnableModelRoutingPolicy = true,
+            EnableAdaptiveRoutingFeedback = false,
+            ModelRoutes =
+            [
+                new OllamaModelRoute { TaskType = "coding", MaxLatencyMs = 0, Model = "slow-model", Priority = 10 },
+                new OllamaModelRoute { TaskType = "coding", MaxLatencyMs = 0, Model = "fast-model", Priority = 20 }
+            ]
+        };
+
+        var feedback = new InMemoryModelRoutingFeedbackStore();
+        for (var i = 0; i < 5; i++)
+        {
+            feedback.RecordOutcome("slow-model", success: false, TimeSpan.FromMilliseconds(5000), outputTokens: 0);
+            feedback.RecordOutcome("fast-model", success: true, TimeSpan.FromMilliseconds(400), outputTokens: 120);
+        }
+
+        var model = OllamaModelRoutingPolicy.ResolveModel(
+            options,
+            new LlmRoutingHint { TaskType = "coding", LatencyBudgetMs = 1500 },
+            feedback);
+
+        model.Should().Be("slow-model");
+    }
 }

@@ -136,4 +136,37 @@ public sealed class TokenUsageTrackerTests
         recent[0].Timestamp.Should().Be(new DateTime(2025, 1, 1, 0, 0, 2, DateTimeKind.Utc));
         recent[1].Timestamp.Should().Be(new DateTime(2025, 1, 1, 0, 0, 1, DateTimeKind.Utc));
     }
+
+    [Fact]
+    public void GetOptimizationReport_ShouldFlagHighLatencyModels()
+    {
+        var tracker = new TokenUsageTracker(NullLogger<TokenUsageTracker>.Instance);
+
+        for (var i = 0; i < 4; i++)
+        {
+            tracker.RecordUsage(new TokenUsageRecord
+            {
+                ModelName = "slow-model",
+                AgentId = "a",
+                InputTokens = 100,
+                OutputTokens = 100,
+                Duration = TimeSpan.FromMilliseconds(7000)
+            });
+
+            tracker.RecordUsage(new TokenUsageRecord
+            {
+                ModelName = "fast-model",
+                AgentId = "a",
+                InputTokens = 100,
+                OutputTokens = 100,
+                Duration = TimeSpan.FromMilliseconds(800)
+            });
+        }
+
+        var report = tracker.GetOptimizationReport(highLatencyThresholdMs: 5000, minCalls: 3, topN: 10);
+
+        report.Items.Should().NotBeEmpty();
+        report.Items.Should().Contain(x => x.ModelName == "slow-model" && x.IsHighLatencyOrCost);
+        report.Items.Should().Contain(x => x.ModelName == "fast-model" && !x.IsHighLatencyOrCost);
+    }
 }

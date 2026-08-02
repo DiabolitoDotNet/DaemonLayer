@@ -4,7 +4,8 @@ public static class OllamaModelRoutingPolicy
 {
     public static string ResolveModel(
         OllamaOptions options,
-        LlmRoutingHint routingHint)
+        LlmRoutingHint routingHint,
+        IModelRoutingFeedbackStore? feedbackStore = null)
     {
         if (!options.EnableModelRoutingPolicy || options.ModelRoutes.Count == 0)
         {
@@ -22,6 +23,7 @@ public static class OllamaModelRoutingPolicy
             .OrderBy(route => IsExactTaskMatch(route.TaskType, requestedTaskType) ? 0 : 1)
             .ThenBy(route => route.MaxLatencyMs > 0 ? 0 : 1)
             .ThenBy(route => route.MaxLatencyMs <= 0 ? int.MaxValue : route.MaxLatencyMs)
+            .ThenBy(route => ComputeAdaptivePenalty(options, feedbackStore, route.Model))
             .ThenBy(route => route.Priority)
             .ToList();
 
@@ -31,6 +33,19 @@ public static class OllamaModelRoutingPolicy
         }
 
         return candidates[0].Model.Trim();
+    }
+
+    private static double ComputeAdaptivePenalty(
+        OllamaOptions options,
+        IModelRoutingFeedbackStore? feedbackStore,
+        string modelName)
+    {
+        if (!options.EnableAdaptiveRoutingFeedback || feedbackStore is null)
+        {
+            return 0d;
+        }
+
+        return feedbackStore.GetPenalty(modelName);
     }
 
     private static bool IsLatencyMatch(int maxLatencyMs, int requestedBudgetMs, bool hasBudget)

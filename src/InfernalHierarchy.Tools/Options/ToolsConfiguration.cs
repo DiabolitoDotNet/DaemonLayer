@@ -13,6 +13,31 @@ public class OllamaOptions
     public double Temperature { get; set; } = 0.7;
     public bool EnableModelRoutingPolicy { get; set; } = false;
     public List<OllamaModelRoute> ModelRoutes { get; set; } = new();
+
+    /// <summary>
+    /// Enables adaptive model-route ranking using observed latency/success feedback.
+    /// </summary>
+    public bool EnableAdaptiveRoutingFeedback { get; set; } = true;
+
+    /// <summary>
+    /// Enables conservative prompt compaction when user prompts exceed configured size.
+    /// </summary>
+    public bool EnablePromptCompaction { get; set; } = true;
+
+    /// <summary>
+    /// Max user prompt length before compaction.
+    /// </summary>
+    public int PromptCompactionMaxChars { get; set; } = 12000;
+
+    /// <summary>
+    /// Number of head chars kept in compacted prompts.
+    /// </summary>
+    public int PromptCompactionHeadChars { get; set; } = 7000;
+
+    /// <summary>
+    /// Number of tail chars kept in compacted prompts.
+    /// </summary>
+    public int PromptCompactionTailChars { get; set; } = 4000;
 }
 
 public class OllamaModelRoute

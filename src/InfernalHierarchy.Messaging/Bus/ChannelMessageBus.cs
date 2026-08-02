@@ -24,6 +24,7 @@ public class ChannelMessageBus : IMessageBus, IDisposable
     private long _droppedMessages;
     private long _rejectedMessages;
     private long _deferredMessages;
+    private long _publishedMessages;
     private int _isBackpressureActive;
     private bool _disposed;
 
@@ -65,6 +66,8 @@ public class ChannelMessageBus : IMessageBus, IDisposable
 
         _logger.LogDebug("📤 Publishing message {MessageId} from {From} to {To}",
             message.Id, message.FromAgentId, message.ToAgentId ?? "broadcast");
+
+        Interlocked.Increment(ref _publishedMessages);
 
         UpdateBackpressureState();
         if (ShouldDeferForBackpressure(message))
@@ -237,6 +240,11 @@ public class ChannelMessageBus : IMessageBus, IDisposable
     /// Number of rejected messages due to overflow policy.
     /// </summary>
     public long RejectedMessages => Interlocked.Read(ref _rejectedMessages);
+
+    /// <summary>
+    /// Number of publish attempts received by the bus.
+    /// </summary>
+    public long PublishedMessages => Interlocked.Read(ref _publishedMessages);
 
     /// <summary>
     /// Number of messages deferred while adaptive backpressure was active.

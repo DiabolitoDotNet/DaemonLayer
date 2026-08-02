@@ -75,6 +75,8 @@ internal sealed class DocumentationGenerator
         sb.AppendLine("- `GET /api/perf/traces/{traceId}/download` – trace JSON download");
         sb.AppendLine("- `GET /api/perf/trace-capture` – trace capture status + store stats");
         sb.AppendLine("- `GET /api/perf/request-profiling` – request profiling status + store stats");
+        sb.AppendLine("- `GET /api/perf/llm-optimization` – LLM cost/latency optimization report + routing feedback");
+        sb.AppendLine("- `GET /api/perf/autonomy-scorecard` – benchmark scorecard for autonomy regression tracking");
         sb.AppendLine("- `GET /api/perf/requests?limit=50` – recent request profiles");
         sb.AppendLine("- `GET /api/perf/requests/{id}` – request profile detail");
         sb.AppendLine("- `POST /api/perf/requests/clear` – clear request profiles");
@@ -151,6 +153,8 @@ internal sealed class DocumentationGenerator
                     "/api/events",
                     "/api/perf/snapshot",
                     "/api/perf/histograms",
+                    "/api/perf/llm-optimization",
+                    "/api/perf/autonomy-scorecard",
                     "/api/personas",
                     "/api/personas/{name}",
                     "/api/docs/markdown",

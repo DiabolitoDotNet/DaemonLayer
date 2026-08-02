@@ -23,17 +23,20 @@ public class OllamaClient : ILlmClient
     private readonly IHttpClientFactory? _httpClientFactory;
     private readonly IOptionsMonitor<OllamaOptions>? _optionsMonitor;
     private readonly OllamaOptions? _staticOptions;
+    private readonly IModelRoutingFeedbackStore? _routingFeedback;
 
     public OllamaClient(
         IHttpClientFactory httpClientFactory,
         IOptionsMonitor<OllamaOptions> options,
         ILogger<OllamaClient> logger,
-        GlobalExceptionHandler? exceptionHandler = null)
+        GlobalExceptionHandler? exceptionHandler = null,
+        IModelRoutingFeedbackStore? routingFeedback = null)
     {
         _httpClientFactory = httpClientFactory;
         _optionsMonitor = options;
         _logger = logger;
         _exceptionHandler = exceptionHandler;
+        _routingFeedback = routingFeedback;
 
         _json = new JsonSerializerOptions
         {
@@ -44,11 +47,12 @@ public class OllamaClient : ILlmClient
         LogCurrentConfiguration(options.CurrentValue);
     }
 
-    public OllamaClient(IOptions<OllamaOptions> options, ILogger<OllamaClient> logger, GlobalExceptionHandler? exceptionHandler = null)
+    public OllamaClient(IOptions<OllamaOptions> options, ILogger<OllamaClient> logger, GlobalExceptionHandler? exceptionHandler = null, IModelRoutingFeedbackStore? routingFeedback = null)
     {
         _staticOptions = options.Value;
         _logger = logger;
         _exceptionHandler = exceptionHandler;
+        _routingFeedback = routingFeedback;
 
         _json = new JsonSerializerOptions
         {
@@ -89,7 +93,7 @@ public class OllamaClient : ILlmClient
         CancellationToken ct = default)
     {
         var options = GetCurrentOptions();
-        var selectedModel = OllamaModelRoutingPolicy.ResolveModel(options, routingHint);
+        var selectedModel = OllamaModelRoutingPolicy.ResolveModel(options, routingHint, _routingFeedback);
 
         _logger.LogDebug(
             "LLM routing selected model={Model} task_type={TaskType} latency_budget_ms={LatencyBudgetMs}",
@@ -133,7 +137,7 @@ public class OllamaClient : ILlmClient
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
     {
         var options = GetCurrentOptions();
-        var selectedModel = OllamaModelRoutingPolicy.ResolveModel(options, routingHint);
+        var selectedModel = OllamaModelRoutingPolicy.ResolveModel(options, routingHint, _routingFeedback);
 
         _logger.LogDebug(
             "LLM streaming routing selected model={Model} task_type={TaskType} latency_budget_ms={LatencyBudgetMs}",
@@ -177,6 +181,7 @@ public class OllamaClient : ILlmClient
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct)
     {
         var options = GetCurrentOptions();
+        var compactedUserMessage = CompactPromptIfEnabled(options, userMessage);
         using var http = CreateConfiguredHttpClient(options);
         using var request = new HttpRequestMessage(HttpMethod.Post, "chat/completions");
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("text/event-stream"));
@@ -190,13 +195,16 @@ public class OllamaClient : ILlmClient
             Messages = new()
             {
                 new ChatCompletionMessage { Role = "system", Content = systemPrompt },
-                new ChatCompletionMessage { Role = "user", Content = userMessage }
+                new ChatCompletionMessage { Role = "user", Content = compactedUserMessage }
             }
         };
+
+        var callStartedUtc = DateTime.UtcNow;
 
         request.Content = new StringContent(JsonSerializer.Serialize(payload, _json), Encoding.UTF8, "application/json");
 
         HttpResponseMessage? response = null;
+        var completedSuccessfully = false;
         try
         {
             response = await ExecuteWithResilienceAsync(
@@ -294,9 +302,16 @@ public class OllamaClient : ILlmClient
                     yield return content;
                 }
             }
+
+            completedSuccessfully = true;
         }
         finally
         {
+            _routingFeedback?.RecordOutcome(
+                payload.Model,
+                success: completedSuccessfully,
+                duration: DateTime.UtcNow - callStartedUtc,
+                outputTokens: 0);
             response?.Dispose();
         }
     }
@@ -316,20 +331,24 @@ public class OllamaClient : ILlmClient
         int? maxTokens,
         CancellationToken ct)
     {
+        var options = GetCurrentOptions();
+        var compactedUserMessage = CompactPromptIfEnabled(options, userMessage);
+        var selectedModel = modelOverride ?? options.DefaultModel;
+        var callStartedUtc = DateTime.UtcNow;
+
         try
         {
-            var options = GetCurrentOptions();
             using var http = CreateConfiguredHttpClient(options);
             var request = new ChatCompletionRequest
             {
-                Model = modelOverride ?? options.DefaultModel,
+                Model = selectedModel,
                 Temperature = temperature ?? options.Temperature,
                 MaxTokens = maxTokens ?? options.MaxTokens,
                 Stream = false,
                 Messages = new()
                 {
                     new ChatCompletionMessage { Role = "system", Content = systemPrompt },
-                    new ChatCompletionMessage { Role = "user", Content = userMessage }
+                    new ChatCompletionMessage { Role = "user", Content = compactedUserMessage }
                 }
             };
 
@@ -370,14 +389,30 @@ public class OllamaClient : ILlmClient
             if (string.IsNullOrWhiteSpace(output))
             {
                 _logger.LogWarning("LLM response missing content. Raw: {Body}", Truncate(responseText, 2000));
+                _routingFeedback?.RecordOutcome(
+                    request.Model,
+                    success: true,
+                    duration: DateTime.UtcNow - callStartedUtc,
+                    outputTokens: 0);
                 return string.Empty;
             }
+
+            _routingFeedback?.RecordOutcome(
+                request.Model,
+                success: true,
+                duration: DateTime.UtcNow - callStartedUtc,
+                outputTokens: EstimateTokens(output));
 
             _logger.LogDebug("LLM Response length: {Length} chars", output.Length);
             return output;
         }
         catch (Exception ex)
         {
+            _routingFeedback?.RecordOutcome(
+                selectedModel,
+                success: false,
+                duration: DateTime.UtcNow - callStartedUtc,
+                outputTokens: 0);
             _logger.LogError(ex, "Failed to get LLM completion");
             throw;
         }
@@ -518,6 +553,50 @@ public class OllamaClient : ILlmClient
         }
 
         return new Uri(raw);
+    }
+
+    private string CompactPromptIfEnabled(OllamaOptions options, string userMessage)
+    {
+        if (!options.EnablePromptCompaction)
+        {
+            return userMessage;
+        }
+
+        var maxChars = Math.Max(1, options.PromptCompactionMaxChars);
+        if (string.IsNullOrEmpty(userMessage) || userMessage.Length <= maxChars)
+        {
+            return userMessage;
+        }
+
+        var headChars = Math.Max(100, options.PromptCompactionHeadChars);
+        var tailChars = Math.Max(100, options.PromptCompactionTailChars);
+        if (headChars + tailChars >= userMessage.Length)
+        {
+            return userMessage;
+        }
+
+        var omittedChars = userMessage.Length - headChars - tailChars;
+        var compacted = string.Concat(
+            userMessage.AsSpan(0, headChars),
+            $"\n\n[... prompt compacted: {omittedChars} chars omitted ...]\n\n",
+            userMessage.AsSpan(userMessage.Length - tailChars));
+
+        _logger.LogInformation(
+            "Prompt compaction applied | original_chars={OriginalChars} compacted_chars={CompactedChars}",
+            userMessage.Length,
+            compacted.Length);
+
+        return compacted;
+    }
+
+    private static int EstimateTokens(string text)
+    {
+        if (string.IsNullOrEmpty(text))
+        {
+            return 0;
+        }
+
+        return (int)Math.Ceiling(text.Length / 4.0);
     }
 
     private static string Truncate(string value, int maxLen)

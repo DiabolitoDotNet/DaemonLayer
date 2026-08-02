@@ -34,7 +34,7 @@ Build a team of agents that can:
 
 ### P0.1 Durable dead-letter storage
 
-Status: TODO
+Status: DONE
 
 Implementation:
 
@@ -55,7 +55,7 @@ Validation:
 
 ### P0.2 Autonomous replay worker
 
-Status: TODO
+Status: DONE
 
 Implementation:
 
@@ -101,7 +101,7 @@ Validation:
 
 ### P1.1 Capability gap analyzer
 
-Status: TODO
+Status: DONE
 
 Implementation:
 
@@ -268,7 +268,7 @@ Validation:
 
 ### P3.3 Latency and token-cost optimization loop
 
-Status: TODO
+Status: DONE
 
 Implementation:
 
@@ -291,7 +291,7 @@ Validation:
 
 ### P4.1 SLO enforcement in CI/CD
 
-Status: TODO
+Status: DONE
 
 Implementation:
 
@@ -312,7 +312,7 @@ Validation:
 
 ### P4.2 Autonomy scorecard and regression suite
 
-Status: TODO
+Status: DONE
 
 Implementation:
 

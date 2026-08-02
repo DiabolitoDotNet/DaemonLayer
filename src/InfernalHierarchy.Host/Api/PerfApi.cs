@@ -1,6 +1,8 @@
 using Microsoft.AspNetCore.Http;
 using System.Collections.Generic;
 using InfernalHierarchy.Messaging.Bus;
+using InfernalHierarchy.Tools.Clients;
+using InfernalHierarchy.Tools.Telemetry;
 
 namespace InfernalHierarchy.Host.Api;
 
@@ -135,11 +137,76 @@ internal static class PerfApi
                 },
                 counters = new
                 {
+                    publishedMessages = bus.PublishedMessages,
                     droppedMessages = bus.DroppedMessages,
                     rejectedMessages = bus.RejectedMessages,
                     deferredMessages = bus.DeferredMessages,
                 },
                 recommendations
+            });
+        });
+
+        app.MapGet("/api/perf/slo-gates", (
+            HttpContext ctx,
+            SloGateEvaluator evaluator,
+            IOptions<SloGateOptions> options) =>
+        {
+            var forbid = LocalOnlyGuard.ForbidIfNotLoopback(ctx, uiOptions.LocalOnly);
+            if (forbid is not null)
+            {
+                return forbid;
+            }
+
+            var result = evaluator.Evaluate(options.Value);
+            return result.Passed
+                ? Results.Ok(result)
+                : Results.Json(result, statusCode: StatusCodes.Status503ServiceUnavailable);
+        });
+
+        app.MapGet("/api/perf/llm-optimization", (
+            HttpContext ctx,
+            TokenUsageTracker tokenUsageTracker,
+            IModelRoutingFeedbackStore routingFeedbackStore,
+            int? highLatencyMs,
+            int? minCalls,
+            int? top) =>
+        {
+            var forbid = LocalOnlyGuard.ForbidIfNotLoopback(ctx, uiOptions.LocalOnly);
+            if (forbid is not null)
+            {
+                return forbid;
+            }
+
+            var report = tokenUsageTracker.GetOptimizationReport(
+                highLatencyThresholdMs: highLatencyMs.GetValueOrDefault(5000),
+                minCalls: minCalls.GetValueOrDefault(3),
+                topN: top.GetValueOrDefault(10));
+
+            return Results.Ok(new
+            {
+                generatedUtc = DateTime.UtcNow,
+                tokenOptimization = report,
+                routingFeedback = routingFeedbackStore.GetSnapshots(),
+            });
+        });
+
+        app.MapGet("/api/perf/autonomy-scorecard", (
+            HttpContext ctx,
+            AutonomyScorecardService scorecardService,
+            int? runsPerScenario) =>
+        {
+            var forbid = LocalOnlyGuard.ForbidIfNotLoopback(ctx, uiOptions.LocalOnly);
+            if (forbid is not null)
+            {
+                return forbid;
+            }
+
+            var report = scorecardService.GenerateReport(runsPerScenario.GetValueOrDefault(10));
+            return Results.Ok(new
+            {
+                generatedUtc = report.GeneratedAtUtc,
+                benchmarks = scorecardService.GetBenchmarks(),
+                report,
             });
         });
 

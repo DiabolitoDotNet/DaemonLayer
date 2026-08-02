@@ -2,8 +2,12 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
+using InfernalHierarchy.Core.Interfaces;
+using InfernalHierarchy.Host.Configuration;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using Xunit;
 
 namespace InfernalHierarchy.Host.Tests.E2E;
@@ -24,6 +28,29 @@ public sealed class PerfPersonaDocsE2ETests
                     ["Perf:RequestProfiling:Enabled"] = "true",
                     ["Perf:RequestProfiling:MaxRecords"] = "200",
                     ["Perf:RequestProfiling:RetentionMinutes"] = "5",
+                });
+            });
+        }
+    }
+
+    private sealed class StrictSloGateFactory : InfernalHierarchyTestWebAppFactory
+    {
+        protected override void ConfigureWebHost(IWebHostBuilder builder)
+        {
+            base.ConfigureWebHost(builder);
+
+            builder.ConfigureAppConfiguration((_, config) =>
+            {
+                config.AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["SloGates:Enabled"] = "true",
+                    ["SloGates:MaxDeadLetterBacklogGrowth"] = "0",
+                    ["SloGates:MinReplaySuccessRatio"] = "1.0",
+                    ["SloGates:MinReplaySamples"] = "1",
+                    ["SloGates:MaxQueueRejectRate"] = "0.0",
+                    ["SloGates:MinQueueSamples"] = "1",
+                    ["SloGates:MaxTaskCompletionP95Ms"] = "100",
+                    ["SloGates:MinTaskCompletionSamples"] = "1"
                 });
             });
         }
@@ -114,6 +141,130 @@ public sealed class PerfPersonaDocsE2ETests
         var recommendations = doc.RootElement.GetProperty("recommendations");
         recommendations.ValueKind.Should().Be(JsonValueKind.Array);
         recommendations.GetArrayLength().Should().BeGreaterThan(0);
+    }
+
+    [Fact]
+    public async Task Ops_DeadLetters_EndPoints_ReturnExpectedContract()
+    {
+        using var factory = new InfernalHierarchyTestWebAppFactory();
+        var client = factory.CreateClient();
+
+        var operatorOptions = factory.Services.GetRequiredService<IOptions<OperatorApiOptions>>().Value;
+        if (!string.IsNullOrWhiteSpace(operatorOptions.ApiKey))
+        {
+            client.DefaultRequestHeaders.Remove("X-Infernal-Operator-Key");
+            client.DefaultRequestHeaders.Add("X-Infernal-Operator-Key", operatorOptions.ApiKey);
+        }
+
+        var listRes = await client.GetAsync(new Uri("/api/ops/deadletters?limit=5&pendingOnly=true", UriKind.Relative));
+        listRes.EnsureSuccessStatusCode();
+
+        var listJson = await listRes.Content.ReadAsStringAsync();
+        using var listDoc = JsonDocument.Parse(listJson);
+
+        listDoc.RootElement.TryGetProperty("stats", out _).Should().BeTrue();
+        listDoc.RootElement.TryGetProperty("records", out var records).Should().BeTrue();
+        records.ValueKind.Should().Be(JsonValueKind.Array);
+
+        var replayRes = await client.PostAsync(new Uri("/api/ops/deadletters/nonexistent-id/replay", UriKind.Relative), content: null);
+        replayRes.StatusCode.Should().Be(HttpStatusCode.NotFound);
+
+        var replayJson = await replayRes.Content.ReadAsStringAsync();
+        replayJson.Should().Contain("not_available");
+    }
+
+    [Fact]
+    public async Task Perf_SloGates_DefaultThresholds_ReturnsPass()
+    {
+        using var factory = new InfernalHierarchyTestWebAppFactory();
+        var client = factory.CreateClient();
+
+        var res = await client.GetAsync(new Uri("/api/perf/slo-gates", UriKind.Relative));
+        res.EnsureSuccessStatusCode();
+
+        var json = await res.Content.ReadAsStringAsync();
+        using var doc = JsonDocument.Parse(json);
+
+        doc.RootElement.GetProperty("passed").GetBoolean().Should().BeTrue();
+        doc.RootElement.GetProperty("checks").ValueKind.Should().Be(JsonValueKind.Array);
+    }
+
+    [Fact]
+    public async Task Perf_LlmOptimization_ReturnsTokenAndRoutingPayload()
+    {
+        using var factory = new InfernalHierarchyTestWebAppFactory();
+        var client = factory.CreateClient();
+
+        var res = await client.GetAsync(new Uri("/api/perf/llm-optimization", UriKind.Relative));
+        res.EnsureSuccessStatusCode();
+
+        var json = await res.Content.ReadAsStringAsync();
+        using var doc = JsonDocument.Parse(json);
+
+        doc.RootElement.TryGetProperty("generatedUtc", out _).Should().BeTrue();
+        doc.RootElement.TryGetProperty("tokenOptimization", out var tokenOptimization).Should().BeTrue();
+        tokenOptimization.TryGetProperty("items", out _).Should().BeTrue();
+        doc.RootElement.TryGetProperty("routingFeedback", out _).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Perf_AutonomyScorecard_ReturnsBenchmarksAndReport()
+    {
+        using var factory = new InfernalHierarchyTestWebAppFactory();
+        var client = factory.CreateClient();
+
+        var res = await client.GetAsync(new Uri("/api/perf/autonomy-scorecard", UriKind.Relative));
+        res.EnsureSuccessStatusCode();
+
+        var json = await res.Content.ReadAsStringAsync();
+        using var doc = JsonDocument.Parse(json);
+
+        doc.RootElement.TryGetProperty("generatedUtc", out _).Should().BeTrue();
+        doc.RootElement.TryGetProperty("benchmarks", out var benchmarks).Should().BeTrue();
+        benchmarks.ValueKind.Should().Be(JsonValueKind.Array);
+        benchmarks.GetArrayLength().Should().BeGreaterOrEqualTo(4);
+
+        doc.RootElement.TryGetProperty("report", out var report).Should().BeTrue();
+        report.TryGetProperty("coverage", out _).Should().BeTrue();
+        report.TryGetProperty("scenarios", out _).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Perf_SloGates_StrictThresholds_ReturnsServiceUnavailable()
+    {
+        using var factory = new StrictSloGateFactory();
+        var client = factory.CreateClient();
+
+        var metrics = factory.Services.GetRequiredService<InfernalHierarchy.Host.Observability.MetricsCollector>();
+        metrics.IncrementCounter("deadletter.replay.failed");
+        metrics.RecordValue("http.latency.post.api.chat.ms", 500);
+
+        var store = factory.Services.GetRequiredService<IFailedOperationStore>();
+        await store.RecordAsync(new FailedOperationRecord
+        {
+            Kind = FailedOperationKind.MessagePublish,
+            ReasonCode = "synthetic",
+            OperationName = "synthetic_op",
+            PayloadJson = "{}"
+        });
+
+        var bus = factory.Services.GetRequiredService<IMessageBus>();
+        await bus.PublishAsync(new InfernalHierarchy.Core.Entities.AgentMessage
+        {
+            FromAgentId = "synthetic",
+            ToAgentId = "none",
+            Type = InfernalHierarchy.Core.Entities.MessageType.Task,
+            Content = "synthetic"
+        });
+
+        var res = await client.GetAsync(new Uri("/api/perf/slo-gates", UriKind.Relative));
+        res.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+
+        var json = await res.Content.ReadAsStringAsync();
+        using var doc = JsonDocument.Parse(json);
+
+        doc.RootElement.GetProperty("passed").GetBoolean().Should().BeFalse();
+        doc.RootElement.GetProperty("checks").EnumerateArray().Any(c => !c.GetProperty("passed").GetBoolean()).Should().BeTrue();
     }
 
     [Fact]

@@ -5,6 +5,11 @@ namespace InfernalHierarchy.Host.Resilience;
 internal sealed class LiteDbFailedOperationStore : IFailedOperationStore, IDisposable
 {
     private const string CollectionName = "failed_operations";
+    private static readonly HashSet<string> PermanentReplayFailureReasons = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "deserialize_failed",
+        "unsupported_kind"
+    };
 
     private readonly FailedOperationHandlingOptions _options;
     private readonly MetricsCollector _metrics;
@@ -198,7 +203,12 @@ internal sealed class LiteDbFailedOperationStore : IFailedOperationStore, IDispo
                 return Task.CompletedTask;
             }
 
-            record.Status = FailedOperationStatus.ReplayFailed;
+            var hasRemainingBudget = record.ReplayAttempts < Math.Max(1, record.RetryBudget);
+            var shouldRetry = hasRemainingBudget && !IsPermanentReplayFailure(reasonCode);
+
+            record.Status = shouldRetry
+                ? FailedOperationStatus.Pending
+                : FailedOperationStatus.ReplayFailed;
             record.LastReplayError = string.IsNullOrWhiteSpace(error) ? reasonCode : error;
             record.Metadata["replay_failure_reason"] = reasonCode;
             FailedOperations.Update(record);
@@ -294,5 +304,11 @@ internal sealed class LiteDbFailedOperationStore : IFailedOperationStore, IDispo
             LastReplayError = value.LastReplayError,
             Metadata = new Dictionary<string, string>(value.Metadata, StringComparer.OrdinalIgnoreCase)
         };
+    }
+
+    private static bool IsPermanentReplayFailure(string reasonCode)
+    {
+        return !string.IsNullOrWhiteSpace(reasonCode)
+            && PermanentReplayFailureReasons.Contains(reasonCode.Trim());
     }
 }

@@ -4,6 +4,12 @@ namespace InfernalHierarchy.Host.Resilience;
 
 internal sealed class InMemoryFailedOperationStore : IFailedOperationStore
 {
+    private static readonly HashSet<string> PermanentReplayFailureReasons = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "deserialize_failed",
+        "unsupported_kind"
+    };
+
     private readonly FailedOperationHandlingOptions _options;
     private readonly MetricsCollector _metrics;
     private readonly ILogger<InMemoryFailedOperationStore> _logger;
@@ -132,7 +138,12 @@ internal sealed class InMemoryFailedOperationStore : IFailedOperationStore
     {
         if (_records.TryGetValue(id, out var record))
         {
-            record.Status = FailedOperationStatus.ReplayFailed;
+            var hasRemainingBudget = record.ReplayAttempts < Math.Max(1, record.RetryBudget);
+            var shouldRetry = hasRemainingBudget && !IsPermanentReplayFailure(reasonCode);
+
+            record.Status = shouldRetry
+                ? FailedOperationStatus.Pending
+                : FailedOperationStatus.ReplayFailed;
             record.LastReplayError = string.IsNullOrWhiteSpace(error) ? reasonCode : error;
             record.Metadata["replay_failure_reason"] = reasonCode;
             _metrics.IncrementCounter("deadletter.replay.failed");
@@ -189,5 +200,11 @@ internal sealed class InMemoryFailedOperationStore : IFailedOperationStore
             LastReplayError = value.LastReplayError,
             Metadata = new Dictionary<string, string>(value.Metadata, StringComparer.OrdinalIgnoreCase)
         };
+    }
+
+    private static bool IsPermanentReplayFailure(string reasonCode)
+    {
+        return !string.IsNullOrWhiteSpace(reasonCode)
+            && PermanentReplayFailureReasons.Contains(reasonCode.Trim());
     }
 }

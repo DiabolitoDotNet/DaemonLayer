@@ -59,6 +59,9 @@ internal static class HostAddOptions
         builder.Services.AddOptions<ExecutionProfilesOptions>()
             .Bind(builder.Configuration.GetSection("ExecutionProfiles"))
             .ValidateOnStart();
+        builder.Services.AddOptions<SloGateOptions>()
+            .Bind(builder.Configuration.GetSection("SloGates"))
+            .ValidateOnStart();
     }
 
     private static void AddSearchAndProviderOptions(WebApplicationBuilder builder)

@@ -124,6 +124,8 @@ internal static class HostDependencyInjection
     {
         builder.Services.AddSingleton<MetricsCollector>();
         builder.Services.AddSingleton<MetricsService>();
+        builder.Services.AddSingleton<SloGateEvaluator>();
+        builder.Services.AddSingleton<AutonomyScorecardService>();
         builder.Services.AddSingleton<PerformanceMonitor>();
         builder.Services.AddSingleton<DistributedTracing>();
         builder.Services.AddHostedService<MessageBusMetricsReporter>();
@@ -277,8 +279,10 @@ internal static class HostDependencyInjection
             new OllamaClient(
                 sp.GetRequiredService<IHttpClientFactory>(),
                 sp.GetRequiredService<IOptionsMonitor<OllamaOptions>>(),
-                sp.GetRequiredService<ILogger<OllamaClient>>()));
+                sp.GetRequiredService<ILogger<OllamaClient>>(),
+                routingFeedback: sp.GetRequiredService<IModelRoutingFeedbackStore>()));
 
+        builder.Services.AddSingleton<IModelRoutingFeedbackStore, InMemoryModelRoutingFeedbackStore>();
         builder.Services.AddSingleton<MultiModelLlmClient>();
         builder.Services.AddSingleton<TokenUsageTracker>();
         builder.Services.AddSingleton<AgentLearningService>();

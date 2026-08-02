@@ -63,6 +63,30 @@ public sealed class OllamaOptionsValidator : IValidateOptions<OllamaOptions>
             }
         }
 
+        if (options.PromptCompactionMaxChars <= 0)
+        {
+            errors.Add("Ollama:PromptCompactionMaxChars must be greater than 0");
+        }
+
+        if (options.PromptCompactionHeadChars <= 0)
+        {
+            errors.Add("Ollama:PromptCompactionHeadChars must be greater than 0");
+        }
+
+        if (options.PromptCompactionTailChars <= 0)
+        {
+            errors.Add("Ollama:PromptCompactionTailChars must be greater than 0");
+        }
+
+        if (options.PromptCompactionHeadChars + options.PromptCompactionTailChars >= options.PromptCompactionMaxChars)
+        {
+            _logger.LogWarning(
+                "⚠️ Prompt compaction segments ({Head}+{Tail}) are >= max chars ({Max}); compaction may be ineffective",
+                options.PromptCompactionHeadChars,
+                options.PromptCompactionTailChars,
+                options.PromptCompactionMaxChars);
+        }
+
         return errors.Count == 0 ? ValidateOptionsResult.Success : ValidateOptionsResult.Fail(errors);
     }
 }
