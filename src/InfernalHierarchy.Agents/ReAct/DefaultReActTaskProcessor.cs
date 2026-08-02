@@ -173,6 +173,12 @@ public sealed class DefaultReActTaskProcessor : IReActTaskProcessor
             _eventAppender.TryAppendTaskEvent(effectiveContext.EventSink, effectiveContext.AgentId, effectiveContext.AgentRank, task, EventType.TaskStarted, "Task started");
 
             var baseContext = await effectiveContext.BuildBaseContextAsync(task, ct).ConfigureAwait(false);
+            var resolvedExecutionProfile = ResolveExecutionProfile(task.Payload);
+            var planning = ReActTaskComplexityAdvisor.Assess(
+                effectiveTaskContent,
+                effectiveContext.Persona.AvailableTools,
+                resolvedExecutionProfile,
+                effectiveContext.ReActOptions);
             var systemContext = await _ragContextEnricher.EnrichAsync(
                 baseContext,
                 query: effectiveTaskContent,
@@ -183,7 +189,7 @@ public sealed class DefaultReActTaskProcessor : IReActTaskProcessor
                 logger: effectiveContext.Logger,
                 ct: ct).ConfigureAwait(false);
 
-            systemContext = AppendRuntimeConstraints(systemContext, effectiveContext.Persona, task);
+            systemContext = AppendRuntimeConstraints(systemContext, effectiveContext.Persona, task, planning);
 
             var result = await RunLoopAsync(effectiveContext, systemContext, effectiveTaskContent, task, ct).ConfigureAwait(false);
 
@@ -207,7 +213,10 @@ public sealed class DefaultReActTaskProcessor : IReActTaskProcessor
                 new Dictionary<string, object>
                 {
                     ["iterations"] = result.Iterations,
-                    ["tool_calls"] = result.ToolCalls.Count
+                    ["tool_calls"] = result.ToolCalls.Count,
+                    ["task_complexity"] = planning.Complexity.ToString(),
+                    ["iteration_budget"] = planning.IterationBudget,
+                    ["recommended_parallel_branches"] = planning.RecommendedParallelBranches
                 });
 
             effectiveContext.SetStatus(AgentStatus.Idle);
@@ -217,7 +226,11 @@ public sealed class DefaultReActTaskProcessor : IReActTaskProcessor
             {
                 ["reasoning"] = result.Reasoning,
                 ["iterations"] = result.Iterations,
-                ["tool_calls"] = result.ToolCalls
+                ["tool_calls"] = result.ToolCalls,
+                ["task_complexity"] = planning.Complexity.ToString(),
+                ["iteration_budget"] = planning.IterationBudget,
+                ["recommended_parallel_branches"] = planning.RecommendedParallelBranches,
+                ["complexity_reason_code"] = planning.ReasonCode
             };
 
             if (gapAnalysis is not null && gapAnalysis.HasGaps)
@@ -461,7 +474,11 @@ public sealed class DefaultReActTaskProcessor : IReActTaskProcessor
         }
     }
 
-    private static string AppendRuntimeConstraints(string systemContext, Persona persona, AgentMessage task)
+    private static string AppendRuntimeConstraints(
+        string systemContext,
+        Persona persona,
+        AgentMessage task,
+        ReActComplexityAssessment planning)
     {
         var allowed = persona.AvailableTools.Count == 0
             ? "(none)"
@@ -482,6 +499,7 @@ public sealed class DefaultReActTaskProcessor : IReActTaskProcessor
             - Do NOT call send_telegram unless a real telegram_chat_id is present in the task payload.
             {agentCountEmailRule}
             - execution_profile={executionProfile}
+                - task_complexity={planning.Complexity} iteration_budget={planning.IterationBudget} recommended_parallel_branches={planning.RecommendedParallelBranches}
             - transport={transport ?? "(unknown)"} telegram_chat_id={(hasTelegram ? chatId.ToString() : "(none)")}
             """;
     }

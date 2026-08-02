@@ -5,7 +5,7 @@ namespace InfernalHierarchy.Agents.ReAct;
 
 public sealed class DefaultReActLoopRunner : IReActLoopRunner
 {
-    private const int MaxIterations = 5;
+    private const int FallbackMaxIterations = 5;
     private const string TerminalToolEmailSend = "email_send";
     private const string TerminalToolTelegramSend = "send_telegram";
     private const string ToolGetAgentStatus = "get_agent_status";
@@ -38,13 +38,20 @@ public sealed class DefaultReActLoopRunner : IReActLoopRunner
         var createCustomToolTask = IsCreateCustomToolTask(context.Task, context.Persona.AvailableTools);
         var effectiveAvailableTools = BuildEffectiveAvailableTools(context);
         var forcedInvocation = TryDetectForcedToolInvocation(context.Task, effectiveAvailableTools);
+        var complexity = ReActTaskComplexityAdvisor.Assess(
+            context.Task,
+            effectiveAvailableTools,
+            context.ExecutionProfile,
+            context.ReActOptions);
+        var maxIterations = complexity.IterationBudget <= 0 ? FallbackMaxIterations : complexity.IterationBudget;
 
         history.AppendLine($"Task: {context.Task}\n");
+        history.AppendLine($"Planning: complexity={complexity.Complexity}; iteration_budget={maxIterations}; recommended_parallel_branches={complexity.RecommendedParallelBranches}; reason={complexity.ReasonCode}\n");
 
         await TryEmitCheckpointAsync(context, new ReActCheckpoint(
             Phase: "plan",
             Label: "task_received",
-            Detail: context.Task,
+            Detail: $"{context.Task};complexity={complexity.Complexity};iteration_budget={maxIterations};parallel_branches={complexity.RecommendedParallelBranches}",
             Iteration: 0,
             OccurredAtUtc: DateTime.UtcNow), ct).ConfigureAwait(false);
 
@@ -109,7 +116,7 @@ public sealed class DefaultReActLoopRunner : IReActLoopRunner
                 ToolCalls: toolCalls);
         }
 
-        while (iterations < MaxIterations)
+        while (iterations < maxIterations)
         {
             iterations++;
             context.SetStatus(AgentStatus.Thinking);
@@ -562,17 +569,17 @@ public sealed class DefaultReActLoopRunner : IReActLoopRunner
         context.Logger.LogWarning(
             "{AgentName} reached max iterations ({Max}) without completing task",
             context.AgentName,
-            MaxIterations);
+            maxIterations);
 
         await TryEmitCheckpointAsync(context, new ReActCheckpoint(
             Phase: "verification",
             Label: "max_iterations_reached",
-            Detail: $"max_iterations={MaxIterations}",
+            Detail: $"max_iterations={maxIterations}",
             Iteration: iterations,
             OccurredAtUtc: DateTime.UtcNow), ct).ConfigureAwait(false);
 
         return new ReActLoopResult(
-            FinalAnswer: $"Task incomplete after {MaxIterations} iterations. Partial progress:\n{history}",
+            FinalAnswer: $"Task incomplete after {maxIterations} iterations. Partial progress:\n{history}",
             Reasoning: "Reached maximum iteration limit",
             Iterations: iterations,
             ToolCalls: toolCalls);

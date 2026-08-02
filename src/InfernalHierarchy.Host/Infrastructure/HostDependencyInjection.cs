@@ -209,7 +209,8 @@ internal static class HostDependencyInjection
                 logger,
                 queueCapacity,
                 messageBusOptions.OverflowPolicy,
-                sp.GetService<IFailedOperationStore>());
+                sp.GetService<IFailedOperationStore>(),
+                messageBusOptions.Backpressure);
         });
         builder.Services.AddSingleton<LiteDbSharedMemory>();
         builder.Services.AddSingleton<ISharedMemory>(sp => sp.GetRequiredService<LiteDbSharedMemory>());
@@ -262,7 +263,8 @@ internal static class HostDependencyInjection
     private static void AddToolExecutionPipeline(WebApplicationBuilder builder)
     {
         builder.Services.AddSingleton<IToolExecutionPipeline, DefaultToolExecutionPipeline>();
-        builder.Services.AddSingleton<IToolRateLimiter, FixedWindowToolRateLimiter>();
+        builder.Services.AddSingleton<FixedWindowToolRateLimiter>();
+        builder.Services.AddSingleton<IToolRateLimiter, BackpressureAwareToolRateLimiter>();
         builder.Services.AddSingleton<IProcessRunner, DefaultProcessRunner>();
         builder.Services.AddSingleton<IToolPluginLoader, DefaultToolPluginLoader>();
         builder.Services.AddSingleton<IToolRegistry, ToolRegistry>();

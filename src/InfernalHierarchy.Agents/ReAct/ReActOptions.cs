@@ -18,5 +18,30 @@ public class ReActOptions
     /// This prevents post-success hallucinations and duplicate tool invocations (e.g., sending the
     /// same email multiple times).
     /// </summary>
-        public string[] TerminalTools { get; set; } = ["email_send", "send_telegram", "create_custom_tool"];
+    public string[] TerminalTools { get; set; } = ["email_send", "send_telegram", "create_custom_tool"];
+
+    /// <summary>
+    /// Upper hard safety bound for ReAct iterations.
+    /// </summary>
+    public int HardMaxIterations { get; set; } = 8;
+
+    /// <summary>
+    /// Iteration budget for low-complexity tasks.
+    /// </summary>
+    public int SimpleTaskMaxIterations { get; set; } = 3;
+
+    /// <summary>
+    /// Iteration budget for medium-complexity tasks.
+    /// </summary>
+    public int MediumTaskMaxIterations { get; set; } = 5;
+
+    /// <summary>
+    /// Iteration budget for high-complexity tasks.
+    /// </summary>
+    public int ComplexTaskMaxIterations { get; set; } = 8;
+
+    /// <summary>
+    /// Soft planning hint for collaboration fanout.
+    /// </summary>
+    public int MaxParallelBranches { get; set; } = 3;
 }

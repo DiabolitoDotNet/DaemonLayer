@@ -484,4 +484,111 @@ public class ChannelMessageBusTests
         bus.DroppedMessages.Should().BeGreaterOrEqualTo(1);
         bus.TargetedQueueDepth.Should().Be(0);
     }
+
+    [Fact]
+    public async Task PublishAsync_WhenBackpressureActive_ShouldDeferCollaborationRequests()
+    {
+        var failedStore = new InMemoryFailedOperationStoreForTests();
+        var bus = new ChannelMessageBus(
+            Mock.Of<ILogger<ChannelMessageBus>>(),
+            queueCapacity: 4,
+            overflowPolicy: Core.Configuration.MessageQueueOverflowPolicy.Block,
+            failedOperations: failedStore,
+            backpressureOptions: new Core.Configuration.MessageBusBackpressureOptions
+            {
+                Enabled = true,
+                HighWatermarkRatio = 0.5,
+                RecoverWatermarkRatio = 0.25,
+                DeferCollaborationRequests = true
+            });
+
+        await bus.PublishAsync(new AgentMessage
+        {
+            FromAgentId = "sender",
+            ToAgentId = "agent-overloaded",
+            Type = MessageType.Task,
+            Content = "fill-1"
+        });
+
+        await bus.PublishAsync(new AgentMessage
+        {
+            FromAgentId = "sender",
+            ToAgentId = "agent-overloaded",
+            Type = MessageType.Task,
+            Content = "fill-2"
+        });
+
+        bus.IsBackpressureActive.Should().BeTrue();
+
+        await bus.PublishAsync(new AgentMessage
+        {
+            FromAgentId = "coordinator",
+            ToAgentId = "agent-overloaded",
+            Type = MessageType.CollaborationRequest,
+            Content = "please collaborate"
+        });
+
+        bus.DeferredMessages.Should().Be(1);
+        bus.TargetedQueueDepth.Should().Be(2);
+        failedStore.Records.Should().ContainSingle(r =>
+            r.Kind == FailedOperationKind.MessagePublish &&
+            r.ReasonCode == "backpressure_deferred");
+    }
+
+    [Fact]
+    public async Task PublishAsync_WhenDepthRecovers_ShouldExitBackpressureMode()
+    {
+        var bus = new ChannelMessageBus(
+            Mock.Of<ILogger<ChannelMessageBus>>(),
+            queueCapacity: 4,
+            overflowPolicy: Core.Configuration.MessageQueueOverflowPolicy.Block,
+            backpressureOptions: new Core.Configuration.MessageBusBackpressureOptions
+            {
+                Enabled = true,
+                HighWatermarkRatio = 0.5,
+                RecoverWatermarkRatio = 0.25,
+                DeferCollaborationRequests = true
+            });
+
+        var agentId = "agent-recover";
+
+        await bus.PublishAsync(new AgentMessage
+        {
+            FromAgentId = "sender",
+            ToAgentId = agentId,
+            Type = MessageType.Task,
+            Content = "fill-1"
+        });
+
+        await bus.PublishAsync(new AgentMessage
+        {
+            FromAgentId = "sender",
+            ToAgentId = agentId,
+            Type = MessageType.Task,
+            Content = "fill-2"
+        });
+
+        bus.IsBackpressureActive.Should().BeTrue();
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+        var consumed = 0;
+        await foreach (var msg in bus.SubscribeAsync(agentId, cts.Token))
+        {
+            consumed++;
+            if (consumed == 2)
+            {
+                break;
+            }
+        }
+
+        await bus.PublishAsync(new AgentMessage
+        {
+            FromAgentId = "sender",
+            ToAgentId = "agent-other",
+            Type = MessageType.Notification,
+            Content = "trigger-state-refresh"
+        });
+
+        bus.IsBackpressureActive.Should().BeFalse();
+    }
 }

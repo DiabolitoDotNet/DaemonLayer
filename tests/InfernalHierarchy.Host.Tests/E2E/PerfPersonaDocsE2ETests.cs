@@ -92,6 +92,31 @@ public sealed class PerfPersonaDocsE2ETests
     }
 
     [Fact]
+    public async Task Perf_MessageBusDiagnostics_ReturnsActionablePayload()
+    {
+        using var factory = new InfernalHierarchyTestWebAppFactory();
+        var client = factory.CreateClient();
+
+        // Prime message bus activity through a normal API call.
+        (await client.GetAsync(new Uri("/api/agents", UriKind.Relative))).EnsureSuccessStatusCode();
+
+        var res = await client.GetAsync(new Uri("/api/perf/message-bus", UriKind.Relative));
+        res.EnsureSuccessStatusCode();
+
+        var json = await res.Content.ReadAsStringAsync();
+        using var doc = JsonDocument.Parse(json);
+
+        doc.RootElement.GetProperty("supported").GetBoolean().Should().BeTrue();
+        doc.RootElement.GetProperty("queue").TryGetProperty("capacity", out _).Should().BeTrue();
+        doc.RootElement.GetProperty("backpressure").TryGetProperty("active", out _).Should().BeTrue();
+        doc.RootElement.GetProperty("counters").TryGetProperty("deferredMessages", out _).Should().BeTrue();
+
+        var recommendations = doc.RootElement.GetProperty("recommendations");
+        recommendations.ValueKind.Should().Be(JsonValueKind.Array);
+        recommendations.GetArrayLength().Should().BeGreaterThan(0);
+    }
+
+    [Fact]
     public async Task Perf_Traces_List_Detail_And_Download_Work()
     {
         using var factory = new InfernalHierarchyTestWebAppFactory();

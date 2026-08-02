@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Http;
 using System.Collections.Generic;
+using InfernalHierarchy.Messaging.Bus;
 
 namespace InfernalHierarchy.Host.Api;
 
@@ -80,6 +81,66 @@ internal static class PerfApi
                 .ToList();
 
             return Results.Ok(new { items });
+        });
+
+        app.MapGet("/api/perf/message-bus", (HttpContext ctx, IMessageBus messageBus) =>
+        {
+            var forbid = LocalOnlyGuard.ForbidIfNotLoopback(ctx, uiOptions.LocalOnly);
+            if (forbid is not null)
+            {
+                return forbid;
+            }
+
+            if (messageBus is not ChannelMessageBus bus)
+            {
+                return Results.Ok(new
+                {
+                    supported = false,
+                    reason = "Current IMessageBus implementation does not expose channel diagnostics"
+                });
+            }
+
+            var targetedDepth = bus.TargetedQueueDepth;
+            var broadcastDepth = bus.BroadcastQueueDepth;
+            var totalDepth = targetedDepth + broadcastDepth;
+            var capacity = Math.Max(1, bus.QueueCapacity);
+            var utilization = (double)totalDepth / capacity;
+
+            var recommendations = BuildMessageBusRecommendations(bus, utilization, totalDepth);
+
+            return Results.Ok(new
+            {
+                supported = true,
+                channels = new
+                {
+                    active = bus.ActiveChannelCount,
+                    broadcastSubscribers = bus.ActiveBroadcastSubscriberCount,
+                },
+                queue = new
+                {
+                    capacity,
+                    overflowPolicy = bus.OverflowPolicy.ToString(),
+                    targetedDepth,
+                    broadcastDepth,
+                    totalDepth,
+                    utilization,
+                },
+                backpressure = new
+                {
+                    enabled = bus.AdaptiveBackpressureEnabled,
+                    active = bus.IsBackpressureActive,
+                    deferCollaborationRequests = bus.DeferCollaborationRequests,
+                    highWatermark = bus.BackpressureHighWatermark,
+                    recoverWatermark = bus.BackpressureRecoverWatermark,
+                },
+                counters = new
+                {
+                    droppedMessages = bus.DroppedMessages,
+                    rejectedMessages = bus.RejectedMessages,
+                    deferredMessages = bus.DeferredMessages,
+                },
+                recommendations
+            });
         });
 
         app.MapGet("/api/perf/traces", (HttpContext ctx, ITraceCaptureStore store, int? limit) =>
@@ -285,6 +346,49 @@ internal static class PerfApi
             store.Clear();
             return Results.Ok(new { cleared = true });
         });
+    }
+
+    private static IReadOnlyList<string> BuildMessageBusRecommendations(ChannelMessageBus bus, double utilization, int totalDepth)
+    {
+        var recommendations = new List<string>();
+
+        if (bus.IsBackpressureActive)
+        {
+            recommendations.Add("Backpressure is active: prioritize critical tasks and defer collaboration fanout until queue depth recovers.");
+        }
+
+        if (utilization >= 0.90d)
+        {
+            recommendations.Add("Queue utilization is above 90%: increase MessageBus:QueueCapacity or reduce producer burst size.");
+        }
+        else if (utilization >= 0.75d)
+        {
+            recommendations.Add("Queue utilization is above 75%: monitor for sustained pressure and consider temporary agent/tool throttling.");
+        }
+
+        if (bus.RejectedMessages > 0)
+        {
+            recommendations.Add("Rejected messages detected: switch overflow policy to Block/DropOldest for bursty workloads or tune admission control.");
+        }
+
+        if (bus.DroppedMessages > 0)
+        {
+            recommendations.Add("Dropped messages detected: validate that lossy behavior is acceptable for the current workload.");
+        }
+
+        if (bus.DeferredMessages > 0)
+        {
+            recommendations.Add("Deferred collaboration requests detected: run collaboration-heavy workflows when queue pressure is lower.");
+        }
+
+        if (recommendations.Count == 0)
+        {
+            recommendations.Add(totalDepth == 0
+                ? "Queue is idle: no backpressure action required."
+                : "Queue is healthy: continue normal operations.");
+        }
+
+        return recommendations;
     }
 
     private sealed class TraceTreeNodeDto

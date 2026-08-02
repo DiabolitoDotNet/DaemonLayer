@@ -228,7 +228,7 @@ Validation:
 
 ### P3.1 Adaptive concurrency and planning depth
 
-Status: TODO
+Status: DONE
 
 Implementation:
 
@@ -247,7 +247,7 @@ Validation:
 
 ### P3.2 Queue and execution backpressure intelligence
 
-Status: TODO
+Status: DONE
 
 Implementation:
 

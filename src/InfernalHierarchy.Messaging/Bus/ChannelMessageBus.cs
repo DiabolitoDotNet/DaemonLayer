@@ -14,11 +14,17 @@ public class ChannelMessageBus : IMessageBus, IDisposable
     private readonly ILogger<ChannelMessageBus> _logger;
     private readonly int _queueCapacity;
     private readonly MessageQueueOverflowPolicy _overflowPolicy;
+    private readonly bool _adaptiveBackpressureEnabled;
+    private readonly bool _deferCollaborationRequests;
+    private readonly int _backpressureHighWatermark;
+    private readonly int _backpressureRecoverWatermark;
     private readonly IFailedOperationStore? _failedOperations;
     private readonly ConcurrentDictionary<string, ChannelState> _broadcastSubscriberChannels;
     private readonly ConcurrentDictionary<string, ChannelState> _agentChannels;
     private long _droppedMessages;
     private long _rejectedMessages;
+    private long _deferredMessages;
+    private int _isBackpressureActive;
     private bool _disposed;
 
     public ChannelMessageBus(ILogger<ChannelMessageBus> logger)
@@ -30,12 +36,20 @@ public class ChannelMessageBus : IMessageBus, IDisposable
         ILogger<ChannelMessageBus> logger,
         int queueCapacity,
         MessageQueueOverflowPolicy overflowPolicy,
-        IFailedOperationStore? failedOperations = null)
+        IFailedOperationStore? failedOperations = null,
+        MessageBusBackpressureOptions? backpressureOptions = null)
     {
         _logger = logger;
         _queueCapacity = Math.Max(1, queueCapacity);
         _overflowPolicy = overflowPolicy;
         _failedOperations = failedOperations;
+        var effectiveBackpressure = backpressureOptions ?? new MessageBusBackpressureOptions();
+        _adaptiveBackpressureEnabled = effectiveBackpressure.Enabled;
+        _deferCollaborationRequests = effectiveBackpressure.DeferCollaborationRequests;
+        var highRatio = Math.Clamp(effectiveBackpressure.HighWatermarkRatio, 0.10d, 1.00d);
+        var recoverRatio = Math.Clamp(effectiveBackpressure.RecoverWatermarkRatio, 0.01d, highRatio);
+        _backpressureHighWatermark = Math.Max(1, (int)Math.Ceiling(_queueCapacity * highRatio));
+        _backpressureRecoverWatermark = Math.Max(0, (int)Math.Floor(_queueCapacity * recoverRatio));
         _broadcastSubscriberChannels = new ConcurrentDictionary<string, ChannelState>();
         _agentChannels = new ConcurrentDictionary<string, ChannelState>();
     }
@@ -51,6 +65,20 @@ public class ChannelMessageBus : IMessageBus, IDisposable
 
         _logger.LogDebug("📤 Publishing message {MessageId} from {From} to {To}",
             message.Id, message.FromAgentId, message.ToAgentId ?? "broadcast");
+
+        UpdateBackpressureState();
+        if (ShouldDeferForBackpressure(message))
+        {
+            Interlocked.Increment(ref _deferredMessages);
+            _logger.LogWarning(
+                "Deferring message {MessageId} due to active backpressure | type={Type} from={From} to={To}",
+                message.Id,
+                message.Type,
+                message.FromAgentId,
+                message.ToAgentId ?? "broadcast");
+            await RecordDeadLetterAsync(message, "backpressure_deferred", targetId: message.ToAgentId, ct).ConfigureAwait(false);
+            return;
+        }
 
         if (string.IsNullOrEmpty(message.ToAgentId))
         {
@@ -161,6 +189,36 @@ public class ChannelMessageBus : IMessageBus, IDisposable
     public int ActiveBroadcastSubscriberCount => _broadcastSubscriberChannels.Count;
 
     /// <summary>
+    /// Configured queue capacity per channel.
+    /// </summary>
+    public int QueueCapacity => _queueCapacity;
+
+    /// <summary>
+    /// Configured queue overflow policy.
+    /// </summary>
+    public MessageQueueOverflowPolicy OverflowPolicy => _overflowPolicy;
+
+    /// <summary>
+    /// Indicates whether adaptive backpressure is enabled.
+    /// </summary>
+    public bool AdaptiveBackpressureEnabled => _adaptiveBackpressureEnabled;
+
+    /// <summary>
+    /// Indicates whether collaboration requests may be deferred while backpressure is active.
+    /// </summary>
+    public bool DeferCollaborationRequests => _deferCollaborationRequests;
+
+    /// <summary>
+    /// Queue depth high-watermark that activates backpressure mode.
+    /// </summary>
+    public int BackpressureHighWatermark => _backpressureHighWatermark;
+
+    /// <summary>
+    /// Queue depth recover-watermark that deactivates backpressure mode.
+    /// </summary>
+    public int BackpressureRecoverWatermark => _backpressureRecoverWatermark;
+
+    /// <summary>
     /// Total queued messages across targeted channels.
     /// </summary>
     public int TargetedQueueDepth => _agentChannels.Values.Sum(static c => c.Depth);
@@ -179,6 +237,16 @@ public class ChannelMessageBus : IMessageBus, IDisposable
     /// Number of rejected messages due to overflow policy.
     /// </summary>
     public long RejectedMessages => Interlocked.Read(ref _rejectedMessages);
+
+    /// <summary>
+    /// Number of messages deferred while adaptive backpressure was active.
+    /// </summary>
+    public long DeferredMessages => Interlocked.Read(ref _deferredMessages);
+
+    /// <summary>
+    /// Indicates whether adaptive backpressure mode is currently active.
+    /// </summary>
+    public bool IsBackpressureActive => Volatile.Read(ref _isBackpressureActive) == 1;
 
     public void Dispose()
     {
@@ -237,6 +305,7 @@ public class ChannelMessageBus : IMessageBus, IDisposable
             }
 
             IncrementDepth(state, wasAtCapacity: false);
+            UpdateBackpressureState();
             return true;
         }
 
@@ -255,6 +324,7 @@ public class ChannelMessageBus : IMessageBus, IDisposable
             }
 
             IncrementDepth(state, wasAtCapacity);
+            UpdateBackpressureState();
             return true;
         }
 
@@ -262,6 +332,7 @@ public class ChannelMessageBus : IMessageBus, IDisposable
         {
             await state.Channel.Writer.WriteAsync(message, ct).ConfigureAwait(false);
             IncrementDepth(state, wasAtCapacity: false);
+            UpdateBackpressureState();
             return true;
         }
         catch (ChannelClosedException)
@@ -282,6 +353,58 @@ public class ChannelMessageBus : IMessageBus, IDisposable
         if (after > _queueCapacity)
         {
             Interlocked.Exchange(ref state.Depth, _queueCapacity);
+        }
+    }
+
+    private bool ShouldDeferForBackpressure(AgentMessage message)
+    {
+        if (!_adaptiveBackpressureEnabled)
+        {
+            return false;
+        }
+
+        if (!IsBackpressureActive)
+        {
+            return false;
+        }
+
+        return _deferCollaborationRequests
+            && message.Type == MessageType.CollaborationRequest;
+    }
+
+    private void UpdateBackpressureState()
+    {
+        if (!_adaptiveBackpressureEnabled)
+        {
+            return;
+        }
+
+        var currentDepth = TargetedQueueDepth + BroadcastQueueDepth;
+        var currentlyActive = Volatile.Read(ref _isBackpressureActive) == 1;
+
+        if (!currentlyActive && currentDepth >= _backpressureHighWatermark)
+        {
+            if (Interlocked.CompareExchange(ref _isBackpressureActive, 1, 0) == 0)
+            {
+                _logger.LogWarning(
+                    "Message bus backpressure activated | depth={Depth} high_watermark={HighWatermark} recover_watermark={RecoverWatermark}",
+                    currentDepth,
+                    _backpressureHighWatermark,
+                    _backpressureRecoverWatermark);
+            }
+
+            return;
+        }
+
+        if (currentlyActive && currentDepth <= _backpressureRecoverWatermark)
+        {
+            if (Interlocked.CompareExchange(ref _isBackpressureActive, 0, 1) == 1)
+            {
+                _logger.LogInformation(
+                    "Message bus backpressure recovered | depth={Depth} recover_watermark={RecoverWatermark}",
+                    currentDepth,
+                    _backpressureRecoverWatermark);
+            }
         }
     }
 
