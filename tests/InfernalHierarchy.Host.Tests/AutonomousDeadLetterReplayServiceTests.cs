@@ -35,7 +35,7 @@ public sealed class AutonomousDeadLetterReplayServiceTests
 
         var bus = new FakeMessageBus();
         var tools = new FailingThenSucceedingToolRegistry();
-        var replay = new DeadLetterReplayService(store, bus, tools, NullLogger<DeadLetterReplayService>.Instance);
+        var replay = new DeadLetterReplayService(store, bus, tools, eventSink: null, NullLogger<DeadLetterReplayService>.Instance);
 
         var payload = new ToolReplayPayload
         {
@@ -111,7 +111,7 @@ public sealed class AutonomousDeadLetterReplayServiceTests
 
         var bus = new FakeMessageBus();
         var tools = new FakeToolRegistry();
-        var replay = new DeadLetterReplayService(store, bus, tools, NullLogger<DeadLetterReplayService>.Instance);
+        var replay = new DeadLetterReplayService(store, bus, tools, eventSink: null, NullLogger<DeadLetterReplayService>.Instance);
 
         var message = new AgentMessage
         {

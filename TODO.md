@@ -333,7 +333,7 @@ Validation:
 
 ### P4.3 Ops transparency and explainability
 
-Status: TODO
+Status: DONE
 
 Implementation:
 

@@ -45,6 +45,37 @@ internal static class TimelineApi
 
             return Results.Ok(new { startUtc = start, endUtc = end, summary, items });
         });
+
+        app.MapGet("/api/perf/timeline/explainability", async (
+            HttpContext ctx,
+            EventStore store,
+            OperatorExplainabilityService explainability,
+            int? minutes,
+            int? limit,
+            CancellationToken ct) =>
+        {
+            var forbid = OperationalAuthGuard.ForbidIfUnauthorized(ctx, uiOptions.LocalOnly, operatorOptions.ApiKey);
+            if (forbid is not null)
+            {
+                return forbid;
+            }
+
+            var rangeMinutes = minutes is > 0 and <= 24 * 60 ? minutes.Value : 60;
+            var max = limit is > 0 and <= 2000 ? limit.Value : 500;
+
+            var end = DateTime.UtcNow;
+            var start = end.AddMinutes(-rangeMinutes);
+            var events = await store.GetEventsByTimeRangeAsync(start, end, ct).ConfigureAwait(false);
+
+            var report = explainability.BuildReport(events, max);
+            return Results.Ok(new
+            {
+                startUtc = start,
+                endUtc = end,
+                summary = report.Summary,
+                items = report.Items
+            });
+        });
     }
 
     private static bool IsTimelineRelevant(AgentEvent evt)

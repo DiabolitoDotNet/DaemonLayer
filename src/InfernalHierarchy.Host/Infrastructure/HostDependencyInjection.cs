@@ -126,6 +126,7 @@ internal static class HostDependencyInjection
         builder.Services.AddSingleton<MetricsService>();
         builder.Services.AddSingleton<SloGateEvaluator>();
         builder.Services.AddSingleton<AutonomyScorecardService>();
+        builder.Services.AddSingleton<OperatorExplainabilityService>();
         builder.Services.AddSingleton<PerformanceMonitor>();
         builder.Services.AddSingleton<DistributedTracing>();
         builder.Services.AddHostedService<MessageBusMetricsReporter>();

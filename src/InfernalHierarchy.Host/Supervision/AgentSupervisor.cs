@@ -28,6 +28,7 @@ public sealed class AgentSupervisor : BackgroundService, IAgentSupervisor
     private readonly IAgentFactory _agentFactory;
     private readonly IMessageBus _messageBus;
     private readonly ISharedMemory _sharedMemory;
+    private readonly IAgentEventSink? _eventSink;
     private readonly AgentSupervisorOptions _options;
     private readonly MetricsCollector? _metrics;
     private readonly ILogger<AgentSupervisor> _logger;
@@ -40,6 +41,7 @@ public sealed class AgentSupervisor : BackgroundService, IAgentSupervisor
         IAgentFactory agentFactory,
         IMessageBus messageBus,
         ISharedMemory sharedMemory,
+        IAgentEventSink? eventSink,
         IOptions<AgentSupervisorOptions> options,
         MetricsCollector? metrics,
         ILogger<AgentSupervisor> logger)
@@ -48,6 +50,7 @@ public sealed class AgentSupervisor : BackgroundService, IAgentSupervisor
         _agentFactory = agentFactory;
         _messageBus = messageBus;
         _sharedMemory = sharedMemory;
+        _eventSink = eventSink;
         _options = options.Value;
         _metrics = metrics;
         _logger = logger;
@@ -57,6 +60,13 @@ public sealed class AgentSupervisor : BackgroundService, IAgentSupervisor
     {
         _metrics?.IncrementCounter("supervisor.interventions.total");
         _metrics?.IncrementCounter("supervisor.interventions.replan");
+        EmitSupervisorEvent(
+            supervisorAction: "replan",
+            rootAgentId: rootAgentId,
+            targetAgentId: rootAgentId,
+            reason: reason,
+            reasonCode: "stalled_or_looping");
+
         var message = new AgentMessage
         {
             FromAgentId = SupervisorId,
@@ -79,6 +89,12 @@ public sealed class AgentSupervisor : BackgroundService, IAgentSupervisor
     {
         _metrics?.IncrementCounter("supervisor.interventions.total");
         _metrics?.IncrementCounter("supervisor.interventions.preempt");
+        EmitSupervisorEvent(
+            supervisorAction: "preempt",
+            rootAgentId: string.Empty,
+            targetAgentId: agentId,
+            reason: reason,
+            reasonCode: "branch_preempted_after_stall");
         _logger.LogWarning("🛑 Supervisor preempting agent {AgentId}: {Reason}", agentId, reason);
         return _agentFactory.TerminateAgentAsync(agentId, ct);
     }
@@ -309,5 +325,41 @@ public sealed class AgentSupervisor : BackgroundService, IAgentSupervisor
         }
 
         return current;
+    }
+
+    private void EmitSupervisorEvent(
+        string supervisorAction,
+        string rootAgentId,
+        string targetAgentId,
+        string reason,
+        string reasonCode)
+    {
+        if (_eventSink is null)
+        {
+            return;
+        }
+
+        try
+        {
+            _eventSink.AppendEvent(new AgentEvent
+            {
+                AgentId = SupervisorId,
+                Type = EventType.DecisionMade,
+                Description = "Supervisor intervention",
+                Metadata = new Dictionary<string, object>
+                {
+                    ["category"] = "supervisor.intervention",
+                    ["supervisor_action"] = supervisorAction,
+                    ["root_agent_id"] = rootAgentId,
+                    ["target_agent_id"] = targetAgentId,
+                    ["reason"] = reason,
+                    ["reason_code"] = reasonCode,
+                }
+            });
+        }
+        catch
+        {
+            // best-effort eventing only
+        }
     }
 }

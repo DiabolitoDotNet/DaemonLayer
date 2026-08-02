@@ -73,6 +73,8 @@ internal sealed class DocumentationGenerator
         sb.AppendLine("- `GET /api/perf/traces/{traceId}` – trace detail");
         sb.AppendLine("- `GET /api/perf/traces/{traceId}/tree` – trace span tree (timing offsets)");
         sb.AppendLine("- `GET /api/perf/traces/{traceId}/download` – trace JSON download");
+        sb.AppendLine("- `GET /api/perf/timeline` – operational timeline (task/tool/reasoning)");
+        sb.AppendLine("- `GET /api/perf/timeline/explainability` – explainability-focused timeline with reason codes and lineage");
         sb.AppendLine("- `GET /api/perf/trace-capture` – trace capture status + store stats");
         sb.AppendLine("- `GET /api/perf/request-profiling` – request profiling status + store stats");
         sb.AppendLine("- `GET /api/perf/llm-optimization` – LLM cost/latency optimization report + routing feedback");

@@ -230,6 +230,35 @@ public sealed class PerfPersonaDocsE2ETests
     }
 
     [Fact]
+    public async Task Perf_TimelineExplainability_ReturnsSummaryAndItems()
+    {
+        using var factory = new InfernalHierarchyTestWebAppFactory();
+        var client = factory.CreateClient();
+
+        var operatorOptions = factory.Services.GetRequiredService<IOptions<OperatorApiOptions>>().Value;
+        if (!string.IsNullOrWhiteSpace(operatorOptions.ApiKey))
+        {
+            client.DefaultRequestHeaders.Remove("X-Infernal-Operator-Key");
+            client.DefaultRequestHeaders.Add("X-Infernal-Operator-Key", operatorOptions.ApiKey);
+        }
+
+        var res = await client.GetAsync(new Uri("/api/perf/timeline/explainability", UriKind.Relative));
+        res.EnsureSuccessStatusCode();
+
+        var json = await res.Content.ReadAsStringAsync();
+        using var doc = JsonDocument.Parse(json);
+
+        doc.RootElement.TryGetProperty("summary", out var summary).Should().BeTrue();
+        summary.TryGetProperty("tool_or_skill_creation", out _).Should().BeTrue();
+        summary.TryGetProperty("deadletter_replay", out _).Should().BeTrue();
+        summary.TryGetProperty("execution_profile_switch", out _).Should().BeTrue();
+        summary.TryGetProperty("branch_preempted", out _).Should().BeTrue();
+
+        doc.RootElement.TryGetProperty("items", out var items).Should().BeTrue();
+        items.ValueKind.Should().Be(JsonValueKind.Array);
+    }
+
+    [Fact]
     public async Task Perf_SloGates_StrictThresholds_ReturnsServiceUnavailable()
     {
         using var factory = new StrictSloGateFactory();

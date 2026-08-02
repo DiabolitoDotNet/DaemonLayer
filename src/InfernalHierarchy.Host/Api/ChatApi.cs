@@ -125,9 +125,9 @@ internal static class ChatApi
     {
         if (ctx.Request.Headers.TryGetValue("X-Correlation-Id", out var provided)
             && provided.Count == 1
-            && !string.IsNullOrWhiteSpace(provided[0]))
+            && !string.IsNullOrWhiteSpace(provided.ToString()))
         {
-            return provided[0].ToString();
+            return provided.ToString();
         }
 
         var traceId = Activity.Current?.TraceId.ToString();

@@ -38,7 +38,7 @@ public sealed class DeadLetterReplayServiceTests
             PayloadJson = JsonSerializer.Serialize(message)
         });
 
-        var sut = new DeadLetterReplayService(store, bus, tools, NullLogger<DeadLetterReplayService>.Instance);
+        var sut = new DeadLetterReplayService(store, bus, tools, eventSink: null, NullLogger<DeadLetterReplayService>.Instance);
 
         var replay = await sut.ReplayAsync("dl-1", "tester", CancellationToken.None);
 
@@ -75,7 +75,7 @@ public sealed class DeadLetterReplayServiceTests
             ReplayAttempts = 1
         });
 
-        var sut = new DeadLetterReplayService(store, bus, tools, NullLogger<DeadLetterReplayService>.Instance);
+        var sut = new DeadLetterReplayService(store, bus, tools, eventSink: null, NullLogger<DeadLetterReplayService>.Instance);
 
         var replay = await sut.ReplayAsync("dl-2", "tester", CancellationToken.None);
 
@@ -110,7 +110,7 @@ public sealed class DeadLetterReplayServiceTests
             PayloadJson = JsonSerializer.Serialize(payload)
         });
 
-        var sut = new DeadLetterReplayService(store, bus, tools, NullLogger<DeadLetterReplayService>.Instance);
+        var sut = new DeadLetterReplayService(store, bus, tools, eventSink: null, NullLogger<DeadLetterReplayService>.Instance);
 
         var replay = await sut.ReplayAsync("dl-3", "tester", CancellationToken.None);
 
