@@ -178,7 +178,7 @@ Validation:
 
 ### P2.1 Execution profiles
 
-Status: TODO
+Status: DONE
 
 Implementation:
 
@@ -201,7 +201,7 @@ Validation:
 
 ### P2.2 Build/deploy workflow primitives
 
-Status: TODO
+Status: DONE
 
 Implementation:
 

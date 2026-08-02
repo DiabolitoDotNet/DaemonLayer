@@ -70,6 +70,7 @@ internal static class HostDependencyInjection
         builder.Services.AddSingleton<IValidateOptions<FileSystemToolOptions>, FileSystemToolOptionsValidator>();
         builder.Services.AddSingleton<IValidateOptions<HttpRequestToolOptions>, HttpRequestToolOptionsValidator>();
         builder.Services.AddSingleton<IValidateOptions<CodeExecutionToolOptions>, CodeExecutionToolOptionsValidator>();
+        builder.Services.AddSingleton<IValidateOptions<DeliveryWorkflowOptions>, DeliveryWorkflowOptionsValidator>();
         builder.Services.AddSingleton<IValidateOptions<ToolMarketplaceOptions>, ToolMarketplaceOptionsValidator>();
         builder.Services.AddSingleton<IValidateOptions<UiInterfaceOptions>, UiInterfaceOptionsValidator>();
         builder.Services.AddSingleton<IValidateOptions<WebSocketInterfaceOptions>, WebSocketInterfaceOptionsValidator>();
@@ -425,6 +426,9 @@ internal static class HostDependencyInjection
         builder.Services.AddSingleton<ITool, SqlReadOnlyQueryTool>();
         builder.Services.AddSingleton<ITool, PythonExecTool>();
         builder.Services.AddSingleton<ITool, NodeExecTool>();
+        builder.Services.AddSingleton<ITool, RepoAnalyzeTool>();
+        builder.Services.AddSingleton<ITool, WorkflowStepTool>();
+        builder.Services.AddSingleton<ITool, DeployAdapterTool>();
         builder.Services.AddSingleton<ITool, AudioTranscribeTool>();
         builder.Services.AddSingleton<ITool, TextToSpeechTool>();
         builder.Services.AddSingleton<ITool, VisionDescribeTool>();

@@ -103,6 +103,9 @@ internal static class HostAddOptions
         builder.Services.AddOptions<CodeExecutionToolOptions>()
             .Bind(builder.Configuration.GetSection("CodeExecution"))
             .ValidateOnStart();
+        builder.Services.AddOptions<DeliveryWorkflowOptions>()
+            .Bind(builder.Configuration.GetSection("DeliveryWorkflow"))
+            .ValidateOnStart();
         builder.Services.AddOptions<ToolMarketplaceOptions>()
             .Bind(builder.Configuration.GetSection("ToolMarketplace"))
             .ValidateOnStart();

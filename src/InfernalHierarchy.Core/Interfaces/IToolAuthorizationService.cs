@@ -14,6 +14,8 @@ public interface IToolAuthorizationService
     /// <param name="agentName">Agent display name.</param>
     /// <param name="rank">Agent rank.</param>
     /// <param name="toolName">Tool name (<see cref="ITool.Name"/>).</param>
+    /// <param name="executionProfile">Optional execution profile used for policy scoping.</param>
+    /// <param name="toolParameters">Optional tool parameter bag used for profile scope checks.</param>
     AuthorizationResult IsAuthorized(
         string agentId,
         string agentName,

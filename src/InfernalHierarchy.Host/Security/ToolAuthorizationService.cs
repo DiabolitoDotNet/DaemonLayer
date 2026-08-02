@@ -329,6 +329,16 @@ public class ToolAuthorizationService : IToolAuthorizationService
             yield return "node";
         }
 
+        if (toolName.Equals("workflow_step", StringComparison.OrdinalIgnoreCase))
+        {
+            yield return "workflow_step";
+        }
+
+        if (toolName.Equals("deploy_adapter", StringComparison.OrdinalIgnoreCase))
+        {
+            yield return "deploy_adapter";
+        }
+
         var explicitCommand = TryGetString(toolParameters, "command")
             ?? TryGetString(toolParameters, "executable")
             ?? TryGetString(toolParameters, "shell_command");
@@ -736,6 +746,27 @@ public class ToolAuthorizationService : IToolAuthorizationService
                 AllowedRanks = new() { AgentRank.Supreme, AgentRank.Prince, AgentRank.Duke },
                 WhitelistedAgents = new(),
                 BlacklistedAgents = new()
+            },
+            ["repo_analyze"] = new()
+            {
+                Enabled = true,
+                AllowedRanks = new() { AgentRank.Supreme, AgentRank.Prince, AgentRank.Duke, AgentRank.Worker },
+                WhitelistedAgents = new(),
+                BlacklistedAgents = new()
+            },
+            ["workflow_step"] = new()
+            {
+                Enabled = true,
+                AllowedRanks = new() { AgentRank.Supreme, AgentRank.Prince, AgentRank.Duke },
+                WhitelistedAgents = new(),
+                BlacklistedAgents = new()
+            },
+            ["deploy_adapter"] = new()
+            {
+                Enabled = true,
+                AllowedRanks = new() { AgentRank.Supreme, AgentRank.Prince },
+                WhitelistedAgents = new(),
+                BlacklistedAgents = new()
             }
         }.ToImmutableDictionary(StringComparer.OrdinalIgnoreCase);
     }
@@ -752,7 +783,7 @@ public class ToolAuthorizationService : IToolAuthorizationService
                     "web_search", "read_memory", "write_memory", "request_collaboration",
                     "get_agent_status", "request_skill_pack", "create_sub_agent", "send_agent_message",
                     "create_agent_from_template", "list_templates", "email_send", "send_telegram",
-                    "vision_describe", "audio_transcribe", "tts_speak"
+                    "vision_describe", "audio_transcribe", "tts_speak", "repo_analyze"
                 ],
                 DeniedTools = ["fs_write", "python_exec", "node_exec"]
             },
@@ -765,7 +796,7 @@ public class ToolAuthorizationService : IToolAuthorizationService
                     "get_agent_status", "request_skill_pack", "fs_read", "fs_search", "fs_write",
                     "http_request", "graphql_request", "sql_query_readonly", "python_exec", "node_exec",
                     "create_custom_tool", "custom_tool_list", "custom_tool_get_source", "custom_tool_delete",
-                    "vision_describe", "audio_transcribe"
+                    "vision_describe", "audio_transcribe", "repo_analyze", "workflow_step"
                 ]
             },
             ["Deploy"] = new ExecutionProfilePolicy
@@ -775,7 +806,8 @@ public class ToolAuthorizationService : IToolAuthorizationService
                 [
                     "web_search", "read_memory", "write_memory", "request_collaboration",
                     "get_agent_status", "request_skill_pack", "fs_read", "fs_search", "http_request",
-                    "python_exec", "node_exec", "create_custom_tool", "custom_tool_list", "custom_tool_get_source"
+                    "python_exec", "node_exec", "create_custom_tool", "custom_tool_list", "custom_tool_get_source",
+                    "repo_analyze", "workflow_step", "deploy_adapter"
                 ],
                 DeniedTools = ["fs_write", "custom_tool_delete"]
             }
