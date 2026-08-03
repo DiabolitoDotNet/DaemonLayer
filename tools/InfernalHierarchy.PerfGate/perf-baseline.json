@@ -19,6 +19,10 @@
     "maxLatencyPerOpMs": 25.0,
     "maxAllocatedBytesPerOp": 150000
   },
+  "capabilityGapRemediationConcurrent": {
+    "maxLatencyPerOpMs": 25.0,
+    "maxAllocatedBytesPerOp": 220000
+  },
   "inboxQuery": {
     "maxLatencyPerOpMs": 15.0,
     "maxAllocatedBytesPerOp": 80000
@@ -26,5 +30,17 @@
   "autonomySloIntegration": {
     "maxLatencyPerOpMs": 25.0,
     "maxAllocatedBytesPerOp": 120000
+  },
+  "readinessScale": {
+    "maxLatencyPerOpMs": 2.5,
+    "maxAllocatedBytesPerOp": 35000
+  },
+  "autonomyScorecardReport": {
+    "maxLatencyPerOpMs": 2.0,
+    "maxAllocatedBytesPerOp": 45000
+  },
+  "autonomySoakStability": {
+    "maxLatencyPerOpMs": 3.0,
+    "maxAllocatedBytesPerOp": 60000
   }
 }

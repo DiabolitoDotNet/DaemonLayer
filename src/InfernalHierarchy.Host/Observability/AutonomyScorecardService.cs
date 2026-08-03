@@ -102,6 +102,11 @@ internal sealed class AutonomyScorecardService
 
     private static bool IsSuccessfulRun(PlaygroundRunRecord run)
     {
+        if (TryGetBool(run.Response.payload, "autonomy_outcome_autonomous_success", out var autonomousSuccess))
+        {
+            return autonomousSuccess;
+        }
+
         var content = run.Response.content ?? string.Empty;
         if (content.StartsWith("Timeout:", StringComparison.OrdinalIgnoreCase))
         {
@@ -114,6 +119,29 @@ internal sealed class AutonomyScorecardService
         }
 
         return true;
+    }
+
+    private static bool TryGetBool(Dictionary<string, object>? payload, string key, out bool value)
+    {
+        value = false;
+        if (payload is null || !payload.TryGetValue(key, out var raw) || raw is null)
+        {
+            return false;
+        }
+
+        if (raw is bool flag)
+        {
+            value = flag;
+            return true;
+        }
+
+        if (raw is string text && bool.TryParse(text, out flag))
+        {
+            value = flag;
+            return true;
+        }
+
+        return false;
     }
 
     private static double CalculatePercentile(IReadOnlyList<double> values, int percentile)

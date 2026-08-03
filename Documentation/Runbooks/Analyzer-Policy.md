@@ -31,3 +31,7 @@ dotnet build InfernalHierarchy.sln -c Debug -p:RunAnalyzersDuringBuild=false
 - Any suppression must include a short, concrete justification.
 - Keep suppression scope as narrow as possible (member-level over file/project-level).
 - Revisit suppressions during refactors and remove obsolete entries.
+
+Suppression inventory reference:
+
+- `Documentation/Runbooks/Analyzer-Suppressions-Inventory.md`

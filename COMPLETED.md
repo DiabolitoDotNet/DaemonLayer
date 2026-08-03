@@ -19,7 +19,7 @@
   - StyleCop.Analyzers v1.2.0-beta.556
   - AnalysisMode=All
   - EnforceCodeStyleInBuild=false (IDE/live analysis preferred; build warnings kept clean by default)
-  - RunAnalyzersDuringBuild=false (opt-in when tightening quality gates)
+  - RunAnalyzersDuringBuild=true (strict parity with CI by default)
   - Nullable reference types enabled
   - XML documentation generation enforced
 - **.editorconfig**: comprehensive style guide
@@ -258,6 +258,17 @@
 - **A100F.2 quantified performance gate**: added executable harness project `tools/InfernalHierarchy.PerfGate` with versioned budgets (`perf-baseline.json`) measuring latency/op and allocations/op for authorization and federation aggregation hot paths.
 - **A100F.3 autonomy scorecard release gate**: added `AutonomyScorecardGateTests` and CI full-lane gate step to enforce scorecard threshold behavior as an explicit merge/release control.
 - **A100F.4 federated chaos matrix + routing safety**: added deterministic federation tests for weighted-tie and low-confidence escalations, plus delegation fallback across ordered candidates when the lowest-load instance fails.
+
+## ✅ Autonomy Certification Hardening (A500/A510/A520, Aug 3, 2026)
+
+- **A500.1**: production startup readiness blocking enforced (`FailStartupOnCriticalNotReady=true`).
+- **A500.2**: versioned critical capability matrix with explicit config dependencies and readiness evidence endpoint payload coverage.
+- **A500.3**: strict certification profile added (`appsettings.AutonomyCertification.json`) with 1.0/0.0/1.0 autonomy SLO gates and higher sample floors.
+- **A500.4 / A510.3**: terminal autonomy outcomes structured and contract-tested (`autonomy_outcome_*` metadata).
+- **A510.1**: long-run soak scenario added to PerfGate with drift-envelope checks (completion, terminal-failure, median time-to-terminal).
+- **A510.2**: representative-host perf scenarios expanded (readiness scale, scorecard volume, concurrent remediation).
+- **A520.1**: analyzer suppression inventory added and linked in policy/index docs.
+- **A520.2**: environment profile split documented for runtime-ops vs certification mode.
 - **Validation**: targeted host gate tests (2/2), targeted federation tests (20/20), full solution regression green (`EXIT:0`).
 
 ## ✅ Strict Final Autonomy Closure (A100X, Aug 2, 2026)

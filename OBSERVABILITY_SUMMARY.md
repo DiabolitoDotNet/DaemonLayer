@@ -4,8 +4,8 @@
 
 - Observability gates now include autonomy/performance closure evidence from the latest optimization cycle.
 - Current validated gate snapshot:
-  - Perf gate PASS (`federationAggregation` latency/op 0.156ms; alloc/op 31877B).
-  - Full regression PASS (904/904).
+  - Perf gate PASS with autonomy-focused scenarios (`readinessScale`, `autonomyScorecardReport`, `capabilityGapRemediationConcurrent`, `autonomySoakStability`).
+  - Strict Release build with analyzers is green.
 - This summary remains implementation-focused; closure chronology and optimization deltas are tracked in `COMPLETED.md`.
 
 ## ✅ Completed Features

@@ -20,7 +20,7 @@
 | Dead-letter and replay | src/InfernalHierarchy.Host, src/InfernalHierarchy.Tools, src/InfernalHierarchy.Messaging | `/api/ops/deadletters` | tests/InfernalHierarchy.Host.Tests/DeadLetterReplayServiceTests.cs |
 | Health and readiness | src/InfernalHierarchy.Host | `/health`, `/health/ready`, `/health/live` | tests/InfernalHierarchy.Host.Tests/HealthChecksTests.cs |
 | Observability and metrics | src/InfernalHierarchy.Host | `/metrics`, `/api/perf/*` | tests/InfernalHierarchy.Host.Tests/MetricsServiceTests.cs |
-| Performance gate harness | tools/InfernalHierarchy.PerfGate | budgeted perf validation for authorization/federation + autonomy integration-light hot paths | tools/InfernalHierarchy.PerfGate/perf-baseline.json |
+| Performance gate harness | tools/InfernalHierarchy.PerfGate | budgeted perf validation for authorization/federation plus autonomy readiness scale, scorecard volume, concurrent remediation, and soak stability | tools/InfernalHierarchy.PerfGate/perf-baseline.json |
 | Telegram interface | src/InfernalHierarchy.Telegram, src/InfernalHierarchy.Host | Telegram bot polling + notifications | tests/InfernalHierarchy.Host.Tests/TelegramHealthCheckTests.cs |
 | Voice interface | src/InfernalHierarchy.Host, src/InfernalHierarchy.Tools | voice endpoints/tools when enabled (`audio_transcribe`, `tts_speak`) | tests/InfernalHierarchy.Host.Tests/StartupFeatureReportServiceTests.cs, tests/InfernalHierarchy.Tools.Tests/TextToSpeechLanguageRoutingTests.cs |
 | Voice sidecar mode | src/InfernalHierarchy.Tools, src/InfernalHierarchy.Host | STT/TTS delegation via sidecar HTTP endpoints + `voice_sidecar` health check | tests/InfernalHierarchy.Host.Tests/VoiceAndVisionOptionsValidatorTests.cs |

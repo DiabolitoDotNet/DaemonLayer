@@ -4,6 +4,11 @@
 
 These SLOs apply to the supported runtime surfaces: REST chat, WebSocket bridge, tool execution pipeline, shared memory, and operator observability endpoints.
 
+Two operating profiles are supported:
+
+- runtime-ops profile: pragmatic reliability defaults for day-to-day operations.
+- autonomy-certification profile: strict autonomy gates for certification evidence.
+
 ## SLOs
 
 | SLI | Objective | Measurement source |
@@ -19,6 +24,15 @@ These SLOs apply to the supported runtime surfaces: REST chat, WebSocket bridge,
 | Autonomy terminal failure ratio | <= 5% once sample floor is reached | `/api/autonomy/slo`, `autonomy_terminal_failure_ratio` |
 | Autonomy replay success ratio | >= 90% once sample floor is reached | `/api/autonomy/slo`, `autonomy_replay_success_ratio` |
 | Autonomy median time to terminal | <= 60s once sample floor is reached | `/api/autonomy/slo`, `time_to_terminal_ms.median` |
+
+## Autonomy Certification Profile (strict)
+
+When using `appsettings.AutonomyCertification.json`, autonomy gate targets become:
+
+- Completion ratio = 1.00
+- Terminal failure ratio = 0.00
+- Replay success ratio = 1.00
+- Increased sample floors before gate pass/fail evaluation
 
 ## Error Budget Use
 

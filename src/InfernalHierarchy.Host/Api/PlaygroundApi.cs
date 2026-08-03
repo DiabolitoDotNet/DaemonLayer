@@ -194,7 +194,7 @@ internal static class PlaygroundApi
                     fromAgentId: response.FromAgentId,
                     toAgentId: response.ToAgentId,
                     content: response.Content,
-                    payload: response.Payload,
+                    payload: AutonomyOutcomeContractEvaluator.EnrichAutonomyOutcomePayload(response.Content, response.Payload),
                     correlationId: response.CorrelationId ?? correlationId,
                     causationId: response.CausationId,
                     receivedUtc: DateTime.UtcNow,
@@ -205,7 +205,7 @@ internal static class PlaygroundApi
                 fromAgentId: "system",
                 toAgentId: toAgentId,
                 content: $"Timeout: no report received within {timeoutMs}ms",
-                payload: new Dictionary<string, object>(),
+                payload: AutonomyOutcomeContractEvaluator.BuildTimeoutOutcomePayload(),
                 correlationId: correlationId,
                 causationId: null,
                 receivedUtc: DateTime.UtcNow,
@@ -217,7 +217,7 @@ internal static class PlaygroundApi
                 fromAgentId: "system",
                 toAgentId: toAgentId,
                 content: $"Timeout: no report received within {timeoutMs}ms",
-                payload: new Dictionary<string, object>(),
+                payload: AutonomyOutcomeContractEvaluator.BuildTimeoutOutcomePayload(),
                 correlationId: correlationId,
                 causationId: null,
                 receivedUtc: DateTime.UtcNow,
@@ -232,4 +232,5 @@ internal static class PlaygroundApi
             }
         }
     }
+
 }

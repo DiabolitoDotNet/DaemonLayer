@@ -20,6 +20,7 @@ internal static class AutonomyApi
             return Results.Ok(new
             {
                 generatedAtUtc = report.GeneratedAtUtc,
+                catalogVersion = report.CatalogVersion,
                 allCriticalReady = report.AllCriticalReady,
                 items = report.Items.Select(i => new
                 {
@@ -27,7 +28,8 @@ internal static class AutonomyApi
                     ready = i.Ready,
                     toolRegistered = i.ToolRegistered,
                     configurationReady = i.ConfigurationReady,
-                    reason = i.Reason
+                    reason = i.Reason,
+                    configurationDependencies = i.ConfigurationDependencies
                 })
             });
         });

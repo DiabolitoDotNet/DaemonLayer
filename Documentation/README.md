@@ -7,8 +7,12 @@ This folder is the "structured documentation set" for InfernalHierarchy / Daemon
 - Strict autonomy runtime blockers are closed.
 - Unresolved collaboration/federation paths execute autonomous adjudication workflows.
 - Custom tool create/reload paths run autonomously for policy-allowed sources (risk still auditable).
-- Latest validated performance gate: `federationAggregation` 0.156ms/op, 31877B/op (budget 35000B).
-- Full regression baseline: 904/904 passing tests.
+- Latest validated performance gate includes autonomy-focused scenarios:
+	- `readinessScale`
+	- `autonomyScorecardReport`
+	- `capabilityGapRemediationConcurrent`
+	- `autonomySoakStability`
+- Strict Release build with analyzer enforcement is currently green.
 
 The repository root already contains detailed topic docs (security, observability, advanced features, etc.). This folder provides a cohesive, top-down view and points you to the right deeper document.
 
@@ -29,6 +33,8 @@ The repository root already contains detailed topic docs (security, observabilit
 - [End-to-End Request Tracing](Runbooks/End-to-End-Request-Tracing.md)
 - [Tool Authorization Debugging](Runbooks/Tool-Authorization-Debugging.md)
 - [Analyzer Policy (Dev + CI)](Runbooks/Analyzer-Policy.md)
+- [Analyzer Suppressions Inventory](Runbooks/Analyzer-Suppressions-Inventory.md)
+- [Autonomy Critical Capability Matrix](Runbooks/Autonomy-Critical-Capability-Matrix.md)
 - [Incident: Startup Failures](Runbooks/Incident-Startup-Failures.md)
 - [Incident: Stalled Agents](Runbooks/Incident-Stalled-Agents.md)
 - [Incident: Tool Outage](Runbooks/Incident-Tool-Outage.md)

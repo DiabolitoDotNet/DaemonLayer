@@ -1,287 +1,320 @@
-# InfernalHierarchy - TODO Final (audit verite terrain)
+# InfernalHierarchy - TODO Final (gap to 100 percent autonomy)
 
 > Last Updated: 2026-08-03
-> Goal: atteindre une autonomie operationnelle 100% defendable en production, avec performance stable et code moderne C#.
+> Objective: claim a defensible 100 percent autonomous execution capability for requested tasks, while keeping performance stable and code aligned with modern C# practices.
 
 ---
 
-## 0) Etat actuel valide
+## 0) Current validated baseline
 
-### 0.1 Acquis confirmes (DONE)
+### 0.1 What is already true now
 
-- Build stricte analyzers verte en Release (0 warning / 0 error sur la derniere passe).
-- Suite tests globale verte (920/920).
-- Pipeline capability-gap present: detection, remediation, replay, events, reason codes.
-- Guardrails runtime actifs (attempts, duration, budgets, terminal states).
-- Tool email_inbox_query implemente, autorise, et couvert par tests.
-- Perf gate present avec budgets pour authorization/federation/capability-gap/inbox.
+- Strict Release build with analyzers is green (0 warning / 0 error).
+- PerfGate is green, including autonomySloIntegration.
+- Capability-gap loop exists end-to-end (detect -> remediate -> replay -> terminal reason code).
+- Readiness API exists: GET /api/autonomy/readiness.
+- Autonomy SLO API exists: GET /api/autonomy/slo.
+- SLO gate evaluator exists and is wired.
 
-### 0.2 Conclusion objective
+### 0.2 Important reality check
 
-- Le systeme est tres proche de la cible, mais le 100% autonomie universel n est pas encore defendable sans reserves.
-- Les gaps restants ci-dessous sont des gaps de generalisation et de robustesse de preuve, pas des regressions fonctionnelles.
+- The system now has strict runtime-policy hooks and perf evidence for autonomy-critical paths.
+- Remaining work is now primarily certification evidence expansion and continuous regression discipline.
 
 ---
 
-## 1) Gaps P0 bloquants pour un vrai 100% autonomie
+## 1) P0 blockers to a strict 100 percent autonomy claim
 
-### A400.1 - Couverture capability-gap trop limitee (regex rules statiques)
-
-Status: DONE (phase 2)  
-Priority: P0
-
-Constat:
-
-- La detection capability-gap repose sur un ensemble ferme de regex/rules.
-- Une tache hors vocabulaire couvert peut passer sans gap detecte, donc sans remediation auto.
-
-Objectif:
-
-- Passer d un mapping lexical ferme a une detection hybride (intent + required capabilities + verification toolability).
-
-Implementation cible:
-
-- Ajouter une etape de "capability inference" structuree (liste capacites requises + confiance + preuves).
-- Ajouter un fallback deterministe: si confiance faible, lancer une collaboration de qualification avant execution.
-- Couvrir explicitement les familles manquantes (filesystem, orchestration, data export, auth flows, provider adapters).
-
-Etat implemente:
-
-- Ajout d une regle `integration_qualification` qui force une qualification collaborative pour les intents d integration/provider onboarding (meme si `request_collaboration` est deja disponible).
-- Remediation associee forcee en `EscalateCollaboration` avec reason code dedie.
-- Ajout d inference hybride verbe+objet pour families supplementaires:
-  - filesystem_read (`fs_read`),
-  - filesystem_write (`fs_write`),
-  - workflow_orchestration (`workflow_step`),
-  - integration_qualification (fallback faible confiance deterministe).
-- Enrichissement automatique des gaps meme hors vocabulaire regex strict via tokenization + matching deterministe.
-
-Residual risk (a poursuivre en P1):
-
-- Le moteur reste heuristique/deterministe; une inference semantique LLM-scored reste souhaitable pour les cas tres ambigus multi-domaines.
-
-### A400.2 - Validation d artefacts de remediation insuffisante (preuve textuelle uniquement)
+### A500.1 - Startup readiness is not blocking by default
 
 Status: DONE  
 Priority: P0
 
-Constat:
+Evidence:
 
-- La validation actuelle verifie la presence de noms de fichiers dans un output texte.
-- Cela ne prouve ni existence reelle, ni schema, ni statut pass/fail des artefacts.
+- In appsettings, AutonomyReadiness.FailStartupOnCriticalNotReady is false.
+- A non-ready critical capability does not prevent runtime startup by default.
 
-Objectif:
+Why this blocks 100 percent autonomy:
 
-- Exiger une preuve machine-verifiable des artefacts de remediation.
+- If required capabilities are not ready at boot, the platform can still start and later fail autonomously requested tasks.
 
-Implementation cible:
+Required change:
 
-- Exiger un manifest JSON signe (ou hashable) avec:
-  - chemins artefacts reels,
-  - statut de validation,
-  - metadata de version/outils/tests.
-- Verifier existence fichier + schema + statut avant de marquer resolved.
+- Set FailStartupOnCriticalNotReady to true for production profile(s).
+- Keep false only in local/dev profile with explicit documentation.
 
-Etat implemente:
+Acceptance:
 
-- La remediation collaborative exige maintenant un manifest JSON machine-readable (`artifacts[]`, `allChecksPassed`).
-- Validation stricte des artefacts requis (`research.md`, `design.json`, `test-report.json`, `security-report.json`) avec `exists=true` et `status=pass`.
-- Echec de parsing/validation => terminal unresolved.
+- Production configuration refuses startup when a critical capability is not ready.
+- E2E test covers startup fail path and startup pass path.
 
-### A400.3 - Replay automatique sans budget de retry explicite
+Implemented:
 
-Status: DONE  
-Priority: P0
+- appsettings.Production.json now sets AutonomyReadiness.FailStartupOnCriticalNotReady to true.
+- Unit tests cover startup pass/fail behavior in AutonomyReadinessHostedServiceTests.
 
-Constat:
-
-- Le replay est protege contre le double replay, mais il n y a pas de budget de retry dedie avec backoff/timeout de replay.
-- Une remediation reussie suivie d un echec transitoire de replay peut rester sous-optimale.
-
-Objectif:
-
-- Ajouter un orchestrateur de replay robuste et borne.
-
-Implementation cible:
-
-- Introduire ReplayAttemptsMax + ReplayTimeout + ReplayBackoff.
-- Emettre des reason codes distincts: replay_transient_failed, replay_budget_exhausted, replay_success.
-- Reporter clairement la derniere erreur utile dans le terminal report.
-
-Etat implemente:
-
-- Ajout de budgets de replay dans `ReActOptions` (`ReplayMaxAttempts`, `ReplayAttemptTimeoutMs`, `ReplayBackoffMs`).
-- Execution du replay via retry borne + timeout par tentative.
-- En cas d epuisement: terminal autonome explicite avec `capability_gap_terminal_reason_code=replay_budget_exhausted`.
-
-### A400.4 - Preconditions externes non garanties by default
+### A500.2 - Critical readiness scope is too narrow
 
 Status: DONE  
 Priority: P0
 
-Constat:
+Evidence:
 
-- Certaines capacites critiques dependent de configuration externe (credentials, endpoints, providers).
-- Exemple: inbox query existe mais la configuration EmailInbox n est pas pre-provisionnee par defaut.
+- Current CriticalCapabilities list is limited (email_inbox_query only).
 
-Objectif:
+Why this blocks 100 percent autonomy:
 
-- Rendre l autonomie independante des oublis de config par un preflight bloquant et actionnable.
+- 100 percent claim requires a complete critical capability map for task completion, not a single capability probe.
 
-Implementation cible:
+Required change:
 
-- Ajouter un startup preflight "autonomy readiness" par capability critique.
-- Publier un rapport readiness (OK/KO + reason + remediation guide) via API et logs.
-- Refuser la revendication "100%" tant que readiness globale < 100%.
+- Define a capability catalog for autonomy-critical tasks (communication, retrieval, collaboration, persistence, runtime tool lane).
+- Extend readiness checks to all critical capabilities and their config dependencies.
 
-Etat implemente:
+Acceptance:
 
-- Ajout d un preflight startup `AutonomyReadinessHostedService` + stockage `AutonomyReadinessReportStore`.
-- Ajout endpoint operateur `GET /api/autonomy/readiness`.
-- Verification de readiness sur capacites critiques configurees (incluant `email_inbox_query` avec preconditions de config).
-- Option de blocage demarrage si critique non pret (`FailStartupOnCriticalNotReady`).
+- Capability-to-readiness matrix is complete and versioned.
+- Readiness API returns full critical set with reason codes per item.
+
+Implemented in this pass:
+
+- Default critical capability list expanded to request_collaboration, workflow_step, email_inbox_query, email_send, send_telegram.
+- Readiness service now includes config-aware checks for email_send and send_telegram in addition to email_inbox_query.
+
+Remaining gap:
+
+- Future capability families can be appended in new catalog versions, but the current critical autonomy baseline is now versioned and API-exposed.
+
+### A500.3 - SLO gate thresholds are reliability targets, not 100 percent targets
+
+Status: DONE  
+Priority: P0
+
+Evidence:
+
+- MinAutonomyTaskCompletionRatio = 0.95.
+- MaxAutonomyTerminalFailureRatio = 0.05.
+- MinAutonomyReplaySuccessRatio = 0.90.
+- insufficient_data status can pass gates without enough evidence.
+
+Why this blocks 100 percent autonomy:
+
+- Current defaults validate resilience, not strict 100 percent outcome autonomy.
+
+Required change:
+
+- Introduce a strict profile for autonomy certification:
+  - completion ratio target = 1.00 on certified scenario sets,
+  - terminal failure ratio target = 0.00 on certified scenario sets,
+  - replay success ratio target = 1.00 for applicable flows,
+  - minimum sample floors increased for certification mode.
+- Keep current pragmatic thresholds for day-to-day ops profile.
+
+Acceptance:
+
+- Two explicit operating modes exist: runtime-ops and certification.
+- Certification mode fails when strict thresholds are not met.
+
+Implemented:
+
+- Added appsettings.AutonomyCertification.json with strict autonomy SLO thresholds (1.0 / 0.0 / 1.0) and higher sample floors.
+- Base appsettings keeps pragmatic ops thresholds.
+
+### A500.4 - Scorecard success detection is heuristic and can overestimate autonomy
+
+Status: DONE  
+Priority: P0
+
+Evidence:
+
+- Scorecard success currently infers failure mostly from response text patterns.
+- Benchmark set has limited scenario breadth.
+
+Why this blocks 100 percent autonomy:
+
+- Text-based success inference can misclassify runs and does not prove terminal-state correctness.
+
+Required change:
+
+- Replace scorecard success heuristic with structured terminal evidence:
+  - terminal reason code,
+  - explicit autonomous success/failure flag,
+  - no unresolved action token in terminal state.
+- Expand benchmark scenarios to cover capability-gap families and degradation modes.
+
+Acceptance:
+
+- Scorecard uses structured run metadata, not response string heuristics.
+- Benchmark catalog covers at least all critical capability families and top failure modes.
+
+Implemented:
+
+- Playground run responses are now enriched with structured autonomy outcome metadata:
+  - autonomy_outcome_status,
+  - autonomy_outcome_reason_code,
+  - autonomy_outcome_autonomous_success,
+  - autonomy_outcome_needs_supervisor_intervention,
+  - autonomy_outcome_next_action.
+- Scorecard success evaluation now prioritizes autonomy_outcome_autonomous_success and only falls back to legacy text heuristic when metadata is absent.
+- Benchmark scenario breadth expanded with readiness-scale, scorecard-volume, concurrent-remediation, and soak-stability PerfGate scenarios.
 
 ---
 
-## 2) P1 - Robustesse et preuves de performance
+## 2) P1 robustness and optimization work
 
-### A401.1 - Perf gate trop synthetique pour conclure seul
+### A510.1 - Add long-run autonomy soak validation
 
 Status: DONE  
 Priority: P1
 
-Constat:
+Goal:
 
-- Les scenarios perf actuels utilisent majoritairement des stubs deterministes.
-- Tres utile pour regressions unitaires, mais insuffisant comme preuve finale de comportement reel.
+- Prove autonomy stability over long runs (not only short deterministic gates).
 
-Objectif:
+Required change:
 
-- Ajouter des scenarios representative-runtime (host + tool pipeline + event sink reel).
-
-Implementation cible:
-
-- Introduire scenarios perf integration light (sans reseau externe instable) avec stores/outils reels locaux.
-- Suivre p50/p95 + alloc/op + variance.
+- Add soak scenarios with sustained workload and induced transient failures.
+- Track drift in completion ratio, terminal failure ratio, p95 latency, and allocation trends.
 
 Acceptance:
 
-- Les budgets restent PASS sur scenarios synthetiques ET integration light.
+- Soak report shows no trend regression beyond defined budget envelopes.
 
-Progression actuelle:
+Implemented in this pass:
 
-- Scenario integration-light ajoute au PerfGate: `autonomySloIntegration`.
-- Le scenario exerce le sink d evenements autonomie + evaluation SLO locale (sans reseau externe instable).
-- Budget versionne dans `tools/InfernalHierarchy.PerfGate/perf-baseline.json`.
+- Added `autonomySoakStability` scenario in PerfGate with sustained multi-window workload.
+- Injected deterministic transient failures and recoveries during soak execution.
+- Added drift envelope checks for:
+  - completion ratio,
+  - terminal failure ratio,
+  - autonomy median time-to-terminal.
+- Versioned budget in `tools/InfernalHierarchy.PerfGate/perf-baseline.json`.
 
-### A401.2 - SLO autonomie end-to-end manquants
+### A510.2 - Extend perf evidence from integration-light to representative-host profiles
 
 Status: DONE  
 Priority: P1
 
-Constat:
+Goal:
 
-- On a des metrics techniques, mais pas encore de SLO final orientee "task autonomy outcome".
+- Keep hot-path optimization defensible with broader runtime realism.
 
-Objectif:
+Required change:
 
-- Mesurer la promesse produit directement.
-
-Implementation cible:
-
-- Ajouter metriques:
-  - autonomy_task_completion_ratio,
-  - autonomy_terminal_failure_ratio,
-  - autonomy_replay_success_ratio,
-  - autonomy_median_time_to_terminal.
-- Ajouter gates CI/ops sur seuils minimaux.
+- Add perf scenarios covering:
+  - readiness checks at scale,
+  - scorecard report generation with larger run sets,
+  - capability-gap remediation under concurrent load.
 
 Acceptance:
 
-- La cible 100% est suivie par des KPI metier auditable.
+- New perf baselines added and kept green in CI.
 
-Progression actuelle:
+Implemented in this pass:
 
-- Metriques derivees ajoutees dans le pipeline d'evenements:
-  - autonomy_task_completion_ratio
-  - autonomy_terminal_failure_ratio
-  - autonomy_replay_success_ratio
-  - autonomie.time_to_terminal_ms (p50 expose comme mediane)
-- Endpoint operateur ajoute: GET /api/autonomy/slo
-- Gates CI/ops explicites ajoutes dans SloGateEvaluator pour ces 4 KPI avec mode insufficient_data + enforcement.
+- Added `readinessScale` PerfGate scenario to benchmark autonomy readiness preflight execution at scale.
+- Added `autonomyScorecardReport` PerfGate scenario to benchmark scorecard generation over high-volume run sets.
+- Added `capabilityGapRemediationConcurrent` PerfGate scenario to benchmark remediation orchestration under concurrent load.
+- Versioned both budgets in `tools/InfernalHierarchy.PerfGate/perf-baseline.json`.
+
+### A510.3 - Add explicit autonomous terminal contract checks
+
+Status: DONE  
+Priority: P1
+
+Goal:
+
+- Guarantee no hidden non-autonomous endings in critical flows.
+
+Required change:
+
+- Add contract tests asserting that certified autonomy flows end with:
+  - terminal autonomous result,
+  - no unresolved next action,
+  - no supervisor intervention requirement.
+
+Acceptance:
+
+- Contract tests fail on any regression to unresolved/manual terminal semantics.
+
+Implemented:
+
+- Introduced a shared autonomy terminal classifier used by playground run capture:
+  - AutonomyOutcomeContractEvaluator.EnrichAutonomyOutcomePayload
+  - AutonomyOutcomeContractEvaluator.BuildTimeoutOutcomePayload
+- Added deterministic contract unit tests for success/non-autonomous/blocked/timeout terminal outcomes.
 
 ---
 
-## 3) P2 - Qualite C# moderne et hygiene continue
+## 3) P2 modern C# and maintainability hardening
 
-### A402.1 - Analyzer policy durable (dev + CI)
+### A520.1 - Keep analyzer discipline and suppression governance explicit
 
 Status: DONE  
 Priority: P2
 
-Constat:
+Current state:
 
-- Les analyzers sont forces en CI, mais `RunAnalyzersDuringBuild` reste desactive par defaut dans les props.
+- Analyzer baseline is clean.
+- A few justified suppressions exist (config array binding, deterministic non-security randomness).
 
-Objectif:
+Required change:
 
-- Eviter le drift local -> CI et maintenir la discipline moderne C# sur la duree.
-
-Implementation cible:
-
-- Definir une strategie explicite:
-  - soit analyzers on by default (avec mode rapide documente),
-  - soit script standard local qui reproduit exactement la CI.
-- Documenter policy de suppression (justification obligatoire + revue).
+- Add suppression inventory in docs with owner and review date.
+- Enforce no-new-warning and no-unjustified-suppression policy in CI.
 
 Acceptance:
 
-- Plus de surprise "vert local / rouge CI" sur les regles critiques.
+- Every suppression has rationale + ownership + periodic review.
 
-Progression actuelle:
+Implemented:
 
-- `RunAnalyzersDuringBuild` active par defaut dans `Directory.Build.props`.
-- Runbook policy ajoute: `Documentation/Runbooks/Analyzer-Policy.md` (parite CI + mode local rapide explicite).
+- Added suppression inventory runbook: `Documentation/Runbooks/Analyzer-Suppressions-Inventory.md`.
+- Linked inventory from analyzer policy and documentation index.
 
-### A402.2 - Documentation de capacites a realigner
+### A520.2 - Adopt certification profile configs by environment
 
 Status: DONE  
 Priority: P2
 
-Constat:
+Goal:
 
-- Certaines sections documentaires ne reflettent plus exactement l etat courant des tools (ex: inbox query present mais conditionnel par configuration).
+- Make strict autonomy mode operationally easy without impacting local dev velocity.
 
-Objectif:
+Required change:
 
-- Garder la doc comme source de verite exploitable par ops et reviewers.
-
-Implementation cible:
-
-- Aligner Capabilities/Features/Security sur:
-  - capability disponible,
-  - prerequis de config,
-  - niveau de readiness.
+- Provide explicit config profiles:
+  - appsettings.Development.json (pragmatic),
+  - appsettings.Production.json (strict readiness),
+  - optional appsettings.AutonomyCertification.json (strict SLO and sample floors).
 
 Acceptance:
 
-- Un lecteur externe peut determiner sans ambiguite ce qui est autonome par defaut vs autonome apres provisioning.
+- One command/profile switch is enough to run certification-grade gates.
 
-Progression actuelle:
+Implemented:
 
-- Docs alignees pour `email_inbox_query` conditionnel a la configuration.
-- Ajout des surfaces `GET /api/autonomy/readiness` et `GET /api/autonomy/slo` dans la doc fonctionnelle/SLO/matrice active.
+- appsettings.Production.json now carries strict readiness startup behavior.
+- appsettings.AutonomyCertification.json added for strict certification SLO/readiness mode.
 
 ---
 
-## 4) Definition of Done (version defendable)
+## 4) Definition of Done for a defensible 100 percent autonomy statement
 
-La revendication "100% autonomie" est consideree atteinte uniquement si:
+The statement is allowed only when all conditions below are true on the certification profile:
 
-- Capability-gap detection couvre les cas hors vocabulaire fixe (pas seulement regex rules statiques).
-- Remediation ne peut pas etre marquee success sans artefacts verifies machine (existence + schema + statut).
-- Replay post-remediation est robuste avec retry budget borne et reason codes explicites.
-- Preconditions externes sont validees au boot via un readiness report bloquant.
-- SLO autonomie metier sont publies et respectes en continu.
-- Perf gate couvre a la fois scenarios synthetiques et integration light representative.
-- Build stricte analyzers + tests restent verts durablement.
+- Startup blocks when any autonomy-critical capability is not ready.
+- Critical capability readiness coverage is complete and documented.
+- Certified scenario suite reaches full coverage and passes with strict autonomous terminal semantics.
+- Scorecard success is based on structured terminal evidence, not text heuristics.
+- Strict SLO gates pass with certification sample floors.
+- Perf budgets remain green under representative-host scenarios.
+- Strict analyzer build and full tests remain green.
+
+---
+
+## 5) Execution order (recommended)
+
+1. Run certification profile validation against representative scenario suites and archive run evidence.
+2. Keep strict build + PerfGate as mandatory merge gate to preserve autonomy guarantees.

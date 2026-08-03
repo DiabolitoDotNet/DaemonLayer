@@ -32,10 +32,10 @@ Un système distribué d'agents LLM locaux fonctionnant avec Ollama, organisés 
 
 ## ✅ Delivery Snapshot (Aug 2026)
 
-- Strict autonomy runtime blockers closed (A102.1/A102.2).
-- Federation optimization passes completed (A103.1/A103.2) with measurable allocation reduction.
-- Perf gate: PASS (`federationAggregation` latency/op 0.156ms, alloc/op 31877B; budget 35000B).
-- Full regression: 904/904 tests passing.
+- Strict autonomy runtime blockers are closed.
+- Structured terminal autonomy outcome contract is implemented and test-covered (`autonomy_outcome_*`).
+- Production readiness blocking and certification profile are available for autonomy-critical flows.
+- Perf gate includes autonomy-focused evidence (`readinessScale`, `autonomyScorecardReport`, `capabilityGapRemediationConcurrent`, `autonomySoakStability`).
 
 ## 📋 Architecture
 

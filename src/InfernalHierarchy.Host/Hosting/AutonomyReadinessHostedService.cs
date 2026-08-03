@@ -6,6 +6,8 @@ internal sealed class AutonomyReadinessHostedService : IHostedService
     private readonly IToolRegistry _toolRegistry;
     private readonly IOptions<AutonomyReadinessOptions> _readinessOptions;
     private readonly IOptions<EmailInboxQueryOptions> _inboxOptions;
+    private readonly IOptions<EmailNotificationOptions> _emailOptions;
+    private readonly IOptions<TelegramOptions> _telegramOptions;
     private readonly AutonomyReadinessReportStore _store;
 
     public AutonomyReadinessHostedService(
@@ -13,12 +15,16 @@ internal sealed class AutonomyReadinessHostedService : IHostedService
         IToolRegistry toolRegistry,
         IOptions<AutonomyReadinessOptions> readinessOptions,
         IOptions<EmailInboxQueryOptions> inboxOptions,
+        IOptions<EmailNotificationOptions> emailOptions,
+        IOptions<TelegramOptions> telegramOptions,
         AutonomyReadinessReportStore store)
     {
         _logger = logger;
         _toolRegistry = toolRegistry;
         _readinessOptions = readinessOptions;
         _inboxOptions = inboxOptions;
+        _emailOptions = emailOptions;
+        _telegramOptions = telegramOptions;
         _store = store;
     }
 
@@ -27,7 +33,7 @@ internal sealed class AutonomyReadinessHostedService : IHostedService
         var options = _readinessOptions.Value;
         if (!options.Enabled)
         {
-            _store.Set(new AutonomyReadinessReport(DateTime.UtcNow, true, Array.Empty<CapabilityReadinessItem>()));
+            _store.Set(new AutonomyReadinessReport(DateTime.UtcNow, options.CatalogVersion, true, Array.Empty<CapabilityReadinessItem>()));
             return Task.CompletedTask;
         }
 
@@ -53,7 +59,75 @@ internal sealed class AutonomyReadinessHostedService : IHostedService
                         ? "tool_not_registered"
                         : "configuration_incomplete_or_disabled";
 
-                items.Add(new CapabilityReadinessItem(normalized, ready, toolRegistered, cfgReady, reason));
+                items.Add(new CapabilityReadinessItem(
+                    normalized,
+                    ready,
+                    toolRegistered,
+                    cfgReady,
+                    reason,
+                    ConfigurationDependencies:
+                    [
+                        "EmailInbox:Enabled",
+                        "EmailInbox:Host",
+                        "EmailInbox:Username",
+                        "EmailInbox:Password"
+                    ]));
+                continue;
+            }
+
+            if (string.Equals(normalized, "email_send", StringComparison.OrdinalIgnoreCase))
+            {
+                var cfg = _emailOptions.Value;
+                var cfgReady = cfg.Enabled
+                    && !string.IsNullOrWhiteSpace(cfg.Host)
+                    && !string.IsNullOrWhiteSpace(cfg.Username)
+                    && !string.IsNullOrWhiteSpace(cfg.Password)
+                    && !string.IsNullOrWhiteSpace(cfg.FromAddress);
+
+                var ready = toolRegistered && cfgReady;
+                var reason = ready
+                    ? "ready"
+                    : !toolRegistered
+                        ? "tool_not_registered"
+                        : "configuration_incomplete_or_disabled";
+
+                items.Add(new CapabilityReadinessItem(
+                    normalized,
+                    ready,
+                    toolRegistered,
+                    cfgReady,
+                    reason,
+                    ConfigurationDependencies:
+                    [
+                        "Email:Enabled",
+                        "Email:Host",
+                        "Email:Username",
+                        "Email:Password",
+                        "Email:FromAddress"
+                    ]));
+                continue;
+            }
+
+            if (string.Equals(normalized, "send_telegram", StringComparison.OrdinalIgnoreCase))
+            {
+                var cfg = _telegramOptions.Value;
+                var cfgReady = !string.IsNullOrWhiteSpace(cfg.BotToken);
+
+                var ready = toolRegistered && cfgReady;
+                var reason = ready
+                    ? "ready"
+                    : !toolRegistered
+                        ? "tool_not_registered"
+                        : "configuration_incomplete_or_disabled";
+
+                items.Add(new CapabilityReadinessItem(
+                    normalized,
+                    ready,
+                    toolRegistered,
+                    cfgReady,
+                    reason,
+                    ConfigurationDependencies:
+                    ["Telegram:BotToken"]));
                 continue;
             }
 
@@ -63,11 +137,12 @@ internal sealed class AutonomyReadinessHostedService : IHostedService
                 genericReady,
                 toolRegistered,
                 ConfigurationReady: true,
-                Reason: genericReady ? "ready" : "tool_not_registered"));
+                Reason: genericReady ? "ready" : "tool_not_registered",
+                ConfigurationDependencies: Array.Empty<string>()));
         }
 
         var allReady = items.All(i => i.Ready);
-        var report = new AutonomyReadinessReport(DateTime.UtcNow, allReady, items);
+        var report = new AutonomyReadinessReport(DateTime.UtcNow, options.CatalogVersion, allReady, items);
         _store.Set(report);
 
         if (allReady)

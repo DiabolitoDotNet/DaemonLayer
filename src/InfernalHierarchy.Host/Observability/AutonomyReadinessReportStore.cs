@@ -5,10 +5,12 @@ internal sealed record CapabilityReadinessItem(
     bool Ready,
     bool ToolRegistered,
     bool ConfigurationReady,
-    string Reason);
+    string Reason,
+    IReadOnlyList<string> ConfigurationDependencies);
 
 internal sealed record AutonomyReadinessReport(
     DateTime GeneratedAtUtc,
+    string CatalogVersion,
     bool AllCriticalReady,
     IReadOnlyList<CapabilityReadinessItem> Items);
 
@@ -17,6 +19,7 @@ internal sealed class AutonomyReadinessReportStore
     private readonly object _sync = new();
     private AutonomyReadinessReport _current = new(
         DateTime.UtcNow,
+        CatalogVersion: "unknown",
         AllCriticalReady: false,
         Items: Array.Empty<CapabilityReadinessItem>());
 

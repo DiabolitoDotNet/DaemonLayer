@@ -2,19 +2,19 @@
 
 ## Update (Aug 2, 2026)
 
-- Strict autonomy runtime blockers are closed (A102.1/A102.2).
-- Federation optimization passes are completed (A103.1/A103.2) with perf-gate evidence.
+- Strict autonomy runtime blockers are closed.
+- Autonomy certification hardening is implemented (readiness matrix, certification profile, terminal outcome contract, representative perf scenarios).
 - Current validated baseline:
-  - Perf gate PASS (`federationAggregation` latency/op 0.156ms; alloc/op 31877B).
-  - Full regression PASS (904/904).
+  - Strict Release build with analyzers is green.
+  - Perf gate PASS including autonomy-focused scenarios.
 
 ### Current focus after closure
 
 - Keep perf gate and regression gate green in CI.
 - Treat this document as operational bring-up guidance; roadmap closure/progress lives in `TODO.md` and `COMPLETED.md`.
 
-**Last Updated**: February 4, 2026  
-**Status**: Solution builds and tests pass in Release; advanced features are integrated and ready to run (some require local dependencies)
+**Last Updated**: August 3, 2026  
+**Status**: Solution builds in strict Release; advanced features are integrated and ready to run (some require local dependencies)
 
 ---
 
@@ -30,7 +30,7 @@ All advanced features have been **implemented and compile successfully**:
 - ✅ Memory pruning with archival
 - ✅ Comprehensive configuration system
 
-**Build Status**: ✅ Builds clean by default (analyzers are enabled for IDE/live analysis; build-time analyzers are opt-in)
+**Build Status**: ✅ Builds clean with strict analyzer-enabled Release gate
 
 **Test Status**: ✅ `dotnet test -c Release` passes solution-wide (some integration-only tests are skipped by design)
 

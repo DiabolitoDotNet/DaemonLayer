@@ -46,16 +46,24 @@ var federation = await RunFederationScenarioAsync().ConfigureAwait(false);
 var collaboration = await RunLocalCollaborationScenarioAsync().ConfigureAwait(false);
 var capabilityGapPlanning = await RunCapabilityGapPlanningScenarioAsync().ConfigureAwait(false);
 var capabilityGapRemediation = await RunCapabilityGapRemediationScenarioAsync().ConfigureAwait(false);
+var capabilityGapRemediationConcurrent = await RunCapabilityGapRemediationConcurrentScenarioAsync().ConfigureAwait(false);
 var inboxQuery = await RunInboxQueryToolScenarioAsync().ConfigureAwait(false);
 var autonomySloIntegration = await RunAutonomySloIntegrationScenarioAsync().ConfigureAwait(false);
+var readinessScale = await RunReadinessScaleScenarioAsync().ConfigureAwait(false);
+var autonomyScorecardReport = RunAutonomyScorecardReportScenario();
+var autonomySoakStability = await RunAutonomySoakStabilityScenarioAsync().ConfigureAwait(false);
 
 PrintResult("toolAuthorization", authorization, baseline.ToolAuthorization);
 PrintResult("federationAggregation", federation, baseline.FederationAggregation);
 PrintResult("localCollaboration", collaboration, baseline.LocalCollaboration);
 PrintResult("capabilityGapPlanning", capabilityGapPlanning, baseline.CapabilityGapPlanning);
 PrintResult("capabilityGapRemediation", capabilityGapRemediation, baseline.CapabilityGapRemediation);
+PrintResult("capabilityGapRemediationConcurrent", capabilityGapRemediationConcurrent, baseline.CapabilityGapRemediationConcurrent);
 PrintResult("inboxQuery", inboxQuery, baseline.InboxQuery);
 PrintResult("autonomySloIntegration", autonomySloIntegration, baseline.AutonomySloIntegration);
+PrintResult("readinessScale", readinessScale, baseline.ReadinessScale);
+PrintResult("autonomyScorecardReport", autonomyScorecardReport, baseline.AutonomyScorecardReport);
+PrintResult("autonomySoakStability", autonomySoakStability, baseline.AutonomySoakStability);
 
 var failures = new List<string>();
 Evaluate("toolAuthorization", authorization, baseline.ToolAuthorization, failures);
@@ -63,8 +71,12 @@ Evaluate("federationAggregation", federation, baseline.FederationAggregation, fa
 Evaluate("localCollaboration", collaboration, baseline.LocalCollaboration, failures);
 Evaluate("capabilityGapPlanning", capabilityGapPlanning, baseline.CapabilityGapPlanning, failures);
 Evaluate("capabilityGapRemediation", capabilityGapRemediation, baseline.CapabilityGapRemediation, failures);
+Evaluate("capabilityGapRemediationConcurrent", capabilityGapRemediationConcurrent, baseline.CapabilityGapRemediationConcurrent, failures);
 Evaluate("inboxQuery", inboxQuery, baseline.InboxQuery, failures);
 Evaluate("autonomySloIntegration", autonomySloIntegration, baseline.AutonomySloIntegration, failures);
+Evaluate("readinessScale", readinessScale, baseline.ReadinessScale, failures);
+Evaluate("autonomyScorecardReport", autonomyScorecardReport, baseline.AutonomyScorecardReport, failures);
+Evaluate("autonomySoakStability", autonomySoakStability, baseline.AutonomySoakStability, failures);
 
 if (failures.Count == 0)
 {
@@ -455,6 +467,135 @@ static async Task<PerfResult> RunCapabilityGapRemediationScenarioAsync()
         AllocatedBytesPerOp: (afterAlloc - beforeAlloc) / (double)iterations);
 }
 
+static async Task<PerfResult> RunCapabilityGapRemediationConcurrentScenarioAsync()
+{
+    var analysis = new InfernalHierarchy.Agents.ReAct.CapabilityGapAnalysisResult(
+        Gaps:
+        [
+            new InfernalHierarchy.Agents.ReAct.CapabilityGap(
+                Capability: "mailbox_read",
+                ReasonCode: "missing_mailbox_read_tool",
+                Description: "Need inbox reader",
+                BlockedByProfile: false,
+                SuggestedSkillPackId: null,
+                SuggestedExecutionProfile: "Research")
+        ],
+        Remediations:
+        [
+            new InfernalHierarchy.Agents.ReAct.CapabilityRemediationAction(
+                Kind: InfernalHierarchy.Agents.ReAct.CapabilityRemediationActionKind.CreateCustomTool,
+                ReasonCode: "synthesize_custom_tool",
+                Capability: "mailbox_read",
+                Description: "create inbox tool",
+                CustomToolName: "email_inbox_query",
+                CustomToolRequirement: "read-only inbox query"),
+            new InfernalHierarchy.Agents.ReAct.CapabilityRemediationAction(
+                Kind: InfernalHierarchy.Agents.ReAct.CapabilityRemediationActionKind.EscalateCollaboration,
+                ReasonCode: "request_collaboration_audit",
+                Capability: "mailbox_read",
+                Description: "run audit")
+        ],
+        Report: new InfernalHierarchy.Agents.ReAct.CapabilityGapReport(
+            RequestedOutcome: "check inbox",
+            MissingCapabilities: ["mailbox_read"],
+            CandidateTools: ["email_inbox_query"],
+            SecurityRiskClass: InfernalHierarchy.Agents.ReAct.CapabilitySecurityRiskClass.Medium,
+            CanAutofix: true,
+            BlockReasonCode: "missing_mailbox_read_tool"),
+        Plan: new InfernalHierarchy.Agents.ReAct.CapabilityRemediationPlan(
+            PlanId: "perf-remediation-concurrent-plan",
+            Steps: [],
+            MaxAttempts: 3,
+            MaxDurationSeconds: 120,
+            PolicyGateAllowsAutofix: true));
+
+    const int warmupBatches = 10;
+    const int measuredBatches = 80;
+    const int parallelism = 6;
+
+    for (var i = 0; i < warmupBatches; i++)
+    {
+        var tasks = new List<Task>(parallelism);
+        for (var p = 0; p < parallelism; p++)
+        {
+            tasks.Add(RunSingleRemediationAsync(analysis));
+        }
+
+        await Task.WhenAll(tasks).ConfigureAwait(false);
+    }
+
+    GC.Collect();
+    GC.WaitForPendingFinalizers();
+    GC.Collect();
+
+    var beforeAlloc = GC.GetTotalAllocatedBytes(true);
+    var sw = Stopwatch.StartNew();
+
+    for (var i = 0; i < measuredBatches; i++)
+    {
+        var tasks = new List<Task>(parallelism);
+        for (var p = 0; p < parallelism; p++)
+        {
+            tasks.Add(RunSingleRemediationAsync(analysis));
+        }
+
+        await Task.WhenAll(tasks).ConfigureAwait(false);
+    }
+
+    sw.Stop();
+    var afterAlloc = GC.GetTotalAllocatedBytes(true);
+    var operations = measuredBatches * parallelism;
+
+    return new PerfResult(
+        LatencyPerOpMs: sw.Elapsed.TotalMilliseconds / operations,
+        AllocatedBytesPerOp: (afterAlloc - beforeAlloc) / (double)operations);
+
+    static async Task RunSingleRemediationAsync(InfernalHierarchy.Agents.ReAct.CapabilityGapAnalysisResult analysis)
+    {
+        var orchestrator = new InfernalHierarchy.Agents.ReAct.DefaultCapabilityRemediationOrchestrator();
+
+        var context = new InfernalHierarchy.Agents.ReAct.ReActTaskProcessorContext(
+            AgentId: "perf-agent",
+            AgentName: "Perf",
+            AgentRank: AgentRank.Duke,
+            Persona: new Persona
+            {
+                Name = "Perf",
+                SystemPrompt = "Perf",
+                AvailableTools = ["create_custom_tool", "request_collaboration", "request_skill_pack"]
+            },
+            LlmClient: NullLlmClient.Instance,
+            ToolRegistry: new PerfToolRegistry(),
+            SharedMemory: new NullSharedMemory(),
+            ActionParser: new NullActionParser(),
+            ActionExecutor: new NullActionExecutor(),
+            ReportGenerator: new NullReportGenerator(),
+            PromptBuilder: new NullPromptBuilder(),
+            LoopRunner: new NullLoopRunner(),
+            ReActOptions: new InfernalHierarchy.Agents.ReAct.ReActOptions(),
+            RagOptions: new InfernalHierarchy.Core.Configuration.RagOptions(),
+            VectorMemory: null,
+            CollaborationService: null,
+            RuntimeSkillStore: null,
+            EventSink: null,
+            SetStatus: _ => { },
+            BuildBaseContextAsync: (_, _) => Task.FromResult("perf"),
+            Logger: NullLogger.Instance);
+
+        var task = new AgentMessage
+        {
+            Id = Guid.NewGuid().ToString("N"),
+            CorrelationId = Guid.NewGuid().ToString("N"),
+            FromAgentId = "tester",
+            ToAgentId = "perf-agent",
+            Type = MessageType.Task,
+            Content = "check inbox"
+        };
+
+        _ = await orchestrator.ExecuteAsync(context, task, analysis, CancellationToken.None).ConfigureAwait(false);
+    }
+}
+
 static async Task<PerfResult> RunInboxQueryToolScenarioAsync()
 {
     var options = Options.Create(new EmailInboxQueryOptions
@@ -600,6 +741,296 @@ static Task<PerfResult> RunAutonomySloIntegrationScenarioAsync()
     }
 }
 
+static Task<PerfResult> RunReadinessScaleScenarioAsync()
+{
+    var registry = new ReadinessPerfToolRegistry(
+        "request_collaboration",
+        "workflow_step",
+        "email_inbox_query",
+        "email_send",
+        "send_telegram");
+
+    var options = Options.Create(new InfernalHierarchy.Host.Configuration.AutonomyReadinessOptions
+    {
+        Enabled = true,
+        CatalogVersion = "perf",
+        FailStartupOnCriticalNotReady = false,
+        CriticalCapabilities =
+        [
+            "request_collaboration",
+            "workflow_step",
+            "email_inbox_query",
+            "email_send",
+            "send_telegram"
+        ]
+    });
+
+    var inboxOptions = Options.Create(new EmailInboxQueryOptions
+    {
+        Enabled = true,
+        Host = "imap.example.com",
+        Username = "reader@example.com",
+        Password = "secret"
+    });
+
+    var emailOptions = Options.Create(new EmailNotificationOptions
+    {
+        Enabled = true,
+        Host = "smtp.example.com",
+        Username = "sender@example.com",
+        Password = "secret",
+        FromAddress = "sender@example.com"
+    });
+
+    var telegramOptions = Options.Create(new InfernalHierarchy.Telegram.Options.TelegramOptions
+    {
+        BotToken = "token"
+    });
+
+    const int warmup = 50;
+    const int iterations = 500;
+
+    for (var i = 0; i < warmup; i++)
+    {
+        var store = new InfernalHierarchy.Host.Observability.AutonomyReadinessReportStore();
+        var service = new InfernalHierarchy.Host.Hosting.AutonomyReadinessHostedService(
+            NullLogger<InfernalHierarchy.Host.Hosting.AutonomyReadinessHostedService>.Instance,
+            registry,
+            options,
+            inboxOptions,
+            emailOptions,
+            telegramOptions,
+            store);
+
+        service.StartAsync(CancellationToken.None).GetAwaiter().GetResult();
+    }
+
+    GC.Collect();
+    GC.WaitForPendingFinalizers();
+    GC.Collect();
+
+    var beforeAlloc = GC.GetTotalAllocatedBytes(true);
+    var sw = Stopwatch.StartNew();
+
+    for (var i = 0; i < iterations; i++)
+    {
+        var store = new InfernalHierarchy.Host.Observability.AutonomyReadinessReportStore();
+        var service = new InfernalHierarchy.Host.Hosting.AutonomyReadinessHostedService(
+            NullLogger<InfernalHierarchy.Host.Hosting.AutonomyReadinessHostedService>.Instance,
+            registry,
+            options,
+            inboxOptions,
+            emailOptions,
+            telegramOptions,
+            store);
+
+        service.StartAsync(CancellationToken.None).GetAwaiter().GetResult();
+    }
+
+    sw.Stop();
+    var afterAlloc = GC.GetTotalAllocatedBytes(true);
+
+    return Task.FromResult(new PerfResult(
+        LatencyPerOpMs: sw.Elapsed.TotalMilliseconds / iterations,
+        AllocatedBytesPerOp: (afterAlloc - beforeAlloc) / (double)iterations));
+}
+
+static PerfResult RunAutonomyScorecardReportScenario()
+{
+    var playground = new InfernalHierarchy.Host.Tools.AgentPlaygroundService();
+    var scorecard = new InfernalHierarchy.Host.Observability.AutonomyScorecardService(playground);
+
+    SeedScorecardRuns(playground, "simple_search", "Research", 1200, successRate: 1.0);
+    SeedScorecardRuns(playground, "missing_tool_task", "Research", 2400, successRate: 0.95);
+    SeedScorecardRuns(playground, "multi_step_build", "Build", 4200, successRate: 0.90);
+    SeedScorecardRuns(playground, "partial_failure_recovery", "Build", 2800, successRate: 0.85);
+
+    const int warmup = 20;
+    const int iterations = 300;
+
+    for (var i = 0; i < warmup; i++)
+    {
+        _ = scorecard.GenerateReport(runsPerScenario: 50);
+    }
+
+    GC.Collect();
+    GC.WaitForPendingFinalizers();
+    GC.Collect();
+
+    var beforeAlloc = GC.GetTotalAllocatedBytes(true);
+    var sw = Stopwatch.StartNew();
+
+    for (var i = 0; i < iterations; i++)
+    {
+        var report = scorecard.GenerateReport(runsPerScenario: 50);
+        if (report.Coverage <= 0)
+        {
+            throw new InvalidOperationException("Autonomy scorecard perf scenario returned empty coverage.");
+        }
+    }
+
+    sw.Stop();
+    var afterAlloc = GC.GetTotalAllocatedBytes(true);
+
+    return new PerfResult(
+        LatencyPerOpMs: sw.Elapsed.TotalMilliseconds / iterations,
+        AllocatedBytesPerOp: (afterAlloc - beforeAlloc) / (double)iterations);
+
+    static void SeedScorecardRuns(
+        InfernalHierarchy.Host.Tools.AgentPlaygroundService playground,
+        string benchmarkId,
+        string profile,
+        double durationMs,
+        double successRate)
+    {
+        var scenarioId = playground.CreateScenario(
+            name: $"perf-{benchmarkId}",
+            prompt: "perf",
+            toAgentId: "lucifer",
+            timeoutMs: 20000,
+            tags: new Dictionary<string, object>
+            {
+                ["benchmark_id"] = benchmarkId,
+                ["execution_profile"] = profile
+            });
+
+        const int runs = 50;
+        for (var i = 0; i < runs; i++)
+        {
+            var successful = i < Math.Round(runs * successRate);
+            var payload = new Dictionary<string, object>
+            {
+                ["autonomy_outcome_autonomous_success"] = successful,
+                ["autonomy_outcome_status"] = successful ? "success" : "non_autonomous_terminal"
+            };
+
+            var response = new InfernalHierarchy.Host.Api.ChatResponse(
+                fromAgentId: "lucifer",
+                toAgentId: "playground",
+                content: successful ? "ok" : "fallback",
+                payload: payload,
+                correlationId: Guid.NewGuid().ToString("N"),
+                causationId: null,
+                receivedUtc: DateTime.UtcNow,
+                durationMs: durationMs + (i % 7));
+
+            _ = playground.AddRun(scenarioId, "perf", "lucifer", 20000, response);
+        }
+    }
+}
+
+static Task<PerfResult> RunAutonomySoakStabilityScenarioAsync()
+{
+    using var eventStore = new InfernalHierarchy.Core.Eventing.EventStore(
+        Path.Combine(Path.GetTempPath(), $"infernal_perf_soak_events_{Guid.NewGuid():N}"),
+        NullLogger<InfernalHierarchy.Core.Eventing.EventStore>.Instance);
+
+    var metrics = new InfernalHierarchy.Host.Observability.MetricsCollector();
+    var sink = new InfernalHierarchy.Host.Observability.CapabilityGapMetricsEventSink(eventStore, metrics);
+
+    const int windows = 10;
+    const int tasksPerWindow = 250;
+
+    var completionRatios = new List<double>(windows);
+    var terminalFailureRatios = new List<double>(windows);
+    var medians = new List<double>(windows);
+
+    GC.Collect();
+    GC.WaitForPendingFinalizers();
+    GC.Collect();
+
+    var beforeAlloc = GC.GetTotalAllocatedBytes(true);
+    var sw = Stopwatch.StartNew();
+
+    for (var w = 0; w < windows; w++)
+    {
+        for (var i = 0; i < tasksPerWindow; i++)
+        {
+            var globalIndex = (w * tasksPerWindow) + i;
+            var isTransientFailure = globalIndex % 17 == 0;
+            var isRecovered = isTransientFailure && globalIndex % 34 != 0;
+
+            var workflowState = isTransientFailure && !isRecovered
+                ? "capability_gap_unresolved_terminal"
+                : "capability_gap_resolved_retrying_original_intent";
+
+            sink.AppendEvent(new AgentEvent
+            {
+                AgentId = "soak-agent",
+                Type = EventType.DecisionMade,
+                Description = "Soak autonomy workflow",
+                Metadata = new Dictionary<string, object>
+                {
+                    ["category"] = "capability.gap_analysis",
+                    ["workflow_state"] = workflowState,
+                    ["remediation_attempted"] = true,
+                    ["autofix_success"] = !isTransientFailure || isRecovered,
+                    ["remediation_duration_ms"] = 40d + (globalIndex % 11)
+                }
+            });
+
+            if (isTransientFailure)
+            {
+                sink.AppendEvent(new AgentEvent
+                {
+                    AgentId = "soak-agent",
+                    Type = EventType.DecisionMade,
+                    Description = "Soak replay outcome",
+                    Metadata = new Dictionary<string, object>
+                    {
+                        ["category"] = "capability.replay",
+                        ["status"] = isRecovered ? "success" : "failed",
+                        ["attempts"] = isRecovered ? 1 : 2
+                    }
+                });
+            }
+        }
+
+        completionRatios.Add(metrics.GetGauge("autonomy_task_completion_ratio"));
+        terminalFailureRatios.Add(metrics.GetGauge("autonomy_terminal_failure_ratio"));
+        medians.Add(metrics.GetHistogramStats("autonomy.time_to_terminal_ms").P50);
+    }
+
+    sw.Stop();
+    var afterAlloc = GC.GetTotalAllocatedBytes(true);
+
+    static double Range(IReadOnlyList<double> values)
+    {
+        if (values.Count == 0)
+        {
+            return 0;
+        }
+
+        var min = values.Min();
+        var max = values.Max();
+        return max - min;
+    }
+
+    var completionDrift = Range(completionRatios);
+    var terminalFailureDrift = Range(terminalFailureRatios);
+    var medianDrift = Range(medians);
+
+    if (completionDrift > 0.10)
+    {
+        throw new InvalidOperationException($"Autonomy soak completion-ratio drift exceeded envelope: {completionDrift:F3}");
+    }
+
+    if (terminalFailureDrift > 0.10)
+    {
+        throw new InvalidOperationException($"Autonomy soak terminal-failure drift exceeded envelope: {terminalFailureDrift:F3}");
+    }
+
+    if (medianDrift > 30.0)
+    {
+        throw new InvalidOperationException($"Autonomy soak median-latency drift exceeded envelope: {medianDrift:F3}ms");
+    }
+
+    var totalIterations = windows * tasksPerWindow;
+    return Task.FromResult(new PerfResult(
+        LatencyPerOpMs: sw.Elapsed.TotalMilliseconds / totalIterations,
+        AllocatedBytesPerOp: (afterAlloc - beforeAlloc) / (double)totalIterations));
+}
+
 static void Evaluate(string name, PerfResult result, PerfBudget budget, List<string> failures)
 {
     if (result.LatencyPerOpMs > budget.MaxLatencyPerOpMs)
@@ -660,8 +1091,12 @@ internal sealed class PerfBaseline
     public PerfBudget LocalCollaboration { get; set; } = new();
     public PerfBudget CapabilityGapPlanning { get; set; } = new();
     public PerfBudget CapabilityGapRemediation { get; set; } = new();
+    public PerfBudget CapabilityGapRemediationConcurrent { get; set; } = new();
     public PerfBudget InboxQuery { get; set; } = new();
     public PerfBudget AutonomySloIntegration { get; set; } = new();
+    public PerfBudget ReadinessScale { get; set; } = new();
+    public PerfBudget AutonomyScorecardReport { get; set; } = new();
+    public PerfBudget AutonomySoakStability { get; set; } = new();
 }
 
 internal sealed class PerfBudget
@@ -896,5 +1331,48 @@ internal sealed class PerfMessageBus : IMessageBus
     {
         await Task.CompletedTask;
         yield break;
+    }
+}
+
+internal sealed class ReadinessPerfToolRegistry : IToolRegistry
+{
+    private readonly HashSet<string> _registered;
+
+    public ReadinessPerfToolRegistry(params string[] registeredToolNames)
+    {
+        _registered = new HashSet<string>(registeredToolNames, StringComparer.OrdinalIgnoreCase);
+    }
+
+    public void RegisterTool(ITool tool)
+    {
+    }
+
+    public bool UnregisterTool(string name) => true;
+
+    public ITool? GetTool(string name)
+        => _registered.Contains(name) ? DummyTool.Instance : null;
+
+    public IEnumerable<ITool> GetAllTools() => Array.Empty<ITool>();
+
+    public IEnumerable<ITool> GetToolsForAgent(string[] toolNames) => Array.Empty<ITool>();
+
+    public Task<ToolResult> ExecuteToolWithTrackingAsync(
+        string toolName,
+        Dictionary<string, object> parameters,
+        string? agentId = null,
+        string? agentRank = null,
+        string? agentName = null,
+        CancellationToken ct = default)
+        => Task.FromResult(new ToolResult { Success = true, Output = "ok" });
+
+    private sealed class DummyTool : ITool
+    {
+        public static DummyTool Instance { get; } = new();
+
+        public string Name => "dummy";
+        public string Description => "dummy";
+
+        public Task<ToolResult> ExecuteAsync(Dictionary<string, object> parameters, CancellationToken ct = default)
+            => Task.FromResult(new ToolResult { Success = true, Output = "ok" });
     }
 }
