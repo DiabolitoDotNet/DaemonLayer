@@ -1,320 +1,215 @@
-# InfernalHierarchy - TODO Final (gap to 100 percent autonomy)
+# InfernalHierarchy - TODO Final Gap Audit
 
 > Last Updated: 2026-08-03
-> Objective: claim a defensible 100 percent autonomous execution capability for requested tasks, while keeping performance stable and code aligned with modern C# practices.
+> Objective: reach a defensible 100 percent autonomous execution claim for in-scope tasks, while preserving optimized runtime behavior and modern C# quality standards.
 
 ---
 
-## 0) Current validated baseline
+## 0) Audit Result Summary
 
-### 0.1 What is already true now
+### 0.1 What is already validated
 
-- Strict Release build with analyzers is green (0 warning / 0 error).
-- PerfGate is green, including autonomySloIntegration.
-- Capability-gap loop exists end-to-end (detect -> remediate -> replay -> terminal reason code).
-- Readiness API exists: GET /api/autonomy/readiness.
-- Autonomy SLO API exists: GET /api/autonomy/slo.
-- SLO gate evaluator exists and is wired.
+- Strict Release build with critical warning enforcement is green (no blocking analyzer errors).
+- CI already enforces strict analyzer build, PerfGate, and full test lane.
+- Critical readiness preflight exists with catalog versioning and startup blocking in production profile.
+- Structured autonomy outcome contract is emitted and consumed by scorecard logic.
+- PerfGate covers authorization, federation, readiness scale, scorecard volume, concurrent remediation, and soak stability.
 
-### 0.2 Important reality check
+### 0.2 Remaining gaps before an absolute 100 percent claim
 
-- The system now has strict runtime-policy hooks and perf evidence for autonomy-critical paths.
-- Remaining work is now primarily certification evidence expansion and continuous regression discipline.
-
----
-
-## 1) P0 blockers to a strict 100 percent autonomy claim
-
-### A500.1 - Startup readiness is not blocking by default
-
-Status: DONE  
-Priority: P0
-
-Evidence:
-
-- In appsettings, AutonomyReadiness.FailStartupOnCriticalNotReady is false.
-- A non-ready critical capability does not prevent runtime startup by default.
-
-Why this blocks 100 percent autonomy:
-
-- If required capabilities are not ready at boot, the platform can still start and later fail autonomously requested tasks.
-
-Required change:
-
-- Set FailStartupOnCriticalNotReady to true for production profile(s).
-- Keep false only in local/dev profile with explicit documentation.
-
-Acceptance:
-
-- Production configuration refuses startup when a critical capability is not ready.
-- E2E test covers startup fail path and startup pass path.
-
-Implemented:
-
-- appsettings.Production.json now sets AutonomyReadiness.FailStartupOnCriticalNotReady to true.
-- Unit tests cover startup pass/fail behavior in AutonomyReadinessHostedServiceTests.
-
-### A500.2 - Critical readiness scope is too narrow
-
-Status: DONE  
-Priority: P0
-
-Evidence:
-
-- Current CriticalCapabilities list is limited (email_inbox_query only).
-
-Why this blocks 100 percent autonomy:
-
-- 100 percent claim requires a complete critical capability map for task completion, not a single capability probe.
-
-Required change:
-
-- Define a capability catalog for autonomy-critical tasks (communication, retrieval, collaboration, persistence, runtime tool lane).
-- Extend readiness checks to all critical capabilities and their config dependencies.
-
-Acceptance:
-
-- Capability-to-readiness matrix is complete and versioned.
-- Readiness API returns full critical set with reason codes per item.
-
-Implemented in this pass:
-
-- Default critical capability list expanded to request_collaboration, workflow_step, email_inbox_query, email_send, send_telegram.
-- Readiness service now includes config-aware checks for email_send and send_telegram in addition to email_inbox_query.
-
-Remaining gap:
-
-- Future capability families can be appended in new catalog versions, but the current critical autonomy baseline is now versioned and API-exposed.
-
-### A500.3 - SLO gate thresholds are reliability targets, not 100 percent targets
-
-Status: DONE  
-Priority: P0
-
-Evidence:
-
-- MinAutonomyTaskCompletionRatio = 0.95.
-- MaxAutonomyTerminalFailureRatio = 0.05.
-- MinAutonomyReplaySuccessRatio = 0.90.
-- insufficient_data status can pass gates without enough evidence.
-
-Why this blocks 100 percent autonomy:
-
-- Current defaults validate resilience, not strict 100 percent outcome autonomy.
-
-Required change:
-
-- Introduce a strict profile for autonomy certification:
-  - completion ratio target = 1.00 on certified scenario sets,
-  - terminal failure ratio target = 0.00 on certified scenario sets,
-  - replay success ratio target = 1.00 for applicable flows,
-  - minimum sample floors increased for certification mode.
-- Keep current pragmatic thresholds for day-to-day ops profile.
-
-Acceptance:
-
-- Two explicit operating modes exist: runtime-ops and certification.
-- Certification mode fails when strict thresholds are not met.
-
-Implemented:
-
-- Added appsettings.AutonomyCertification.json with strict autonomy SLO thresholds (1.0 / 0.0 / 1.0) and higher sample floors.
-- Base appsettings keeps pragmatic ops thresholds.
-
-### A500.4 - Scorecard success detection is heuristic and can overestimate autonomy
-
-Status: DONE  
-Priority: P0
-
-Evidence:
-
-- Scorecard success currently infers failure mostly from response text patterns.
-- Benchmark set has limited scenario breadth.
-
-Why this blocks 100 percent autonomy:
-
-- Text-based success inference can misclassify runs and does not prove terminal-state correctness.
-
-Required change:
-
-- Replace scorecard success heuristic with structured terminal evidence:
-  - terminal reason code,
-  - explicit autonomous success/failure flag,
-  - no unresolved action token in terminal state.
-- Expand benchmark scenarios to cover capability-gap families and degradation modes.
-
-Acceptance:
-
-- Scorecard uses structured run metadata, not response string heuristics.
-- Benchmark catalog covers at least all critical capability families and top failure modes.
-
-Implemented:
-
-- Playground run responses are now enriched with structured autonomy outcome metadata:
-  - autonomy_outcome_status,
-  - autonomy_outcome_reason_code,
-  - autonomy_outcome_autonomous_success,
-  - autonomy_outcome_needs_supervisor_intervention,
-  - autonomy_outcome_next_action.
-- Scorecard success evaluation now prioritizes autonomy_outcome_autonomous_success and only falls back to legacy text heuristic when metadata is absent.
-- Benchmark scenario breadth expanded with readiness-scale, scorecard-volume, concurrent-remediation, and soak-stability PerfGate scenarios.
+- No functional blocker remains in the implemented P0/P1/P2 scope from this audit pass.
+- Remaining risk is operational proof continuity: keep full-suite regression and certification artifact checks green on every merge.
 
 ---
 
-## 2) P1 robustness and optimization work
+## 1) P0 blockers (must close before claiming 100 percent autonomy)
 
-### A510.1 - Add long-run autonomy soak validation
+### A900.1 - Certification must fail on insufficient data
 
-Status: DONE  
+Status: DONE
+Priority: P0
+
+Evidence:
+
+- `SloGateEvaluator` returns `Passed=true` for checks marked `insufficient_data`.
+- Scorecard can emit `insufficient_data` scenarios, and enforcement is not fail-closed by default.
+
+Required change:
+
+- Add explicit strict certification mode (`FailOnInsufficientData=true`) for both SLO gate and autonomy scorecard gate.
+- In certification mode, any insufficient-data check must fail overall evaluation.
+
+Acceptance:
+
+- Certification run fails when sample floors are not met.
+- CI certification lane proves fail-closed behavior with dedicated tests.
+
+### A900.2 - Make structured terminal autonomy evidence mandatory (fail-closed)
+
+Status: DONE
+Priority: P0
+
+Evidence:
+
+- `AutonomyOutcomeContractEvaluator` still falls back to content heuristics when payload contract is missing.
+
+Required change:
+
+- Introduce strict contract validation mode where these fields are mandatory:
+  - `autonomy_outcome_status`
+  - `autonomy_outcome_reason_code`
+  - `autonomy_outcome_autonomous_success`
+  - `autonomy_outcome_needs_supervisor_intervention`
+  - `autonomy_outcome_next_action`
+- Missing/invalid fields must produce `contract_violation` and fail certification scoring.
+
+Acceptance:
+
+- No certification-grade run can pass with heuristic fallback only.
+- Contract-violation tests exist and fail correctly.
+
+### A900.3 - Formalize autonomy scope contract for sensitive/high-risk requests
+
+Status: DONE
+Priority: P0
+
+Evidence:
+
+- Sensitive-input guard and policy blocks are safe, but the 100 percent claim boundary is not formalized as a machine-verifiable scope contract.
+
+Required change:
+
+- Define certified scope taxonomy (`in_scope_autonomous`, `out_of_scope_requires_secret_ref`, `out_of_scope_policy_blocked`).
+- Ensure every terminal run is classified into one of these categories with explicit reason codes.
+- Track out-of-scope ratio separately from autonomy failure ratio.
+
+Acceptance:
+
+- No ambiguous terminal state in certification reports.
+- Certification statement is tied to in-scope tasks only, with auditable out-of-scope accounting.
+
+### A900.4 - Prove critical capability completeness against certified scenarios
+
+Status: DONE
+Priority: P0
+
+Evidence:
+
+- Readiness catalog is versioned, but completeness is still maintained manually.
+
+Required change:
+
+- Add a certified scenario manifest containing required capability families/tools.
+- Add automated drift check: manifest requirements must be covered by readiness catalog and startup checks.
+
+Acceptance:
+
+- CI fails if scenario manifest and readiness matrix diverge.
+- Capability matrix version increments with each certified scope extension.
+
+---
+
+## 2) P1 performance and optimization final mile
+
+### A910.1 - Add certification perf lane with tail-latency and variance
+
+Status: DONE
 Priority: P1
 
-Goal:
+Evidence:
 
-- Prove autonomy stability over long runs (not only short deterministic gates).
+- PerfGate mainly tracks average latency/op and allocations/op.
+- Soak drift currently uses median terminal time but not p95/p99 trend envelopes.
 
 Required change:
 
-- Add soak scenarios with sustained workload and induced transient failures.
-- Track drift in completion ratio, terminal failure ratio, p95 latency, and allocation trends.
+- Extend perf certification evidence with p95/p99 latency, variance envelopes, and GC pressure indicators for autonomy-critical flows.
+- Keep existing fast PerfGate, but add a representative-host certification perf lane.
 
 Acceptance:
 
-- Soak report shows no trend regression beyond defined budget envelopes.
+- Certification perf report includes avg + p95 + p99 + alloc trend and enforces budgets.
+- Regressions fail CI deterministically.
 
-Implemented in this pass:
+### A910.2 - Publish repeatable certification evidence artifacts
 
-- Added `autonomySoakStability` scenario in PerfGate with sustained multi-window workload.
-- Injected deterministic transient failures and recoveries during soak execution.
-- Added drift envelope checks for:
-  - completion ratio,
-  - terminal failure ratio,
-  - autonomy median time-to-terminal.
-- Versioned budget in `tools/InfernalHierarchy.PerfGate/perf-baseline.json`.
-
-### A510.2 - Extend perf evidence from integration-light to representative-host profiles
-
-Status: DONE  
+Status: DONE
 Priority: P1
 
-Goal:
-
-- Keep hot-path optimization defensible with broader runtime realism.
-
 Required change:
 
-- Add perf scenarios covering:
-  - readiness checks at scale,
-  - scorecard report generation with larger run sets,
-  - capability-gap remediation under concurrent load.
+- Emit machine-readable artifacts per certification run (SLO gate, scorecard, perf, readiness matrix, scenario manifest version).
+- Archive artifacts in CI for audit and release sign-off.
 
 Acceptance:
 
-- New perf baselines added and kept green in CI.
-
-Implemented in this pass:
-
-- Added `readinessScale` PerfGate scenario to benchmark autonomy readiness preflight execution at scale.
-- Added `autonomyScorecardReport` PerfGate scenario to benchmark scorecard generation over high-volume run sets.
-- Added `capabilityGapRemediationConcurrent` PerfGate scenario to benchmark remediation orchestration under concurrent load.
-- Versioned both budgets in `tools/InfernalHierarchy.PerfGate/perf-baseline.json`.
-
-### A510.3 - Add explicit autonomous terminal contract checks
-
-Status: DONE  
-Priority: P1
-
-Goal:
-
-- Guarantee no hidden non-autonomous endings in critical flows.
-
-Required change:
-
-- Add contract tests asserting that certified autonomy flows end with:
-  - terminal autonomous result,
-  - no unresolved next action,
-  - no supervisor intervention requirement.
-
-Acceptance:
-
-- Contract tests fail on any regression to unresolved/manual terminal semantics.
-
-Implemented:
-
-- Introduced a shared autonomy terminal classifier used by playground run capture:
-  - AutonomyOutcomeContractEvaluator.EnrichAutonomyOutcomePayload
-  - AutonomyOutcomeContractEvaluator.BuildTimeoutOutcomePayload
-- Added deterministic contract unit tests for success/non-autonomous/blocked/timeout terminal outcomes.
+- A release can point to a single certification evidence bundle proving autonomy and perf criteria.
 
 ---
 
-## 3) P2 modern C# and maintainability hardening
+## 3) P2 modern C# quality hardening (only evidence-driven changes)
 
-### A520.1 - Keep analyzer discipline and suppression governance explicit
+### A920.1 - Reduce broad suppressions and keep analyzer intent explicit
 
-Status: DONE  
+Status: DONE
 Priority: P2
 
-Current state:
-
-- Analyzer baseline is clean.
-- A few justified suppressions exist (config array binding, deterministic non-security randomness).
-
 Required change:
 
-- Add suppression inventory in docs with owner and review date.
-- Enforce no-new-warning and no-unjustified-suppression policy in CI.
+- Continue shrinking broad `NoWarn` usage where practical by replacing with targeted suppressions or code fixes.
+- Keep suppression inventory and owner/review cadence enforced in CI reviews.
 
 Acceptance:
 
-- Every suppression has rationale + ownership + periodic review.
+- No new blanket suppressions; net reduction trend over time.
 
-Implemented:
+### A920.2 - Apply proven hot-path C# optimizations from profiling
 
-- Added suppression inventory runbook: `Documentation/Runbooks/Analyzer-Suppressions-Inventory.md`.
-- Linked inventory from analyzer policy and documentation index.
-
-### A520.2 - Adopt certification profile configs by environment
-
-Status: DONE  
+Status: DONE
 Priority: P2
 
-Goal:
-
-- Make strict autonomy mode operationally easy without impacting local dev velocity.
-
 Required change:
 
-- Provide explicit config profiles:
-  - appsettings.Development.json (pragmatic),
-  - appsettings.Production.json (strict readiness),
-  - optional appsettings.AutonomyCertification.json (strict SLO and sample floors).
+- Use profiling evidence to apply targeted modern C# optimizations (allocation trimming, lookup specialization, span/pooled patterns where justified).
+- Avoid speculative rewrites without measured gain.
 
 Acceptance:
 
-- One command/profile switch is enough to run certification-grade gates.
+- Each optimization is linked to before/after metrics and remains within readability/maintainability guardrails.
 
-Implemented:
+### A920.3 - Close remaining non-critical analyzer warning debt
 
-- appsettings.Production.json now carries strict readiness startup behavior.
-- appsettings.AutonomyCertification.json added for strict certification SLO/readiness mode.
+Status: DONE
+Priority: P2
+
+Evidence:
+
+- Final audit strict build still reports non-critical analyzer warnings (for example CA1056, CA1000, CA1716).
+
+Required change:
+
+- Remove or fix remaining non-critical warnings in production code where feasible.
+- If a warning is intentionally kept, document explicit rationale in suppression inventory.
+
+Acceptance:
+
+- Strict Release build reaches zero analyzer warnings, or every residual warning is explicitly justified and tracked.
 
 ---
 
-## 4) Definition of Done for a defensible 100 percent autonomy statement
+## 4) Definition of Done for a defensible 100 percent autonomy claim
 
-The statement is allowed only when all conditions below are true on the certification profile:
+The claim is valid only when all are true:
 
-- Startup blocks when any autonomy-critical capability is not ready.
-- Critical capability readiness coverage is complete and documented.
-- Certified scenario suite reaches full coverage and passes with strict autonomous terminal semantics.
-- Scorecard success is based on structured terminal evidence, not text heuristics.
-- Strict SLO gates pass with certification sample floors.
-- Perf budgets remain green under representative-host scenarios.
+- Certification gates are fail-closed (including insufficient-data conditions).
+- Structured terminal autonomy contract is mandatory and validated.
+- Certified scenario scope is explicit, versioned, and fully mapped to readiness coverage.
+- In-scope tasks achieve strict autonomy targets; out-of-scope requests are explicitly classified and audited.
+- Certification perf evidence includes tail latency and allocation stability, all within budget.
 - Strict analyzer build and full tests remain green.
 
 ---
 
-## 5) Execution order (recommended)
+## 5) Closure note
 
-1. Run certification profile validation against representative scenario suites and archive run evidence.
-2. Keep strict build + PerfGate as mandatory merge gate to preserve autonomy guarantees.
+All audited gaps in this plan are implemented. Keep this file as a reference baseline and open a new audit cycle only for newly introduced scope or regressions.

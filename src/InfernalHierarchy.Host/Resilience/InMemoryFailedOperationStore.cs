@@ -134,7 +134,7 @@ internal sealed class InMemoryFailedOperationStore : IFailedOperationStore
         return Task.CompletedTask;
     }
 
-    public Task MarkReplayFailedAsync(string id, string reasonCode, string? error, CancellationToken ct = default)
+    public Task MarkReplayFailedAsync(string id, string reasonCode, string? errorMessage, CancellationToken ct = default)
     {
         if (_records.TryGetValue(id, out var record))
         {
@@ -144,7 +144,7 @@ internal sealed class InMemoryFailedOperationStore : IFailedOperationStore
             record.Status = shouldRetry
                 ? FailedOperationStatus.Pending
                 : FailedOperationStatus.ReplayFailed;
-            record.LastReplayError = string.IsNullOrWhiteSpace(error) ? reasonCode : error;
+            record.LastReplayError = string.IsNullOrWhiteSpace(errorMessage) ? reasonCode : errorMessage;
             record.Metadata["replay_failure_reason"] = reasonCode;
             _metrics.IncrementCounter("deadletter.replay.failed");
             _metrics.IncrementCounter($"deadletter.replay.failed.{reasonCode.ToLowerInvariant()}");

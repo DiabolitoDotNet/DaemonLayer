@@ -49,7 +49,7 @@ public interface IFailedOperationStore
 
     Task MarkReplaySucceededAsync(string id, CancellationToken ct = default);
 
-    Task MarkReplayFailedAsync(string id, string reasonCode, string? error, CancellationToken ct = default);
+    Task MarkReplayFailedAsync(string id, string reasonCode, string? errorMessage, CancellationToken ct = default);
 
     FailedOperationStats GetStats();
 }

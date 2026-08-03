@@ -7,6 +7,18 @@ namespace InfernalHierarchy.Host.Tests;
 public sealed class AutonomyOutcomeContractEvaluatorTests
 {
     [Fact]
+    public void HasRequiredOutcomeContract_WhenMissingKeys_ShouldReturnFalse()
+    {
+        var hasContract = AutonomyOutcomeContractEvaluator.HasRequiredOutcomeContract(
+            new Dictionary<string, object>(),
+            out var missingKeys);
+
+        hasContract.Should().BeFalse();
+        missingKeys.Should().Contain("autonomy_outcome_status");
+        missingKeys.Should().Contain("autonomy_outcome_autonomous_success");
+    }
+
+    [Fact]
     public void EnrichAutonomyOutcomePayload_WhenTerminalHasNoFallbackSignals_ShouldMarkAutonomousSuccess()
     {
         var payload = new Dictionary<string, object>();
@@ -48,6 +60,8 @@ public sealed class AutonomyOutcomeContractEvaluatorTests
         enriched["autonomy_outcome_status"].Should().Be("autonomy_blocked");
         enriched["autonomy_outcome_reason_code"].Should().Be("secret_reference_required");
         enriched["autonomy_outcome_autonomous_success"].Should().Be(false);
+        enriched["autonomy_scope_classification"].Should().Be("out_of_scope_requires_secret_ref");
+        enriched["autonomy_out_of_scope"].Should().Be(true);
     }
 
     [Fact]

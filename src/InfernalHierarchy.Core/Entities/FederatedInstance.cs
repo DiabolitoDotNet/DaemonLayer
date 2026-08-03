@@ -1,4 +1,5 @@
 namespace InfernalHierarchy.Core.Entities;
+using System.Diagnostics.CodeAnalysis;
 
 /// <summary>
 /// Represents a federated InfernalHierarchy instance
@@ -18,6 +19,7 @@ public class FederatedInstance
     /// <summary>
     /// Gets or sets the base URL for this instance
     /// </summary>
+    [SuppressMessage("Design", "CA1056:URI-like properties should not be strings", Justification = "Federation endpoints are persisted/configured as raw strings and validated at transport boundaries.")]
     public string BaseUrl { get; set; } = string.Empty;
 
     /// <summary>

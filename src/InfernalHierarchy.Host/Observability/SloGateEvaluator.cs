@@ -57,7 +57,7 @@ internal sealed class SloGateEvaluator
         {
             checks.Add(new SloGateCheckResult(
                 Gate: "deadletter.replay_success_ratio",
-                Passed: true,
+                Passed: !options.FailOnInsufficientData,
                 Status: "insufficient_data",
                 Value: replayAttempts,
                 Threshold: options.MinReplaySamples,
@@ -89,7 +89,7 @@ internal sealed class SloGateEvaluator
         {
             checks.Add(new SloGateCheckResult(
                 Gate: "message_bus.reject_rate",
-                Passed: true,
+                Passed: !options.FailOnInsufficientData,
                 Status: "insufficient_data",
                 Value: published,
                 Threshold: options.MinQueueSamples,
@@ -114,7 +114,7 @@ internal sealed class SloGateEvaluator
         {
             checks.Add(new SloGateCheckResult(
                 Gate: "task_completion.p95_ms",
-                Passed: true,
+                Passed: !options.FailOnInsufficientData,
                 Status: "insufficient_data",
                 Value: taskLatencyStats.Count,
                 Threshold: options.MinTaskCompletionSamples,
@@ -141,7 +141,7 @@ internal sealed class SloGateEvaluator
         {
             checks.Add(new SloGateCheckResult(
                 Gate: "autonomy.task_completion_ratio",
-                Passed: true,
+                Passed: !options.FailOnInsufficientData,
                 Status: "insufficient_data",
                 Value: autonomyTaskTotal,
                 Threshold: options.MinAutonomyTaskSamples,
@@ -150,7 +150,7 @@ internal sealed class SloGateEvaluator
 
             checks.Add(new SloGateCheckResult(
                 Gate: "autonomy.terminal_failure_ratio",
-                Passed: true,
+                Passed: !options.FailOnInsufficientData,
                 Status: "insufficient_data",
                 Value: autonomyTaskTotal,
                 Threshold: options.MinAutonomyTaskSamples,
@@ -185,7 +185,7 @@ internal sealed class SloGateEvaluator
         {
             checks.Add(new SloGateCheckResult(
                 Gate: "autonomy.replay_success_ratio",
-                Passed: true,
+                Passed: !options.FailOnInsufficientData,
                 Status: "insufficient_data",
                 Value: autonomyReplayTotal,
                 Threshold: options.MinAutonomyReplaySamples,
@@ -209,7 +209,7 @@ internal sealed class SloGateEvaluator
         {
             checks.Add(new SloGateCheckResult(
                 Gate: "autonomy.median_time_to_terminal_ms",
-                Passed: true,
+                Passed: !options.FailOnInsufficientData,
                 Status: "insufficient_data",
                 Value: autonomyTerminalStats.Count,
                 Threshold: options.MinAutonomyTerminalSamples,

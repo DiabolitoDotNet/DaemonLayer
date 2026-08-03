@@ -44,14 +44,14 @@ public interface ITemplateService
     /// Register a custom template (for user-defined templates)
     /// </summary>
     Task<bool> RegisterTemplateAsync(
-        AgentTemplate template,
+        AgentTemplate templateModel,
         CancellationToken ct = default);
 
     /// <summary>
     /// Update an existing template
     /// </summary>
     Task<bool> UpdateTemplateAsync(
-        AgentTemplate template,
+        AgentTemplate templateModel,
         CancellationToken ct = default);
 
     /// <summary>

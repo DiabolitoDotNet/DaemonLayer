@@ -2,6 +2,16 @@ namespace InfernalHierarchy.Host.Observability;
 
 internal sealed class AutonomyScorecardService
 {
+    private static readonly IReadOnlyDictionary<string, int> GradeOrder = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
+    {
+        ["A"] = 5,
+        ["B"] = 4,
+        ["C"] = 3,
+        ["D"] = 2,
+        ["E"] = 1,
+        ["incomplete"] = 0,
+    };
+
     private static readonly IReadOnlyList<AutonomyBenchmarkScenario> Benchmarks =
     [
         new("simple_search", "Simple Search", "Quick retrieval and concise synthesis.", "Research", 12000),
@@ -18,11 +28,18 @@ internal sealed class AutonomyScorecardService
     }
 
     public AutonomyScorecardReport GenerateReport(int runsPerScenario = 10)
+        => GenerateReport(new AutonomyScorecardOptions { RunsPerScenario = runsPerScenario });
+
+    public AutonomyScorecardReport GenerateReport(AutonomyScorecardOptions options)
     {
-        var cappedRunsPerScenario = Math.Clamp(runsPerScenario, 1, 50);
+        var cappedRunsPerScenario = Math.Clamp(options.RunsPerScenario, 1, 50);
         var knownScenarios = _playground.ListScenarios(1000);
 
         var scenarioScores = new List<AutonomyScenarioScore>(Benchmarks.Count);
+        var totalContractViolations = 0;
+        var totalOutOfScopeRuns = 0;
+        var totalEvaluatedRuns = 0;
+
         foreach (var benchmark in Benchmarks)
         {
             var matchingScenarioIds = knownScenarios
@@ -46,17 +63,46 @@ internal sealed class AutonomyScorecardService
                     benchmark.TargetP95Ms,
                     Runs: 0,
                     SuccessRate: 0,
+                    OutOfScopeRate: 0,
                     P95DurationMs: 0,
                     Score: null,
-                    Status: "insufficient_data"));
+                    Status: "insufficient_data",
+                    ContractViolations: 0));
                 continue;
             }
 
-            var successCount = runs.Count(IsSuccessfulRun);
+            if (options.RequireStructuredOutcomeContract)
+            {
+                var violations = runs.Count(r => !AutonomyOutcomeContractEvaluator.HasRequiredOutcomeContract(r.Response.payload, out _));
+                if (violations > 0)
+                {
+                    totalContractViolations += violations;
+                    scenarioScores.Add(new AutonomyScenarioScore(
+                        benchmark.Id,
+                        benchmark.Name,
+                        benchmark.TargetExecutionProfile,
+                        benchmark.TargetP95Ms,
+                        Runs: runs.Length,
+                        SuccessRate: 0,
+                        OutOfScopeRate: 0,
+                        P95DurationMs: 0,
+                        Score: null,
+                        Status: "contract_violation",
+                        ContractViolations: violations));
+                    continue;
+                }
+            }
+
+            var successCount = runs.Count(r => IsSuccessfulRun(r, options.RequireStructuredOutcomeContract));
             var successRate = successCount / (double)runs.Length;
+            var outOfScopeCount = runs.Count(IsOutOfScopeRun);
+            var outOfScopeRate = outOfScopeCount / (double)runs.Length;
             var p95 = CalculatePercentile(runs.Select(r => r.Response.durationMs).ToArray(), 95);
             var latencyScore = Math.Clamp(1d - (p95 / benchmark.TargetP95Ms), 0d, 1d) * 100d;
             var score = (successRate * 70d) + (latencyScore * 30d);
+
+            totalOutOfScopeRuns += outOfScopeCount;
+            totalEvaluatedRuns += runs.Length;
 
             scenarioScores.Add(new AutonomyScenarioScore(
                 benchmark.Id,
@@ -65,9 +111,11 @@ internal sealed class AutonomyScorecardService
                 benchmark.TargetP95Ms,
                 Runs: runs.Length,
                 SuccessRate: successRate,
+                OutOfScopeRate: outOfScopeRate,
                 P95DurationMs: p95,
                 Score: score,
-                Status: "evaluated"));
+                Status: "evaluated",
+                ContractViolations: 0));
         }
 
         var scored = scenarioScores.Where(s => s.Score.HasValue).ToArray();
@@ -75,8 +123,29 @@ internal sealed class AutonomyScorecardService
             ? 0d
             : scored.Length / (double)scenarioScores.Count;
         var overall = scored.Length == 0 ? 0d : scored.Average(s => s.Score!.Value);
+        var outOfScopeRatio = totalEvaluatedRuns == 0 ? 0d : totalOutOfScopeRuns / (double)totalEvaluatedRuns;
+        var hasInsufficientData = scenarioScores.Any(s => string.Equals(s.Status, "insufficient_data", StringComparison.OrdinalIgnoreCase));
+        var hasContractViolation = scenarioScores.Any(s => string.Equals(s.Status, "contract_violation", StringComparison.OrdinalIgnoreCase));
 
-        var recommendations = BuildRecommendations(scenarioScores, coverage, overall);
+        if (options.FailOnInsufficientData && hasInsufficientData)
+        {
+            overall = 0;
+        }
+
+        if (options.RequireStructuredOutcomeContract && hasContractViolation)
+        {
+            overall = 0;
+        }
+
+        var recommendations = BuildRecommendations(scenarioScores, coverage, overall, outOfScopeRatio, totalContractViolations);
+
+        var certificationPassed = !options.CertificationMode
+            || (
+                (!options.FailOnInsufficientData || !hasInsufficientData)
+                && (!options.RequireStructuredOutcomeContract || !hasContractViolation)
+                && coverage >= options.MinCoverage
+                && IsGradeAtLeast(ToGrade(overall, coverage), options.MinGrade)
+                && scenarioScores.Where(s => s.Score.HasValue).All(s => s.SuccessRate >= options.MinSuccessRatePerScenario));
 
         return new AutonomyScorecardReport(
             GeneratedAtUtc: DateTime.UtcNow,
@@ -84,7 +153,10 @@ internal sealed class AutonomyScorecardService
             Coverage: coverage,
             Grade: ToGrade(overall, coverage),
             Scenarios: scenarioScores,
-            Recommendations: recommendations);
+            Recommendations: recommendations,
+            OutOfScopeRatio: outOfScopeRatio,
+            ContractViolations: totalContractViolations,
+            CertificationPassed: certificationPassed);
     }
 
     public IReadOnlyList<AutonomyBenchmarkScenario> GetBenchmarks() => Benchmarks;
@@ -100,11 +172,16 @@ internal sealed class AutonomyScorecardService
         return scenario.Name.Contains(benchmarkId, StringComparison.OrdinalIgnoreCase);
     }
 
-    private static bool IsSuccessfulRun(PlaygroundRunRecord run)
+    private static bool IsSuccessfulRun(PlaygroundRunRecord run, bool strictContract)
     {
         if (TryGetBool(run.Response.payload, "autonomy_outcome_autonomous_success", out var autonomousSuccess))
         {
             return autonomousSuccess;
+        }
+
+        if (strictContract)
+        {
+            return false;
         }
 
         var content = run.Response.content ?? string.Empty;
@@ -119,6 +196,16 @@ internal sealed class AutonomyScorecardService
         }
 
         return true;
+    }
+
+    private static bool IsOutOfScopeRun(PlaygroundRunRecord run)
+    {
+        if (TryGetBool(run.Response.payload, "autonomy_out_of_scope", out var outOfScope))
+        {
+            return outOfScope;
+        }
+
+        return false;
     }
 
     private static bool TryGetBool(Dictionary<string, object>? payload, string key, out bool value)
@@ -167,7 +254,9 @@ internal sealed class AutonomyScorecardService
     private static IReadOnlyList<string> BuildRecommendations(
         IReadOnlyList<AutonomyScenarioScore> scenarios,
         double coverage,
-        double overall)
+        double overall,
+        double outOfScopeRatio,
+        int contractViolations)
     {
         var recommendations = new List<string>();
 
@@ -176,9 +265,19 @@ internal sealed class AutonomyScorecardService
             recommendations.Add("Run all benchmark scenarios at least once to reach full scorecard coverage.");
         }
 
+        if (contractViolations > 0)
+        {
+            recommendations.Add($"Fix structured autonomy outcome contract violations ({contractViolations} run(s) missing required fields).");
+        }
+
         foreach (var scenario in scenarios.Where(s => s.Score.HasValue && s.SuccessRate < 0.80d))
         {
             recommendations.Add($"Improve reliability for '{scenario.ScenarioName}' (success rate {scenario.SuccessRate:P0}).");
+        }
+
+        if (outOfScopeRatio > 0)
+        {
+            recommendations.Add($"Out-of-scope ratio is {outOfScopeRatio:P1}; ensure this is expected and covered by certification scope policy.");
         }
 
         foreach (var scenario in scenarios.Where(s => s.Score.HasValue && s.P95DurationMs > s.TargetP95Ms))
@@ -212,6 +311,24 @@ internal sealed class AutonomyScorecardService
             _ => "E"
         };
     }
+
+    private static bool IsGradeAtLeast(string actual, string minimum)
+    {
+        return GradeOrder.TryGetValue(actual, out var actualRank)
+            && GradeOrder.TryGetValue(minimum, out var minimumRank)
+            && actualRank >= minimumRank;
+    }
+}
+
+internal sealed class AutonomyScorecardOptions
+{
+    public int RunsPerScenario { get; set; } = 10;
+    public bool CertificationMode { get; set; }
+    public bool FailOnInsufficientData { get; set; }
+    public bool RequireStructuredOutcomeContract { get; set; }
+    public double MinCoverage { get; set; } = 1.0;
+    public string MinGrade { get; set; } = "B";
+    public double MinSuccessRatePerScenario { get; set; } = 0.80;
 }
 
 internal sealed record AutonomyBenchmarkScenario(
@@ -228,9 +345,11 @@ internal sealed record AutonomyScenarioScore(
     double TargetP95Ms,
     int Runs,
     double SuccessRate,
+    double OutOfScopeRate,
     double P95DurationMs,
     double? Score,
-    string Status);
+    string Status,
+    int ContractViolations);
 
 internal sealed record AutonomyScorecardReport(
     DateTime GeneratedAtUtc,
@@ -238,4 +357,7 @@ internal sealed record AutonomyScorecardReport(
     double Coverage,
     string Grade,
     IReadOnlyList<AutonomyScenarioScore> Scenarios,
-    IReadOnlyList<string> Recommendations);
+    IReadOnlyList<string> Recommendations,
+    double OutOfScopeRatio,
+    int ContractViolations,
+    bool CertificationPassed);

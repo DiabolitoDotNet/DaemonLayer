@@ -9,6 +9,33 @@ namespace InfernalHierarchy.Host.Tests;
 public sealed class SloGateEvaluatorTests
 {
     [Fact]
+    public void Evaluate_WhenInsufficientDataAndFailClosed_ShouldFail()
+    {
+        var metrics = new MetricsCollector();
+
+        var store = new Mock<IFailedOperationStore>();
+        store.Setup(x => x.GetStats()).Returns(new FailedOperationStats(0, 0, 0, 0));
+
+        var bus = new Mock<IMessageBus>();
+        var sut = new SloGateEvaluator(metrics, store.Object, bus.Object);
+
+        var result = sut.Evaluate(new SloGateOptions
+        {
+            Enabled = true,
+            FailOnInsufficientData = true,
+            MinReplaySamples = 5,
+            MinQueueSamples = 20,
+            MinTaskCompletionSamples = 5,
+            MinAutonomyTaskSamples = 5,
+            MinAutonomyReplaySamples = 3,
+            MinAutonomyTerminalSamples = 5,
+        });
+
+        result.Passed.Should().BeFalse();
+        result.Checks.Should().Contain(c => c.Status == "insufficient_data" && !c.Passed);
+    }
+
+    [Fact]
     public void Evaluate_WhenAutonomyRatiosAndMedianBreachThresholds_ShouldFailAutonomyGates()
     {
         var metrics = new MetricsCollector();

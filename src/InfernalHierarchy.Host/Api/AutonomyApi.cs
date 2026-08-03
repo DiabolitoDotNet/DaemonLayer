@@ -44,6 +44,7 @@ internal static class AutonomyApi
 
             var completionRatio = collector.GetGauge("autonomy_task_completion_ratio");
             var terminalFailureRatio = collector.GetGauge("autonomy_terminal_failure_ratio");
+            var outOfScopeRatio = collector.GetGauge("autonomy_out_of_scope_ratio");
             var replaySuccessRatio = collector.GetGauge("autonomy_replay_success_ratio");
 
             var terminalTime = collector.GetHistogramStats("autonomy.time_to_terminal_ms");
@@ -54,6 +55,7 @@ internal static class AutonomyApi
                 {
                     autonomy_task_completion_ratio = completionRatio,
                     autonomy_terminal_failure_ratio = terminalFailureRatio,
+                    autonomy_out_of_scope_ratio = outOfScopeRatio,
                     autonomy_replay_success_ratio = replaySuccessRatio
                 },
                 counters = new
@@ -61,6 +63,7 @@ internal static class AutonomyApi
                     autonomy_task_total = collector.GetCounter("autonomy.task.total"),
                     autonomy_task_completed = collector.GetCounter("autonomy.task.completed"),
                     autonomy_terminal_failure = collector.GetCounter("autonomy.task.terminal_failure"),
+                    autonomy_task_out_of_scope = collector.GetCounter("autonomy.task.out_of_scope"),
                     autonomy_replay_total = collector.GetCounter("autonomy.replay.total"),
                     autonomy_replay_success = collector.GetCounter("autonomy.replay.success")
                 },
@@ -70,6 +73,25 @@ internal static class AutonomyApi
                     median = terminalTime.P50,
                     p95 = terminalTime.P95
                 }
+            });
+        });
+
+        app.MapGet("/api/autonomy/certification-manifest", (HttpContext ctx) =>
+        {
+            var forbid = OperationalAuthGuard.ForbidIfUnauthorized(ctx, uiOptions.LocalOnly, operatorOptions.ApiKey);
+            if (forbid is not null)
+            {
+                return forbid;
+            }
+
+            return Results.Ok(new
+            {
+                version = AutonomyCertificationManifest.Version,
+                requirements = AutonomyCertificationManifest.Requirements.Select(r => new
+                {
+                    benchmarkId = r.BenchmarkId,
+                    requiredCapabilities = r.RequiredCapabilities
+                })
             });
         });
     }

@@ -58,7 +58,10 @@ public sealed class DefaultReActTaskProcessor : IReActTaskProcessor
                 Payload = new Dictionary<string, object>(task.Payload ?? new Dictionary<string, object>())
                 {
                     ["capability_gap_state"] = "blocked_by_sensitive_input_guard",
-                    ["block_reason_code"] = sensitiveInputAssessment.ReasonCode
+                    ["block_reason_code"] = sensitiveInputAssessment.ReasonCode,
+                    ["autonomy_scope_classification"] = "out_of_scope_requires_secret_ref",
+                    ["autonomy_scope_reason_code"] = "sensitive_input_requires_secret_reference",
+                    ["autonomy_out_of_scope"] = true
                 },
                 CorrelationId = task.CorrelationId ?? task.Id,
                 CausationId = task.Id
@@ -99,6 +102,9 @@ public sealed class DefaultReActTaskProcessor : IReActTaskProcessor
 
                     effectivePayload["capability_gap_state"] = "capability_gap_policy_blocked";
                     effectivePayload["capability_gap_report"] = JsonSerializer.Serialize(gapAnalysis.Report, JsonDefaults.Web);
+                    effectivePayload["autonomy_scope_classification"] = "out_of_scope_policy_blocked";
+                    effectivePayload["autonomy_scope_reason_code"] = gapAnalysis.Report.BlockReasonCode;
+                    effectivePayload["autonomy_out_of_scope"] = true;
 
                     return new AgentMessage
                     {

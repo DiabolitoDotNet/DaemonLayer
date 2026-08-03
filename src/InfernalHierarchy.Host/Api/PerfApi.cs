@@ -193,6 +193,8 @@ internal static class PerfApi
         app.MapGet("/api/perf/autonomy-scorecard", (
             HttpContext ctx,
             AutonomyScorecardService scorecardService,
+            IOptions<AutonomyScorecardOptions> options,
+            bool? certificationMode,
             int? runsPerScenario) =>
         {
             var forbid = LocalOnlyGuard.ForbidIfNotLoopback(ctx, uiOptions.LocalOnly);
@@ -201,11 +203,24 @@ internal static class PerfApi
                 return forbid;
             }
 
-            var report = scorecardService.GenerateReport(runsPerScenario.GetValueOrDefault(10));
+            var configured = options.Value;
+            var effective = new AutonomyScorecardOptions
+            {
+                RunsPerScenario = runsPerScenario.GetValueOrDefault(configured.RunsPerScenario),
+                CertificationMode = certificationMode ?? configured.CertificationMode,
+                FailOnInsufficientData = configured.FailOnInsufficientData,
+                RequireStructuredOutcomeContract = configured.RequireStructuredOutcomeContract,
+                MinCoverage = configured.MinCoverage,
+                MinGrade = configured.MinGrade,
+                MinSuccessRatePerScenario = configured.MinSuccessRatePerScenario,
+            };
+
+            var report = scorecardService.GenerateReport(effective);
             return Results.Ok(new
             {
                 generatedUtc = report.GeneratedAtUtc,
                 benchmarks = scorecardService.GetBenchmarks(),
+                options = effective,
                 report,
             });
         });

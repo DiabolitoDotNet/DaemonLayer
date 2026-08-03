@@ -63,6 +63,14 @@ internal sealed class CapabilityGapMetricsEventSink : IAgentEventSink
 
         if (!string.Equals(category, "capability.gap_analysis", StringComparison.OrdinalIgnoreCase))
         {
+            if (string.Equals(category, "capability.security", StringComparison.OrdinalIgnoreCase)
+                && evt.Metadata.TryGetValue("status", out var statusObj)
+                && string.Equals(statusObj?.ToString(), "blocked", StringComparison.OrdinalIgnoreCase))
+            {
+                _metrics.IncrementCounter("autonomy.task.out_of_scope");
+                UpdateAutonomyRatios();
+            }
+
             return;
         }
 
@@ -95,6 +103,10 @@ internal sealed class CapabilityGapMetricsEventSink : IAgentEventSink
                 || string.Equals(workflowState, "capability_gap_policy_blocked", StringComparison.OrdinalIgnoreCase))
             {
                 _metrics.IncrementCounter("autonomy.task.terminal_failure");
+                if (string.Equals(workflowState, "capability_gap_policy_blocked", StringComparison.OrdinalIgnoreCase))
+                {
+                    _metrics.IncrementCounter("autonomy.task.out_of_scope");
+                }
             }
         }
 
@@ -111,12 +123,14 @@ internal sealed class CapabilityGapMetricsEventSink : IAgentEventSink
         var total = _metrics.GetCounter("autonomy.task.total");
         var completed = _metrics.GetCounter("autonomy.task.completed");
         var failed = _metrics.GetCounter("autonomy.task.terminal_failure");
+        var outOfScope = _metrics.GetCounter("autonomy.task.out_of_scope");
 
         var replayTotal = _metrics.GetCounter("autonomy.replay.total");
         var replaySuccess = _metrics.GetCounter("autonomy.replay.success");
 
         _metrics.SetGauge("autonomy_task_completion_ratio", total == 0 ? 0 : (double)completed / total);
         _metrics.SetGauge("autonomy_terminal_failure_ratio", total == 0 ? 0 : (double)failed / total);
+        _metrics.SetGauge("autonomy_out_of_scope_ratio", total == 0 ? 0 : (double)outOfScope / total);
         _metrics.SetGauge("autonomy_replay_success_ratio", replayTotal == 0 ? 0 : (double)replaySuccess / replayTotal);
     }
 

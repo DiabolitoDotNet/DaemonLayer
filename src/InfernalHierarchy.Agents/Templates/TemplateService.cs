@@ -187,58 +187,58 @@ public class TemplateService : ITemplateService
         }
     }
 
-    public async Task<bool> RegisterTemplateAsync(AgentTemplate template, CancellationToken ct = default)
+    public async Task<bool> RegisterTemplateAsync(AgentTemplate templateModel, CancellationToken ct = default)
     {
         try
         {
             // Validate template
-            if (string.IsNullOrWhiteSpace(template.TemplateId))
+            if (string.IsNullOrWhiteSpace(templateModel.TemplateId))
             {
                 _logger.LogWarning("⚠️ Cannot register template without TemplateId");
                 return false;
             }
 
-            if (_templateCache.ContainsKey(template.TemplateId))
+            if (_templateCache.ContainsKey(templateModel.TemplateId))
             {
-                _logger.LogWarning("⚠️ Template {TemplateId} already exists", template.TemplateId);
+                _logger.LogWarning("⚠️ Template {TemplateId} already exists", templateModel.TemplateId);
                 return false;
             }
 
             // Save to disk
-            await SaveTemplateAsync(template, ct);
+            await SaveTemplateAsync(templateModel, ct);
 
             // Add to cache
-            _templateCache[template.TemplateId] = template;
+            _templateCache[templateModel.TemplateId] = templateModel;
 
-            _logger.LogInformation("✅ Registered new template: {TemplateId}", template.TemplateId);
+            _logger.LogInformation("✅ Registered new template: {TemplateId}", templateModel.TemplateId);
             return true;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "❌ Failed to register template {TemplateId}", template.TemplateId);
+            _logger.LogError(ex, "❌ Failed to register template {TemplateId}", templateModel.TemplateId);
             return false;
         }
     }
 
-    public async Task<bool> UpdateTemplateAsync(AgentTemplate template, CancellationToken ct = default)
+    public async Task<bool> UpdateTemplateAsync(AgentTemplate templateModel, CancellationToken ct = default)
     {
         try
         {
-            if (!_templateCache.ContainsKey(template.TemplateId))
+            if (!_templateCache.ContainsKey(templateModel.TemplateId))
             {
-                _logger.LogWarning("⚠️ Cannot update non-existent template {TemplateId}", template.TemplateId);
+                _logger.LogWarning("⚠️ Cannot update non-existent template {TemplateId}", templateModel.TemplateId);
                 return false;
             }
 
-            await SaveTemplateAsync(template, ct);
-            _templateCache[template.TemplateId] = template;
+            await SaveTemplateAsync(templateModel, ct);
+            _templateCache[templateModel.TemplateId] = templateModel;
 
-            _logger.LogInformation("✅ Updated template: {TemplateId}", template.TemplateId);
+            _logger.LogInformation("✅ Updated template: {TemplateId}", templateModel.TemplateId);
             return true;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "❌ Failed to update template {TemplateId}", template.TemplateId);
+            _logger.LogError(ex, "❌ Failed to update template {TemplateId}", templateModel.TemplateId);
             return false;
         }
     }

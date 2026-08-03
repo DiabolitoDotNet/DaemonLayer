@@ -188,7 +188,7 @@ internal sealed class LiteDbFailedOperationStore : IFailedOperationStore, IDispo
         return Task.CompletedTask;
     }
 
-    public Task MarkReplayFailedAsync(string id, string reasonCode, string? error, CancellationToken ct = default)
+    public Task MarkReplayFailedAsync(string id, string reasonCode, string? errorMessage, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(id))
         {
@@ -209,7 +209,7 @@ internal sealed class LiteDbFailedOperationStore : IFailedOperationStore, IDispo
             record.Status = shouldRetry
                 ? FailedOperationStatus.Pending
                 : FailedOperationStatus.ReplayFailed;
-            record.LastReplayError = string.IsNullOrWhiteSpace(error) ? reasonCode : error;
+            record.LastReplayError = string.IsNullOrWhiteSpace(errorMessage) ? reasonCode : errorMessage;
             record.Metadata["replay_failure_reason"] = reasonCode;
             FailedOperations.Update(record);
         }

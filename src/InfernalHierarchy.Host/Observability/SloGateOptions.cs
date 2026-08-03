@@ -5,6 +5,12 @@ public sealed class SloGateOptions
     public bool Enabled { get; set; } = true;
 
     /// <summary>
+    /// When true, any check in insufficient-data state fails the overall gate.
+    /// Intended for certification-grade fail-closed runs.
+    /// </summary>
+    public bool FailOnInsufficientData { get; set; }
+
+    /// <summary>
     /// Maximum allowed growth of pending dead-letters since process startup.
     /// </summary>
     public int MaxDeadLetterBacklogGrowth { get; set; } = 25;

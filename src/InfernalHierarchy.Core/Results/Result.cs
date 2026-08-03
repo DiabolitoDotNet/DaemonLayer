@@ -1,4 +1,5 @@
 namespace InfernalHierarchy.Core.Results;
+using System.Diagnostics.CodeAnalysis;
 
 /// <summary>
 /// Lightweight success/failure result type for boundary-safe APIs.
@@ -15,6 +16,7 @@ public static class Result
 /// <summary>
 /// Represents a success/failure outcome with an optional value and error details.
 /// </summary>
+[SuppressMessage("Design", "CA1000:Do not declare static members on generic types", Justification = "Result<T>.Ok/Fail are intentional ergonomic factories matching common Result API conventions.")]
 public readonly record struct Result<T>
 {
     private Result(bool succeeded, T? value, ResultError? error)

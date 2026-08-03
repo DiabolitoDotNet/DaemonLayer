@@ -12,6 +12,8 @@ namespace InfernalHierarchy.Host.Tests.E2E;
 public class InfernalHierarchyTestWebAppFactory : WebApplicationFactory<Program>
 {
     public string TempDbPath { get; } = Path.Combine(Path.GetTempPath(), $"infernal_e2e_{Guid.NewGuid():N}.db");
+    public string TempFailedOpsDbPath { get; } = Path.Combine(Path.GetTempPath(), $"infernal_failed_ops_{Guid.NewGuid():N}.db");
+    public string TempRuntimeGrantDbPath { get; } = Path.Combine(Path.GetTempPath(), $"infernal_runtime_grants_{Guid.NewGuid():N}.db");
     public string TempSoulsDir { get; } = Path.Combine(Path.GetTempPath(), $"infernal_souls_{Guid.NewGuid():N}");
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
@@ -45,6 +47,8 @@ public class InfernalHierarchyTestWebAppFactory : WebApplicationFactory<Program>
                 ["Ollama:Temperature"] = "0",
 
                 ["Memory:DatabasePath"] = TempDbPath,
+                ["FailedOperations:DatabasePath"] = TempFailedOpsDbPath,
+                ["AgentSkillAssignment:RuntimeGrantDatabasePath"] = TempRuntimeGrantDbPath,
 
                 ["Hierarchy:MainAgentName"] = "Lucifer",
 
@@ -119,6 +123,30 @@ public class InfernalHierarchyTestWebAppFactory : WebApplicationFactory<Program>
                 if (File.Exists(TempDbPath))
                 {
                     File.Delete(TempDbPath);
+                }
+            }
+            catch
+            {
+                // best-effort
+            }
+
+            try
+            {
+                if (File.Exists(TempFailedOpsDbPath))
+                {
+                    File.Delete(TempFailedOpsDbPath);
+                }
+            }
+            catch
+            {
+                // best-effort
+            }
+
+            try
+            {
+                if (File.Exists(TempRuntimeGrantDbPath))
+                {
+                    File.Delete(TempRuntimeGrantDbPath);
                 }
             }
             catch

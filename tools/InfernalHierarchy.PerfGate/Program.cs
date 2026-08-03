@@ -21,6 +21,7 @@ using InfernalHierarchy.Tools.Tools.Notifications;
 var baselinePath = Path.Combine(AppContext.BaseDirectory, "perf-baseline.json");
 var perfGatePassToken = "PERF_GATE:PASS";
 var perfGateFailToken = "PERF_GATE:FAIL";
+var evidenceOutputPath = TryReadArgument(args, "--evidence-out");
 if (!File.Exists(baselinePath))
 {
     baselinePath = Path.Combine(Directory.GetCurrentDirectory(), "perf-baseline.json");
@@ -52,6 +53,7 @@ var autonomySloIntegration = await RunAutonomySloIntegrationScenarioAsync().Conf
 var readinessScale = await RunReadinessScaleScenarioAsync().ConfigureAwait(false);
 var autonomyScorecardReport = RunAutonomyScorecardReportScenario();
 var autonomySoakStability = await RunAutonomySoakStabilityScenarioAsync().ConfigureAwait(false);
+var autonomyCertificationTailLatency = RunAutonomyCertificationTailLatencyScenario();
 
 PrintResult("toolAuthorization", authorization, baseline.ToolAuthorization);
 PrintResult("federationAggregation", federation, baseline.FederationAggregation);
@@ -64,6 +66,7 @@ PrintResult("autonomySloIntegration", autonomySloIntegration, baseline.AutonomyS
 PrintResult("readinessScale", readinessScale, baseline.ReadinessScale);
 PrintResult("autonomyScorecardReport", autonomyScorecardReport, baseline.AutonomyScorecardReport);
 PrintResult("autonomySoakStability", autonomySoakStability, baseline.AutonomySoakStability);
+PrintResult("autonomyCertificationTailLatency", autonomyCertificationTailLatency, baseline.AutonomyCertificationTailLatency);
 
 var failures = new List<string>();
 Evaluate("toolAuthorization", authorization, baseline.ToolAuthorization, failures);
@@ -77,6 +80,25 @@ Evaluate("autonomySloIntegration", autonomySloIntegration, baseline.AutonomySloI
 Evaluate("readinessScale", readinessScale, baseline.ReadinessScale, failures);
 Evaluate("autonomyScorecardReport", autonomyScorecardReport, baseline.AutonomyScorecardReport, failures);
 Evaluate("autonomySoakStability", autonomySoakStability, baseline.AutonomySoakStability, failures);
+Evaluate("autonomyCertificationTailLatency", autonomyCertificationTailLatency, baseline.AutonomyCertificationTailLatency, failures);
+
+var evaluations = new List<PerfEvaluation>
+{
+    new("toolAuthorization", authorization, baseline.ToolAuthorization),
+    new("federationAggregation", federation, baseline.FederationAggregation),
+    new("localCollaboration", collaboration, baseline.LocalCollaboration),
+    new("capabilityGapPlanning", capabilityGapPlanning, baseline.CapabilityGapPlanning),
+    new("capabilityGapRemediation", capabilityGapRemediation, baseline.CapabilityGapRemediation),
+    new("capabilityGapRemediationConcurrent", capabilityGapRemediationConcurrent, baseline.CapabilityGapRemediationConcurrent),
+    new("inboxQuery", inboxQuery, baseline.InboxQuery),
+    new("autonomySloIntegration", autonomySloIntegration, baseline.AutonomySloIntegration),
+    new("readinessScale", readinessScale, baseline.ReadinessScale),
+    new("autonomyScorecardReport", autonomyScorecardReport, baseline.AutonomyScorecardReport),
+    new("autonomySoakStability", autonomySoakStability, baseline.AutonomySoakStability),
+    new("autonomyCertificationTailLatency", autonomyCertificationTailLatency, baseline.AutonomyCertificationTailLatency),
+};
+
+WriteEvidenceIfRequested(evidenceOutputPath, evaluations, failures);
 
 if (failures.Count == 0)
 {
@@ -1031,6 +1053,109 @@ static Task<PerfResult> RunAutonomySoakStabilityScenarioAsync()
         AllocatedBytesPerOp: (afterAlloc - beforeAlloc) / (double)totalIterations));
 }
 
+static PerfResult RunAutonomyCertificationTailLatencyScenario()
+{
+    var playground = new InfernalHierarchy.Host.Tools.AgentPlaygroundService();
+    var scorecard = new InfernalHierarchy.Host.Observability.AutonomyScorecardService(playground);
+
+    SeedRuns("simple_search", "Research", 1200, 1.0);
+    SeedRuns("missing_tool_task", "Research", 2400, 0.95);
+    SeedRuns("multi_step_build", "Build", 4200, 0.90);
+    SeedRuns("partial_failure_recovery", "Build", 2800, 0.85);
+
+    var options = new InfernalHierarchy.Host.Observability.AutonomyScorecardOptions
+    {
+        RunsPerScenario = 50,
+        CertificationMode = true,
+        FailOnInsufficientData = true,
+        RequireStructuredOutcomeContract = true,
+        MinCoverage = 1.0,
+        MinGrade = "B",
+        MinSuccessRatePerScenario = 0.8,
+    };
+
+    const int warmup = 20;
+    const int iterations = 300;
+    for (var i = 0; i < warmup; i++)
+    {
+        _ = scorecard.GenerateReport(options);
+    }
+
+    GC.Collect();
+    GC.WaitForPendingFinalizers();
+    GC.Collect();
+
+    var latencies = new double[iterations];
+    var beforeAlloc = GC.GetTotalAllocatedBytes(true);
+    var sw = Stopwatch.StartNew();
+
+    for (var i = 0; i < iterations; i++)
+    {
+        var iterationSw = Stopwatch.StartNew();
+        var report = scorecard.GenerateReport(options);
+        iterationSw.Stop();
+
+        if (!report.CertificationPassed)
+        {
+            throw new InvalidOperationException("Autonomy certification tail-latency scenario produced an unexpected certification failure.");
+        }
+
+        latencies[i] = iterationSw.Elapsed.TotalMilliseconds;
+    }
+
+    sw.Stop();
+    var afterAlloc = GC.GetTotalAllocatedBytes(true);
+
+    return new PerfResult(
+        LatencyPerOpMs: sw.Elapsed.TotalMilliseconds / iterations,
+        AllocatedBytesPerOp: (afterAlloc - beforeAlloc) / (double)iterations,
+        P95LatencyPerOpMs: CalculatePercentile(latencies, 95),
+        P99LatencyPerOpMs: CalculatePercentile(latencies, 99));
+
+    void SeedRuns(string benchmarkId, string profile, double durationMs, double successRate)
+    {
+        var scenarioId = playground.CreateScenario(
+            name: $"cert-tail-{benchmarkId}",
+            prompt: "perf",
+            toAgentId: "lucifer",
+            timeoutMs: 20000,
+            tags: new Dictionary<string, object>
+            {
+                ["benchmark_id"] = benchmarkId,
+                ["execution_profile"] = profile
+            });
+
+        const int runs = 50;
+        for (var i = 0; i < runs; i++)
+        {
+            var successful = i < Math.Round(runs * successRate);
+            var payload = new Dictionary<string, object>
+            {
+                ["autonomy_outcome_status"] = successful ? "success" : "non_autonomous_terminal",
+                ["autonomy_outcome_reason_code"] = successful ? "success" : "non_autonomous_terminal",
+                ["autonomy_outcome_autonomous_success"] = successful,
+                ["autonomy_outcome_needs_supervisor_intervention"] = false,
+                ["autonomy_outcome_next_action"] = "none",
+                ["autonomy_scope_classification"] = "in_scope_autonomous",
+                ["autonomy_scope_reason_code"] = "in_scope",
+                ["autonomy_out_of_scope"] = false,
+            };
+
+            var response = new InfernalHierarchy.Host.Api.ChatResponse(
+                fromAgentId: "lucifer",
+                toAgentId: "playground",
+                content: successful ? "ok" : "fallback",
+                payload: payload,
+                correlationId: Guid.NewGuid().ToString("N"),
+                causationId: null,
+                receivedUtc: DateTime.UtcNow,
+                durationMs: durationMs + (i % 7));
+
+            _ = playground.AddRun(scenarioId, "perf", "lucifer", 20000, response);
+        }
+    }
+}
+
 static void Evaluate(string name, PerfResult result, PerfBudget budget, List<string> failures)
 {
     if (result.LatencyPerOpMs > budget.MaxLatencyPerOpMs)
@@ -1042,12 +1167,120 @@ static void Evaluate(string name, PerfResult result, PerfBudget budget, List<str
     {
         failures.Add($"{name}: alloc/op {result.AllocatedBytesPerOp:F0}B > budget {budget.MaxAllocatedBytesPerOp:F0}B");
     }
+
+    if (budget.MaxP95LatencyPerOpMs is double maxP95 && result.P95LatencyPerOpMs is double p95 && p95 > maxP95)
+    {
+        failures.Add($"{name}: p95 latency/op {p95:F3}ms > budget {maxP95:F3}ms");
+    }
+
+    if (budget.MaxP99LatencyPerOpMs is double maxP99 && result.P99LatencyPerOpMs is double p99 && p99 > maxP99)
+    {
+        failures.Add($"{name}: p99 latency/op {p99:F3}ms > budget {maxP99:F3}ms");
+    }
 }
 
 static void PrintResult(string name, PerfResult result, PerfBudget budget)
 {
     Console.WriteLine($"[{name}] latency/op={result.LatencyPerOpMs:F3}ms (budget <= {budget.MaxLatencyPerOpMs:F3}ms)");
     Console.WriteLine($"[{name}] alloc/op={result.AllocatedBytesPerOp:F0}B (budget <= {budget.MaxAllocatedBytesPerOp:F0}B)");
+
+    if (budget.MaxP95LatencyPerOpMs is double && result.P95LatencyPerOpMs is double p95)
+    {
+        Console.WriteLine($"[{name}] p95 latency/op={p95:F3}ms (budget <= {budget.MaxP95LatencyPerOpMs:F3}ms)");
+    }
+
+    if (budget.MaxP99LatencyPerOpMs is double && result.P99LatencyPerOpMs is double p99)
+    {
+        Console.WriteLine($"[{name}] p99 latency/op={p99:F3}ms (budget <= {budget.MaxP99LatencyPerOpMs:F3}ms)");
+    }
+}
+
+static void WriteEvidenceIfRequested(string? evidenceOutputPath, IReadOnlyList<PerfEvaluation> evaluations, IReadOnlyList<string> failures)
+{
+    if (string.IsNullOrWhiteSpace(evidenceOutputPath))
+    {
+        return;
+    }
+
+    var fullPath = Path.GetFullPath(evidenceOutputPath);
+    var dir = Path.GetDirectoryName(fullPath);
+    if (!string.IsNullOrWhiteSpace(dir))
+    {
+        Directory.CreateDirectory(dir);
+    }
+
+    var payload = new
+    {
+        generatedAtUtc = DateTime.UtcNow,
+        passed = failures.Count == 0,
+        failures,
+        scenarios = evaluations.Select(e => new
+        {
+            name = e.Name,
+            result = new
+            {
+                latencyPerOpMs = e.Result.LatencyPerOpMs,
+                allocatedBytesPerOp = e.Result.AllocatedBytesPerOp,
+                p95LatencyPerOpMs = e.Result.P95LatencyPerOpMs,
+                p99LatencyPerOpMs = e.Result.P99LatencyPerOpMs,
+            },
+            budget = new
+            {
+                maxLatencyPerOpMs = e.Budget.MaxLatencyPerOpMs,
+                maxAllocatedBytesPerOp = e.Budget.MaxAllocatedBytesPerOp,
+                maxP95LatencyPerOpMs = e.Budget.MaxP95LatencyPerOpMs,
+                maxP99LatencyPerOpMs = e.Budget.MaxP99LatencyPerOpMs,
+            }
+        })
+    };
+
+    File.WriteAllText(fullPath, JsonSerializer.Serialize(payload, new JsonSerializerOptions { WriteIndented = true }));
+    Console.WriteLine($"PERF_EVIDENCE:{fullPath}");
+}
+
+static string? TryReadArgument(string[] args, string name)
+{
+    for (var i = 0; i < args.Length; i++)
+    {
+        var arg = args[i];
+        if (string.Equals(arg, name, StringComparison.OrdinalIgnoreCase))
+        {
+            if (i + 1 < args.Length)
+            {
+                return args[i + 1];
+            }
+
+            return null;
+        }
+
+        var prefix = name + "=";
+        if (arg.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+        {
+            return arg[prefix.Length..];
+        }
+    }
+
+    return null;
+}
+
+static double CalculatePercentile(IReadOnlyList<double> values, int percentile)
+{
+    if (values.Count == 0)
+    {
+        return 0;
+    }
+
+    var ordered = values.OrderBy(x => x).ToArray();
+    var rank = Math.Clamp(percentile, 0, 100) / 100d * (ordered.Length - 1);
+    var lower = (int)Math.Floor(rank);
+    var upper = (int)Math.Ceiling(rank);
+    if (lower == upper)
+    {
+        return ordered[lower];
+    }
+
+    var weight = rank - lower;
+    return ordered[lower] + ((ordered[upper] - ordered[lower]) * weight);
 }
 
 internal sealed class StaticFederationHttpHandler : HttpMessageHandler
@@ -1081,7 +1314,13 @@ internal sealed class StaticFederationHttpHandler : HttpMessageHandler
     }
 }
 
-internal sealed record PerfResult(double LatencyPerOpMs, double AllocatedBytesPerOp);
+internal sealed record PerfResult(
+    double LatencyPerOpMs,
+    double AllocatedBytesPerOp,
+    double? P95LatencyPerOpMs = null,
+    double? P99LatencyPerOpMs = null);
+
+internal sealed record PerfEvaluation(string Name, PerfResult Result, PerfBudget Budget);
 
 [SuppressMessage("Performance", "CA1812:Avoid uninstantiated internal classes", Justification = "Instantiated by System.Text.Json during perf-baseline deserialization.")]
 internal sealed class PerfBaseline
@@ -1097,12 +1336,15 @@ internal sealed class PerfBaseline
     public PerfBudget ReadinessScale { get; set; } = new();
     public PerfBudget AutonomyScorecardReport { get; set; } = new();
     public PerfBudget AutonomySoakStability { get; set; } = new();
+    public PerfBudget AutonomyCertificationTailLatency { get; set; } = new();
 }
 
 internal sealed class PerfBudget
 {
     public double MaxLatencyPerOpMs { get; set; }
     public double MaxAllocatedBytesPerOp { get; set; }
+    public double? MaxP95LatencyPerOpMs { get; set; }
+    public double? MaxP99LatencyPerOpMs { get; set; }
 }
 
 internal sealed class InlineCollaborationBus : IMessageBus

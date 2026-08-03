@@ -42,5 +42,11 @@
   "autonomySoakStability": {
     "maxLatencyPerOpMs": 3.0,
     "maxAllocatedBytesPerOp": 60000
+  },
+  "autonomyCertificationTailLatency": {
+    "maxLatencyPerOpMs": 3.0,
+    "maxAllocatedBytesPerOp": 70000,
+    "maxP95LatencyPerOpMs": 5.0,
+    "maxP99LatencyPerOpMs": 8.0
   }
 }

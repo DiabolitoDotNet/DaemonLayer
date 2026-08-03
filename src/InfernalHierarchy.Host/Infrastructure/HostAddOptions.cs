@@ -63,8 +63,19 @@ internal static class HostAddOptions
         builder.Services.AddOptions<SloGateOptions>()
             .Bind(builder.Configuration.GetSection("SloGates"))
             .ValidateOnStart();
+        builder.Services.AddOptions<AutonomyScorecardOptions>()
+            .Bind(builder.Configuration.GetSection("AutonomyScorecard"))
+            .ValidateOnStart();
         builder.Services.AddOptions<AutonomyReadinessOptions>()
             .Bind(builder.Configuration.GetSection("AutonomyReadiness"))
+            .PostConfigure(options =>
+            {
+                // .NET configuration binding can merge array defaults with configured entries.
+                options.CriticalCapabilities = options.CriticalCapabilities
+                    .Where(capability => !string.IsNullOrWhiteSpace(capability))
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToArray();
+            })
             .ValidateOnStart();
     }
 

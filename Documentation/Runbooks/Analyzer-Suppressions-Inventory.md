@@ -18,6 +18,8 @@ Review cadence: every release cut
 | ReAct options binding | src/InfernalHierarchy.Agents/ReAct/ReActOptions.cs | SuppressMessage entries | Options/config binding shape |
 | Config arrays | src/InfernalHierarchy.Core/Configuration/AgentSkillAssignmentOptions.cs | CA1819 | Configuration array binding ergonomics |
 | Config arrays | src/InfernalHierarchy.Core/Configuration/MessageBusOptions.cs | CA1819 | Configuration array binding ergonomics |
+| Result API ergonomics | src/InfernalHierarchy.Core/Results/Result.cs | CA1000 | Intentional static generic factories for Result<T> API consistency |
+| Federated endpoint model | src/InfernalHierarchy.Core/Entities/FederatedInstance.cs | CA1056 | BaseUrl is persisted/configured as string and validated at transport boundaries |
 | Incident response options | src/InfernalHierarchy.Host/Configuration/AutonomousIncidentResponseOptions.cs | CA1819 | Configuration array binding ergonomics |
 | Autonomy readiness options | src/InfernalHierarchy.Host/Configuration/AutonomyReadinessOptions.cs | CA1819 | Configuration array binding ergonomics |
 | Persona/migration filename normalization | src/InfernalHierarchy.Host/Migration/AgentMigrationService.cs | CA1308 pragma | Lowercase filename normalization is intentional |

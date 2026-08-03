@@ -34,7 +34,14 @@ jobs:
         run: dotnet build InfernalHierarchy.sln -c Release --no-restore -p:RunAnalyzersDuringBuild=true -p:EnforceCriticalWarningsAsErrors=true
 
       - name: Performance Gate
-        run: dotnet run --project tools/InfernalHierarchy.PerfGate/InfernalHierarchy.PerfGate.csproj -c Release
+        run: dotnet run --project tools/InfernalHierarchy.PerfGate/InfernalHierarchy.PerfGate.csproj -c Release -- --evidence-out artifacts/perf/perf-evidence.json
+
+      - name: Upload Perf Evidence Artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: perf-evidence
+          path: artifacts/perf/perf-evidence.json
 
       - name: Fast Tests Core
         run: dotnet test tests/InfernalHierarchy.Core.Tests/InfernalHierarchy.Core.Tests.csproj -c Release --no-build --logger "trx;LogFileName=core-fast.trx"
