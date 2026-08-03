@@ -1,5 +1,5 @@
 {
-  "baselineVersion": "2026-08-03.a1010.2",
+  "baselineVersion": "2026-08-03.a1110",
   "toolAuthorization": {
     "maxLatencyPerOpMs": 2.0,
     "maxAllocatedBytesPerOp": 5000
@@ -36,6 +36,10 @@
     "maxLatencyPerOpMs": 8.0,
     "maxAllocatedBytesPerOp": 150000
   },
+  "autonomyDependencyDegradedModes": {
+    "maxLatencyPerOpMs": 5.0,
+    "maxAllocatedBytesPerOp": 100000
+  },
   "readinessScale": {
     "maxLatencyPerOpMs": 2.5,
     "maxAllocatedBytesPerOp": 35000
@@ -53,5 +57,20 @@
     "maxAllocatedBytesPerOp": 70000,
     "maxP95LatencyPerOpMs": 5.0,
     "maxP99LatencyPerOpMs": 8.0
+  },
+  "trendComparison": {
+    "enabled": true,
+    "referenceEvidencePath": "tools/InfernalHierarchy.PerfGate/perf-certified-reference.json",
+    "maxLatencyDriftRatio": 0.75,
+    "maxAllocationDriftRatio": 0.75,
+    "minimumComparableLatencyMs": 0.05,
+    "minimumComparableAllocatedBytes": 1024,
+    "scenarios": [
+      "autonomySloIntegration",
+      "autonomyInScopeCompliance",
+      "autonomyDependencyDegradedModes",
+      "autonomySoakStability",
+      "autonomyCertificationTailLatency"
+    ]
   }
 }

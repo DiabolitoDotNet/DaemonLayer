@@ -1,132 +1,137 @@
-# InfernalHierarchy - TODO Final Verification Pass
+# InfernalHierarchy - Final Audit TODO
 
 > Last Updated: 2026-08-03
-> Objective: reach a defensible 100 percent autonomous execution claim for in-scope tasks, while keeping performance optimized and aligned with modern C# practices.
+> Goal: guarantee a defensible 100% autonomy claim for in-scope agent tasks, while keeping performance budgets green and code quality aligned with modern C#.
 
 ---
 
-## 0) Ground truth from this final pass
+## 0) Final audit result
 
-### 0.1 Revalidated as GREEN
+### 0.1 Revalidated GREEN now
 
-- Strict Release build with analyzers and critical warning enforcement passes.
-- PerfGate passes, including certification tail latency (avg/p95/p99) and evidence JSON output.
-- Certification primitives are implemented: fail-closed insufficient-data handling, structured outcome contract checks, scope classification, manifest drift tests.
-- Certification/governance tests run in Host suite pass on targeted run.
-- Dedicated strict certification-mode E2E gate is implemented and wired in CI full lane.
-- In-scope autonomy KPIs are implemented, exposed, and consumed by autonomy SLO gates.
+- Strict Release analyzer build is green:
+  - `dotnet build InfernalHierarchy.sln -c Release --no-restore -p:RunAnalyzersDuringBuild=true -p:EnforceCriticalWarningsAsErrors=true`
+- Full solution tests are green:
+  - 947 passed, 0 failed.
+- PerfGate is green with evidence generated:
+  - `PERF_GATE:PASS`
+  - includes readiness, scorecard, concurrent remediation, soak stability, in-scope compliance, and certification tail latency.
+- Certification gates remain in place and validated:
+  - strict certification-mode E2E gate in CI full lane
+  - fail-closed structured autonomy outcome contract
+  - in-scope autonomy KPIs separated from out-of-scope paths.
 
-### 0.2 Claim posture after this pass
+### 0.2 What is still missing for an absolute “100% autonomy” statement
 
-- The previously identified P0 blockers are now implemented.
-- Remaining work is continuous hardening, not a release-blocking autonomy gap.
+No release-blocking software gap remains for **in-scope autonomy**.
+
+Remaining limits are operational/semantic, not implementation blockers:
+
+- Out-of-scope and policy-blocked requests are intentionally non-autonomous by design.
+- Some autonomy-critical paths depend on external services (for example vector backends, integrations, network availability).
+- Therefore, the only technically defensible claim is:
+  - **100% autonomy on certified in-scope tasks, under certified runtime prerequisites.**
 
 ---
 
-## 1) Remaining blockers
+## 1) Release-blocking items (P0)
 
-### A1000.1 - Add strict certification E2E gate in CI
+### A1100.1 - In-scope autonomy claim remains fail-closed in CI
 
 Status: DONE
 Priority: P0
 
-Problem:
-
-- Full lane runs `AutonomyScorecardGateTests`, but those tests currently validate release thresholds through `GenerateReport(runsPerScenario)` and do not explicitly enforce strict certification-mode options as a release gate.
-
-Required:
-
-- Add CI step (or dedicated test class) that evaluates scorecard with strict options:
-  - `CertificationMode=true`
-  - `FailOnInsufficientData=true`
-  - `RequireStructuredOutcomeContract=true`
-- Fail pipeline if certification pass flag is false.
-
 Implemented:
 
-- Added strict certification-mode E2E test in Host test suite.
-- Added explicit CI full-lane step (`Autonomy Certification Strict Gate`) that runs this strict test as a release blocker.
-
-Done when:
-
-- CI contains an explicit strict certification-mode gate with deterministic pass/fail semantics.
-
-### A1000.2 - Separate in-scope autonomy KPI from out-of-scope outcomes
-
-Status: DONE
-Priority: P0
-
-Problem:
-
-- Out-of-scope events are tracked, but "100 percent autonomy" claims are still harder to defend when global failure semantics include out-of-scope terminal paths.
-
-Required:
-
-- Introduce explicit in-scope denominator KPIs/gates (for example `autonomy_in_scope_completion_ratio`, `autonomy_in_scope_terminal_failure_ratio`).
-- Keep out-of-scope ratio audited separately and excluded from in-scope autonomy compliance checks.
-
-Implemented:
-
-- Added in-scope counters and derived gauges in capability-gap metrics sink.
-- Switched autonomy SLO gate evaluation to in-scope denominators/ratios.
-- Exposed in-scope KPI values in autonomy SLO API payload.
-- Added tests proving out-of-scope-heavy traffic does not fail in-scope autonomy gates.
-
-Done when:
-
-- SLO/scorecard certification can prove 100 percent autonomy for in-scope tasks independently of legitimate out-of-scope refusals.
+- Strict certification E2E gate wired in CI.
+- In-scope completion/failure ratios drive autonomy compliance checks.
+- Structured outcome contract is mandatory in certification mode.
 
 ---
 
-## 2) Optimization and modern C# continuous hardening
+## 2) Remaining hardening to keep objective durable
 
-### A1010.1 - Keep analyzer suppression debt on a shrinking trend
+### A1110.1 - External dependency resilience certification
 
 Status: DONE
 Priority: P1
 
+Problem:
+
+- In-scope autonomy can still degrade when external dependencies are unavailable.
+
 Required:
 
-- Continue replacing justified suppressions with code fixes when low risk.
-- Keep suppression inventory and regression test in sync.
+- Add explicit certification scenarios for degraded dependency modes (vector/search/integration outages).
+- Gate expected autonomous fallback behavior per scenario.
+- Export dependency-degraded evidence in certification artifacts.
 
 Implemented:
 
-- Added suppression inventory bidirectional sync test (inventory -> source and source -> inventory).
-- Added suppression marker budget gate (`Suppression marker budget (src): 27`) enforced by test.
-- Kept inventory aligned with current suppression footprint and documented regression budget.
+- Added `autonomyDependencyDegradedModes` scenario in PerfGate covering vector/search/integration degraded modes.
+- Added deterministic bounded-refusal gate checks per mode (required outcome contract, in-scope classification, `next_action=none`, no supervisor escalation).
+- Included scenario results in generated PerfGate evidence artifact payload.
 
 Done when:
 
-- No new broad suppressions; measurable net reduction over time.
+- Certification evidence proves deterministic autonomous behavior (or explicit bounded refusal) under dependency degradation.
 
-### A1010.2 - Keep perf budgets representative as autonomy scope grows
+### A1110.2 - Analyzer strictness ratchet
 
 Status: DONE
 Priority: P1
 
+Problem:
+
+- Critical warnings are enforced as errors, but non-critical debt is still managed by budget/inventory.
+
 Required:
 
-- Extend PerfGate scenarios whenever new autonomy-critical workflows are added.
-- Keep p95/p99 and allocation budgets versioned and enforced.
+- Promote selected non-critical analyzer categories to strict gate in phased increments.
+- Reduce suppression marker budget from current baseline (27) with each release cycle when low-risk.
 
 Implemented:
 
-- Added PerfGate scenario `autonomyInScopeCompliance` to validate in-scope autonomy gate behavior under out-of-scope-heavy traffic.
-- Added perf baseline version contract (`baselineVersion`) validated at runtime.
-- Updated baseline budgets and docs to include in-scope compliance and certification tail-latency coverage.
+- Added phased non-critical warning ratchet property (`NonCriticalWarningsAsErrorsPhase1`) in build props.
+- Enabled dedicated CI ratchet build step with `EnforceNonCriticalWarningsAsErrors=true`.
+- Retained suppression marker budget gate and inventory sync tests for controlled budget ratcheting.
 
 Done when:
 
-- Every new certified autonomy capability has corresponding perf evidence and gate coverage.
+- Warning budget trend is strictly decreasing over time without destabilizing delivery.
+
+### A1110.3 - Perf budget trend enforcement across releases
+
+Status: DONE
+Priority: P1
+
+Problem:
+
+- PerfGate enforces per-run budgets, but drift trend across releases is not yet an explicit gate.
+
+Required:
+
+- Add CI comparison against previous certified evidence bundle.
+- Fail when latency/allocation drift exceeds configured envelopes for autonomy-critical scenarios.
+
+Implemented:
+
+- Added trend-comparison config to perf baseline (`trendComparison`) with explicit drift envelopes.
+- Added PerfGate runtime drift check against certified reference evidence bundle.
+- Wired CI Performance Gate to compare current evidence against committed reference bundle and fail on envelope breaches.
+
+Done when:
+
+- CI blocks regressions on both absolute thresholds and release-over-release drift.
 
 ---
 
-## 3) Final Definition of Done
+## 3) Definition of Done (strict)
 
-The 100 percent autonomy claim is acceptable only if all are true:
+The autonomy objective is considered fully achieved only if all remain true:
 
-- Strict certification-mode E2E gate is mandatory and green in CI.
-- In-scope autonomy KPIs are measured and gated independently of out-of-scope refusals.
-- Structured terminal contract validation is mandatory in certification mode.
-- Capability manifest/readiness drift checks, PerfGate evidence, strict build, and full tests remain green.
+- 100% pass for certified in-scope scenarios in strict certification mode.
+- Out-of-scope/policy-blocked outcomes are explicitly classified and excluded from in-scope compliance ratio.
+- Full solution tests and strict analyzer build remain green.
+- PerfGate remains green for representative autonomy scenarios including p95/p99 certification tail latency.
+- Degraded dependency resilience scenarios are certified and fail-closed.

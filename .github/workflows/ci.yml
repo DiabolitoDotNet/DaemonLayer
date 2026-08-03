@@ -33,8 +33,11 @@ jobs:
       - name: Analyzer Build
         run: dotnet build InfernalHierarchy.sln -c Release --no-restore -p:RunAnalyzersDuringBuild=true -p:EnforceCriticalWarningsAsErrors=true
 
+      - name: Analyzer Ratchet Build
+        run: dotnet build InfernalHierarchy.sln -c Release --no-restore -p:RunAnalyzersDuringBuild=true -p:EnforceCriticalWarningsAsErrors=true -p:EnforceNonCriticalWarningsAsErrors=true
+
       - name: Performance Gate
-        run: dotnet run --project tools/InfernalHierarchy.PerfGate/InfernalHierarchy.PerfGate.csproj -c Release -- --evidence-out artifacts/perf/perf-evidence.json
+        run: dotnet run --project tools/InfernalHierarchy.PerfGate/InfernalHierarchy.PerfGate.csproj -c Release -- --evidence-out artifacts/perf/perf-evidence.json --compare-evidence tools/InfernalHierarchy.PerfGate/perf-certified-reference.json
 
       - name: Upload Perf Evidence Artifact
         if: always()

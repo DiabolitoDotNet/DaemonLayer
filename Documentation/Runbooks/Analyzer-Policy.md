@@ -19,6 +19,12 @@ Strict parity build (same intent as CI):
 dotnet build InfernalHierarchy.sln -c Release --no-restore -p:RunAnalyzersDuringBuild=true -p:EnforceCriticalWarningsAsErrors=true
 ```
 
+Ratchet parity build (critical + phased non-critical warnings as errors):
+
+```powershell
+dotnet build InfernalHierarchy.sln -c Release --no-restore -p:RunAnalyzersDuringBuild=true -p:EnforceCriticalWarningsAsErrors=true -p:EnforceNonCriticalWarningsAsErrors=true
+```
+
 Fast local iteration (explicit opt-out, non-gating):
 
 ```powershell

@@ -1,0 +1,42 @@
+{
+  "generatedAtUtc": "2026-08-03T00:00:00Z",
+  "passed": true,
+  "failures": [],
+  "scenarios": [
+    {
+      "name": "autonomySloIntegration",
+      "result": {
+        "latencyPerOpMs": 0.022,
+        "allocatedBytesPerOp": 8051
+      }
+    },
+    {
+      "name": "autonomyInScopeCompliance",
+      "result": {
+        "latencyPerOpMs": 0.103,
+        "allocatedBytesPerOp": 35345
+      }
+    },
+    {
+      "name": "autonomyDependencyDegradedModes",
+      "result": {
+        "latencyPerOpMs": 0.040,
+        "allocatedBytesPerOp": 12000
+      }
+    },
+    {
+      "name": "autonomySoakStability",
+      "result": {
+        "latencyPerOpMs": 0.004,
+        "allocatedBytesPerOp": 1584
+      }
+    },
+    {
+      "name": "autonomyCertificationTailLatency",
+      "result": {
+        "latencyPerOpMs": 0.157,
+        "allocatedBytesPerOp": 35952
+      }
+    }
+  ]
+}

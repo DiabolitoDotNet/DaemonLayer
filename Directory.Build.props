@@ -13,7 +13,9 @@
     <Nullable>enable</Nullable>
     <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
     <CriticalWarningsAsErrors>CS8600;CS8602;CS8603;CS8604;CA2000;CA2016;CA2100</CriticalWarningsAsErrors>
+    <NonCriticalWarningsAsErrorsPhase1>CA1056;CA1308</NonCriticalWarningsAsErrorsPhase1>
     <WarningsAsErrors Condition="'$(EnforceCriticalWarningsAsErrors)' == 'true'">$(WarningsAsErrors);$(CriticalWarningsAsErrors)</WarningsAsErrors>
+    <WarningsAsErrors Condition="'$(EnforceNonCriticalWarningsAsErrors)' == 'true'">$(WarningsAsErrors);$(NonCriticalWarningsAsErrorsPhase1)</WarningsAsErrors>
     
     <!-- Generate XML documentation -->
     <GenerateDocumentationFile>true</GenerateDocumentationFile>

@@ -14,6 +14,8 @@ This folder is the "structured documentation set" for InfernalHierarchy / Daemon
 	- `autonomySoakStability`
 	- `autonomyInScopeCompliance`
 	- `autonomyCertificationTailLatency`
+	- `autonomyDependencyDegradedModes`
+- Performance gate now also enforces release-over-release drift envelopes against a certified reference evidence bundle.
 - Strict Release build with analyzer enforcement is currently green.
 
 The repository root already contains detailed topic docs (security, observability, advanced features, etc.). This folder provides a cohesive, top-down view and points you to the right deeper document.

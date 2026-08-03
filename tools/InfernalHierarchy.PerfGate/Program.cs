@@ -21,8 +21,9 @@ using InfernalHierarchy.Tools.Tools.Notifications;
 var baselinePath = Path.Combine(AppContext.BaseDirectory, "perf-baseline.json");
 var perfGatePassToken = "PERF_GATE:PASS";
 var perfGateFailToken = "PERF_GATE:FAIL";
-var expectedBaselineVersion = "2026-08-03.a1010.2";
+var expectedBaselineVersion = "2026-08-03.a1110";
 var evidenceOutputPath = TryReadArgument(args, "--evidence-out");
+var compareEvidencePath = TryReadArgument(args, "--compare-evidence");
 if (!File.Exists(baselinePath))
 {
     baselinePath = Path.Combine(Directory.GetCurrentDirectory(), "perf-baseline.json");
@@ -58,6 +59,7 @@ var capabilityGapRemediationConcurrent = await RunCapabilityGapRemediationConcur
 var inboxQuery = await RunInboxQueryToolScenarioAsync().ConfigureAwait(false);
 var autonomySloIntegration = await RunAutonomySloIntegrationScenarioAsync().ConfigureAwait(false);
 var autonomyInScopeCompliance = await RunAutonomyInScopeComplianceScenarioAsync().ConfigureAwait(false);
+var autonomyDependencyDegradedModes = RunAutonomyDependencyDegradedModesScenario();
 var readinessScale = await RunReadinessScaleScenarioAsync().ConfigureAwait(false);
 var autonomyScorecardReport = RunAutonomyScorecardReportScenario();
 var autonomySoakStability = await RunAutonomySoakStabilityScenarioAsync().ConfigureAwait(false);
@@ -72,6 +74,7 @@ PrintResult("capabilityGapRemediationConcurrent", capabilityGapRemediationConcur
 PrintResult("inboxQuery", inboxQuery, baseline.InboxQuery);
 PrintResult("autonomySloIntegration", autonomySloIntegration, baseline.AutonomySloIntegration);
 PrintResult("autonomyInScopeCompliance", autonomyInScopeCompliance, baseline.AutonomyInScopeCompliance);
+PrintResult("autonomyDependencyDegradedModes", autonomyDependencyDegradedModes, baseline.AutonomyDependencyDegradedModes);
 PrintResult("readinessScale", readinessScale, baseline.ReadinessScale);
 PrintResult("autonomyScorecardReport", autonomyScorecardReport, baseline.AutonomyScorecardReport);
 PrintResult("autonomySoakStability", autonomySoakStability, baseline.AutonomySoakStability);
@@ -87,6 +90,7 @@ Evaluate("capabilityGapRemediationConcurrent", capabilityGapRemediationConcurren
 Evaluate("inboxQuery", inboxQuery, baseline.InboxQuery, failures);
 Evaluate("autonomySloIntegration", autonomySloIntegration, baseline.AutonomySloIntegration, failures);
 Evaluate("autonomyInScopeCompliance", autonomyInScopeCompliance, baseline.AutonomyInScopeCompliance, failures);
+Evaluate("autonomyDependencyDegradedModes", autonomyDependencyDegradedModes, baseline.AutonomyDependencyDegradedModes, failures);
 Evaluate("readinessScale", readinessScale, baseline.ReadinessScale, failures);
 Evaluate("autonomyScorecardReport", autonomyScorecardReport, baseline.AutonomyScorecardReport, failures);
 Evaluate("autonomySoakStability", autonomySoakStability, baseline.AutonomySoakStability, failures);
@@ -103,11 +107,14 @@ var evaluations = new List<PerfEvaluation>
     new("inboxQuery", inboxQuery, baseline.InboxQuery),
     new("autonomySloIntegration", autonomySloIntegration, baseline.AutonomySloIntegration),
     new("autonomyInScopeCompliance", autonomyInScopeCompliance, baseline.AutonomyInScopeCompliance),
+    new("autonomyDependencyDegradedModes", autonomyDependencyDegradedModes, baseline.AutonomyDependencyDegradedModes),
     new("readinessScale", readinessScale, baseline.ReadinessScale),
     new("autonomyScorecardReport", autonomyScorecardReport, baseline.AutonomyScorecardReport),
     new("autonomySoakStability", autonomySoakStability, baseline.AutonomySoakStability),
     new("autonomyCertificationTailLatency", autonomyCertificationTailLatency, baseline.AutonomyCertificationTailLatency),
 };
+
+EvaluateTrendComparison(compareEvidencePath, baseline.TrendComparison, evaluations, failures);
 
 WriteEvidenceIfRequested(evidenceOutputPath, evaluations, failures);
 
@@ -1265,6 +1272,184 @@ static PerfResult RunAutonomyCertificationTailLatencyScenario()
     }
 }
 
+static PerfResult RunAutonomyDependencyDegradedModesScenario()
+{
+    const int warmup = 50;
+    const int iterations = 800;
+
+    var modes = new[]
+    {
+        "vector_backend_unavailable",
+        "search_provider_unavailable",
+        "integration_endpoint_unavailable"
+    };
+
+    for (var i = 0; i < warmup; i++)
+    {
+        _ = BuildDependencyDegradedOutcomePayload(modes[i % modes.Length]);
+    }
+
+    GC.Collect();
+    GC.WaitForPendingFinalizers();
+    GC.Collect();
+
+    var beforeAlloc = GC.GetTotalAllocatedBytes(true);
+    var sw = Stopwatch.StartNew();
+
+    for (var i = 0; i < iterations; i++)
+    {
+        var reasonCode = modes[i % modes.Length];
+        var payload = BuildDependencyDegradedOutcomePayload(reasonCode);
+
+        if (!HasRequiredOutcomeContract(payload, out var missingKeys))
+        {
+            throw new InvalidOperationException($"Degraded dependency scenario missing required contract keys: {string.Join(",", missingKeys)}");
+        }
+
+        if (!string.Equals(payload["autonomy_outcome_status"]?.ToString(), "autonomy_blocked", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("Degraded dependency scenario produced an unexpected outcome status.");
+        }
+
+        if (!string.Equals(payload["autonomy_scope_classification"]?.ToString(), "in_scope_autonomous", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("Degraded dependency scenario must remain in-scope for bounded refusal accounting.");
+        }
+
+        if (payload.TryGetValue("autonomy_out_of_scope", out var outOfScopeRaw)
+            && outOfScopeRaw is bool outOfScope
+            && outOfScope)
+        {
+            throw new InvalidOperationException("Degraded dependency scenario must not be classified out-of-scope.");
+        }
+
+        if (!string.Equals(payload["autonomy_outcome_next_action"]?.ToString(), "none", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("Degraded dependency scenario must produce bounded refusal with next_action=none.");
+        }
+    }
+
+    sw.Stop();
+    var afterAlloc = GC.GetTotalAllocatedBytes(true);
+
+    return new PerfResult(
+        LatencyPerOpMs: sw.Elapsed.TotalMilliseconds / iterations,
+        AllocatedBytesPerOp: (afterAlloc - beforeAlloc) / (double)iterations);
+
+    static Dictionary<string, object> BuildDependencyDegradedOutcomePayload(string reasonCode)
+    {
+        return new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["dependency_mode"] = "degraded",
+            ["autonomy_outcome_status"] = "autonomy_blocked",
+            ["autonomy_outcome_reason_code"] = reasonCode,
+            ["autonomy_outcome_autonomous_success"] = false,
+            ["autonomy_outcome_needs_supervisor_intervention"] = false,
+            ["autonomy_outcome_next_action"] = "none",
+            ["autonomy_scope_classification"] = "in_scope_autonomous",
+            ["autonomy_scope_reason_code"] = "in_scope_dependency_degraded",
+            ["autonomy_out_of_scope"] = false
+        };
+    }
+
+    static bool HasRequiredOutcomeContract(Dictionary<string, object> payload, out IReadOnlyList<string> missingKeys)
+    {
+        var requiredKeys = new[]
+        {
+            "autonomy_outcome_status",
+            "autonomy_outcome_reason_code",
+            "autonomy_outcome_autonomous_success",
+            "autonomy_outcome_needs_supervisor_intervention",
+            "autonomy_outcome_next_action"
+        };
+
+        var missing = new List<string>();
+        foreach (var key in requiredKeys)
+        {
+            if (!payload.TryGetValue(key, out var value) || value is null || string.IsNullOrWhiteSpace(value.ToString()))
+            {
+                missing.Add(key);
+            }
+        }
+
+        missingKeys = missing;
+        return missing.Count == 0;
+    }
+}
+
+static void EvaluateTrendComparison(
+    string? compareEvidencePath,
+    PerfTrendComparison trend,
+    IReadOnlyList<PerfEvaluation> evaluations,
+    List<string> failures)
+{
+    if (!trend.Enabled)
+    {
+        return;
+    }
+
+    var referencePath = string.IsNullOrWhiteSpace(compareEvidencePath)
+        ? trend.ReferenceEvidencePath
+        : compareEvidencePath;
+
+    if (string.IsNullOrWhiteSpace(referencePath))
+    {
+        failures.Add("trendComparison: enabled but no reference evidence path was provided.");
+        return;
+    }
+
+    var fullReferencePath = Path.GetFullPath(referencePath);
+    if (!File.Exists(fullReferencePath))
+    {
+        failures.Add($"trendComparison: reference evidence not found at '{fullReferencePath}'.");
+        return;
+    }
+
+    var reference = JsonSerializer.Deserialize<PerfEvidenceBundle>(
+        File.ReadAllText(fullReferencePath),
+        new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+
+    if (reference?.Scenarios is null || reference.Scenarios.Count == 0)
+    {
+        failures.Add($"trendComparison: reference evidence '{fullReferencePath}' has no scenarios.");
+        return;
+    }
+
+    var currentByName = evaluations.ToDictionary(x => x.Name, StringComparer.OrdinalIgnoreCase);
+    var referenceByName = reference.Scenarios.ToDictionary(x => x.Name, StringComparer.OrdinalIgnoreCase);
+
+    foreach (var scenarioName in trend.Scenarios)
+    {
+        if (!currentByName.TryGetValue(scenarioName, out var current))
+        {
+            failures.Add($"trendComparison: current run missing scenario '{scenarioName}'.");
+            continue;
+        }
+
+        if (!referenceByName.TryGetValue(scenarioName, out var previous))
+        {
+            failures.Add($"trendComparison: reference evidence missing scenario '{scenarioName}'.");
+            continue;
+        }
+
+        var previousLatency = Math.Max(previous.Result.LatencyPerOpMs, trend.MinimumComparableLatencyMs);
+        var latencyDrift = (current.Result.LatencyPerOpMs - previousLatency) / previousLatency;
+        if (latencyDrift > trend.MaxLatencyDriftRatio)
+        {
+            failures.Add(
+                $"trendComparison:{scenarioName}: latency drift {latencyDrift:P1} exceeds envelope {trend.MaxLatencyDriftRatio:P1} (current={current.Result.LatencyPerOpMs:F3}ms, reference={previous.Result.LatencyPerOpMs:F3}ms)");
+        }
+
+        var previousAlloc = Math.Max(previous.Result.AllocatedBytesPerOp, trend.MinimumComparableAllocatedBytes);
+        var allocDrift = (current.Result.AllocatedBytesPerOp - previousAlloc) / previousAlloc;
+        if (allocDrift > trend.MaxAllocationDriftRatio)
+        {
+            failures.Add(
+                $"trendComparison:{scenarioName}: alloc drift {allocDrift:P1} exceeds envelope {trend.MaxAllocationDriftRatio:P1} (current={current.Result.AllocatedBytesPerOp:F0}B, reference={previous.Result.AllocatedBytesPerOp:F0}B)");
+        }
+    }
+}
+
 static void Evaluate(string name, PerfResult result, PerfBudget budget, List<string> failures)
 {
     if (result.LatencyPerOpMs > budget.MaxLatencyPerOpMs)
@@ -1444,10 +1629,12 @@ internal sealed class PerfBaseline
     public PerfBudget InboxQuery { get; set; } = new();
     public PerfBudget AutonomySloIntegration { get; set; } = new();
     public PerfBudget AutonomyInScopeCompliance { get; set; } = new();
+    public PerfBudget AutonomyDependencyDegradedModes { get; set; } = new();
     public PerfBudget ReadinessScale { get; set; } = new();
     public PerfBudget AutonomyScorecardReport { get; set; } = new();
     public PerfBudget AutonomySoakStability { get; set; } = new();
     public PerfBudget AutonomyCertificationTailLatency { get; set; } = new();
+    public PerfTrendComparison TrendComparison { get; set; } = new();
 }
 
 internal sealed class PerfBudget
@@ -1456,6 +1643,37 @@ internal sealed class PerfBudget
     public double MaxAllocatedBytesPerOp { get; set; }
     public double? MaxP95LatencyPerOpMs { get; set; }
     public double? MaxP99LatencyPerOpMs { get; set; }
+}
+
+internal sealed class PerfTrendComparison
+{
+    public bool Enabled { get; set; }
+    public string ReferenceEvidencePath { get; set; } = string.Empty;
+    public double MaxLatencyDriftRatio { get; set; } = 0.50;
+    public double MaxAllocationDriftRatio { get; set; } = 0.50;
+    public double MinimumComparableLatencyMs { get; set; } = 0.05;
+    public double MinimumComparableAllocatedBytes { get; set; } = 1024;
+    public string[] Scenarios { get; set; } = [];
+}
+
+[SuppressMessage("Performance", "CA1812:Avoid uninstantiated internal classes", Justification = "Instantiated by System.Text.Json when reading reference perf evidence.")]
+internal sealed class PerfEvidenceBundle
+{
+    public List<PerfEvidenceScenario> Scenarios { get; set; } = [];
+}
+
+[SuppressMessage("Performance", "CA1812:Avoid uninstantiated internal classes", Justification = "Instantiated by System.Text.Json when reading reference perf evidence.")]
+internal sealed class PerfEvidenceScenario
+{
+    public string Name { get; set; } = string.Empty;
+    public PerfEvidenceResult Result { get; set; } = new();
+}
+
+[SuppressMessage("Performance", "CA1812:Avoid uninstantiated internal classes", Justification = "Instantiated by System.Text.Json when reading reference perf evidence.")]
+internal sealed class PerfEvidenceResult
+{
+    public double LatencyPerOpMs { get; set; }
+    public double AllocatedBytesPerOp { get; set; }
 }
 
 internal sealed class InlineCollaborationBus : IMessageBus
