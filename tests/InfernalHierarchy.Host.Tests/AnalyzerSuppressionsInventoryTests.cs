@@ -6,6 +6,8 @@ namespace InfernalHierarchy.Host.Tests;
 
 public sealed class AnalyzerSuppressionsInventoryTests
 {
+    private const string SuppressionPattern = "SuppressMessage\\(|#pragma warning disable";
+
     [Fact]
     public void SuppressionInventory_ShouldListAllSourceFilesWithSuppressions()
     {
@@ -17,7 +19,7 @@ public sealed class AnalyzerSuppressionsInventoryTests
         var fileEntries = ParseInventoryFileColumn(inventoryText)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-        var suppressionPattern = new Regex("SuppressMessage\\(|#pragma warning disable", RegexOptions.Compiled);
+        var suppressionPattern = new Regex(SuppressionPattern, RegexOptions.Compiled);
         var suppressedFiles = Directory
             .EnumerateFiles(Path.Combine(repoRoot, "src"), "*.cs", SearchOption.AllDirectories)
             .Where(path => suppressionPattern.IsMatch(File.ReadAllText(path)))
@@ -29,6 +31,31 @@ public sealed class AnalyzerSuppressionsInventoryTests
         {
             fileEntries.Should().Contain(file, $"suppression inventory must track {file}");
         }
+
+        foreach (var file in fileEntries)
+        {
+            suppressedFiles.Should().Contain(file, $"suppression inventory must not keep stale entries for {file}");
+        }
+    }
+
+    [Fact]
+    public void SuppressionInventory_ShouldEnforceMarkerBudget()
+    {
+        var repoRoot = FindRepoRoot();
+        var inventoryPath = Path.Combine(repoRoot, "Documentation", "Runbooks", "Analyzer-Suppressions-Inventory.md");
+        File.Exists(inventoryPath).Should().BeTrue("suppression inventory must exist");
+
+        var inventoryText = File.ReadAllText(inventoryPath);
+        var budget = ParseSuppressionBudget(inventoryText);
+
+        var suppressionPattern = new Regex(SuppressionPattern, RegexOptions.Compiled);
+        var markerCount = Directory
+            .EnumerateFiles(Path.Combine(repoRoot, "src"), "*.cs", SearchOption.AllDirectories)
+            .Select(path => suppressionPattern.Count(File.ReadAllText(path)))
+            .Sum();
+
+        markerCount.Should().BeLessOrEqualTo(budget,
+            $"suppression marker count in src must stay under budget ({budget}) and trend down over time");
     }
 
     private static IEnumerable<string> ParseInventoryFileColumn(string markdown)
@@ -73,4 +100,15 @@ public sealed class AnalyzerSuppressionsInventoryTests
 
     private static string ToRepoRelative(string repoRoot, string fullPath)
         => Path.GetRelativePath(repoRoot, fullPath).Replace('\\', '/');
+
+    private static int ParseSuppressionBudget(string markdown)
+    {
+        var match = Regex.Match(markdown, @"Suppression marker budget \(src\):\s*(\d+)", RegexOptions.IgnoreCase);
+        if (!match.Success)
+        {
+            throw new InvalidOperationException("Analyzer suppression inventory must define 'Suppression marker budget (src): <number>'.");
+        }
+
+        return int.Parse(match.Groups[1].Value);
+    }
 }

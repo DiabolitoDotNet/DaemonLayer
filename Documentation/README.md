@@ -12,6 +12,8 @@ This folder is the "structured documentation set" for InfernalHierarchy / Daemon
 	- `autonomyScorecardReport`
 	- `capabilityGapRemediationConcurrent`
 	- `autonomySoakStability`
+	- `autonomyInScopeCompliance`
+	- `autonomyCertificationTailLatency`
 - Strict Release build with analyzer enforcement is currently green.
 
 The repository root already contains detailed topic docs (security, observability, advanced features, etc.). This folder provides a cohesive, top-down view and points you to the right deeper document.

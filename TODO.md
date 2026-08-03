@@ -82,7 +82,7 @@ Done when:
 
 ### A1010.1 - Keep analyzer suppression debt on a shrinking trend
 
-Status: TODO
+Status: DONE
 Priority: P1
 
 Required:
@@ -90,19 +90,31 @@ Required:
 - Continue replacing justified suppressions with code fixes when low risk.
 - Keep suppression inventory and regression test in sync.
 
+Implemented:
+
+- Added suppression inventory bidirectional sync test (inventory -> source and source -> inventory).
+- Added suppression marker budget gate (`Suppression marker budget (src): 27`) enforced by test.
+- Kept inventory aligned with current suppression footprint and documented regression budget.
+
 Done when:
 
 - No new broad suppressions; measurable net reduction over time.
 
 ### A1010.2 - Keep perf budgets representative as autonomy scope grows
 
-Status: TODO
+Status: DONE
 Priority: P1
 
 Required:
 
 - Extend PerfGate scenarios whenever new autonomy-critical workflows are added.
 - Keep p95/p99 and allocation budgets versioned and enforced.
+
+Implemented:
+
+- Added PerfGate scenario `autonomyInScopeCompliance` to validate in-scope autonomy gate behavior under out-of-scope-heavy traffic.
+- Added perf baseline version contract (`baselineVersion`) validated at runtime.
+- Updated baseline budgets and docs to include in-scope compliance and certification tail-latency coverage.
 
 Done when:
 

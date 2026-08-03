@@ -21,6 +21,7 @@ using InfernalHierarchy.Tools.Tools.Notifications;
 var baselinePath = Path.Combine(AppContext.BaseDirectory, "perf-baseline.json");
 var perfGatePassToken = "PERF_GATE:PASS";
 var perfGateFailToken = "PERF_GATE:FAIL";
+var expectedBaselineVersion = "2026-08-03.a1010.2";
 var evidenceOutputPath = TryReadArgument(args, "--evidence-out");
 if (!File.Exists(baselinePath))
 {
@@ -42,6 +43,12 @@ if (baseline is null)
     return 2;
 }
 
+if (!string.Equals(baseline.BaselineVersion, expectedBaselineVersion, StringComparison.Ordinal))
+{
+    Console.Error.WriteLine($"perf-baseline.json version mismatch. Expected '{expectedBaselineVersion}', got '{baseline.BaselineVersion ?? "<null>"}'.");
+    return 2;
+}
+
 var authorization = RunToolAuthorizationScenario();
 var federation = await RunFederationScenarioAsync().ConfigureAwait(false);
 var collaboration = await RunLocalCollaborationScenarioAsync().ConfigureAwait(false);
@@ -50,6 +57,7 @@ var capabilityGapRemediation = await RunCapabilityGapRemediationScenarioAsync().
 var capabilityGapRemediationConcurrent = await RunCapabilityGapRemediationConcurrentScenarioAsync().ConfigureAwait(false);
 var inboxQuery = await RunInboxQueryToolScenarioAsync().ConfigureAwait(false);
 var autonomySloIntegration = await RunAutonomySloIntegrationScenarioAsync().ConfigureAwait(false);
+var autonomyInScopeCompliance = await RunAutonomyInScopeComplianceScenarioAsync().ConfigureAwait(false);
 var readinessScale = await RunReadinessScaleScenarioAsync().ConfigureAwait(false);
 var autonomyScorecardReport = RunAutonomyScorecardReportScenario();
 var autonomySoakStability = await RunAutonomySoakStabilityScenarioAsync().ConfigureAwait(false);
@@ -63,6 +71,7 @@ PrintResult("capabilityGapRemediation", capabilityGapRemediation, baseline.Capab
 PrintResult("capabilityGapRemediationConcurrent", capabilityGapRemediationConcurrent, baseline.CapabilityGapRemediationConcurrent);
 PrintResult("inboxQuery", inboxQuery, baseline.InboxQuery);
 PrintResult("autonomySloIntegration", autonomySloIntegration, baseline.AutonomySloIntegration);
+PrintResult("autonomyInScopeCompliance", autonomyInScopeCompliance, baseline.AutonomyInScopeCompliance);
 PrintResult("readinessScale", readinessScale, baseline.ReadinessScale);
 PrintResult("autonomyScorecardReport", autonomyScorecardReport, baseline.AutonomyScorecardReport);
 PrintResult("autonomySoakStability", autonomySoakStability, baseline.AutonomySoakStability);
@@ -77,6 +86,7 @@ Evaluate("capabilityGapRemediation", capabilityGapRemediation, baseline.Capabili
 Evaluate("capabilityGapRemediationConcurrent", capabilityGapRemediationConcurrent, baseline.CapabilityGapRemediationConcurrent, failures);
 Evaluate("inboxQuery", inboxQuery, baseline.InboxQuery, failures);
 Evaluate("autonomySloIntegration", autonomySloIntegration, baseline.AutonomySloIntegration, failures);
+Evaluate("autonomyInScopeCompliance", autonomyInScopeCompliance, baseline.AutonomyInScopeCompliance, failures);
 Evaluate("readinessScale", readinessScale, baseline.ReadinessScale, failures);
 Evaluate("autonomyScorecardReport", autonomyScorecardReport, baseline.AutonomyScorecardReport, failures);
 Evaluate("autonomySoakStability", autonomySoakStability, baseline.AutonomySoakStability, failures);
@@ -92,6 +102,7 @@ var evaluations = new List<PerfEvaluation>
     new("capabilityGapRemediationConcurrent", capabilityGapRemediationConcurrent, baseline.CapabilityGapRemediationConcurrent),
     new("inboxQuery", inboxQuery, baseline.InboxQuery),
     new("autonomySloIntegration", autonomySloIntegration, baseline.AutonomySloIntegration),
+    new("autonomyInScopeCompliance", autonomyInScopeCompliance, baseline.AutonomyInScopeCompliance),
     new("readinessScale", readinessScale, baseline.ReadinessScale),
     new("autonomyScorecardReport", autonomyScorecardReport, baseline.AutonomyScorecardReport),
     new("autonomySoakStability", autonomySoakStability, baseline.AutonomySoakStability),
@@ -857,6 +868,104 @@ static Task<PerfResult> RunReadinessScaleScenarioAsync()
         AllocatedBytesPerOp: (afterAlloc - beforeAlloc) / (double)iterations));
 }
 
+static Task<PerfResult> RunAutonomyInScopeComplianceScenarioAsync()
+{
+    using var eventStore = new InfernalHierarchy.Core.Eventing.EventStore(
+        Path.Combine(Path.GetTempPath(), $"infernal_perf_in_scope_{Guid.NewGuid():N}"),
+        NullLogger<InfernalHierarchy.Core.Eventing.EventStore>.Instance);
+
+    var metrics = new InfernalHierarchy.Host.Observability.MetricsCollector();
+    var sink = new InfernalHierarchy.Host.Observability.CapabilityGapMetricsEventSink(eventStore, metrics);
+    var failedStore = new PerfFailedOperationStore();
+    var bus = new PerfMessageBus();
+    var evaluator = new InfernalHierarchy.Host.Observability.SloGateEvaluator(metrics, failedStore, bus);
+
+    var options = new InfernalHierarchy.Host.Observability.SloGateOptions
+    {
+        Enabled = true,
+        MaxDeadLetterBacklogGrowth = 1000,
+        MinReplaySamples = int.MaxValue,
+        MinQueueSamples = int.MaxValue,
+        MinTaskCompletionSamples = int.MaxValue,
+        MinAutonomyTaskSamples = 1,
+        MinAutonomyReplaySamples = int.MaxValue,
+        MinAutonomyTerminalSamples = 1,
+        MinAutonomyTaskCompletionRatio = 1.0,
+        MaxAutonomyTerminalFailureRatio = 0.0,
+        MinAutonomyReplaySuccessRatio = 0.0,
+        MaxAutonomyMedianTimeToTerminalMs = 5000
+    };
+
+    const int warmup = 10;
+    const int iterations = 80;
+
+    for (var i = 0; i < warmup; i++)
+    {
+        EmitOutOfScopeHeavyWorkload(sink);
+        _ = evaluator.Evaluate(options);
+    }
+
+    GC.Collect();
+    GC.WaitForPendingFinalizers();
+    GC.Collect();
+
+    var beforeAlloc = GC.GetTotalAllocatedBytes(true);
+    var sw = Stopwatch.StartNew();
+
+    for (var i = 0; i < iterations; i++)
+    {
+        EmitOutOfScopeHeavyWorkload(sink);
+        var result = evaluator.Evaluate(options);
+        if (!result.Passed)
+        {
+            throw new InvalidOperationException("In-scope autonomy compliance perf scenario produced an unexpected failed gate.");
+        }
+    }
+
+    sw.Stop();
+    var afterAlloc = GC.GetTotalAllocatedBytes(true);
+
+    return Task.FromResult(new PerfResult(
+        LatencyPerOpMs: sw.Elapsed.TotalMilliseconds / iterations,
+        AllocatedBytesPerOp: (afterAlloc - beforeAlloc) / (double)iterations));
+
+    static void EmitOutOfScopeHeavyWorkload(InfernalHierarchy.Host.Observability.CapabilityGapMetricsEventSink sink)
+    {
+        for (var i = 0; i < 10; i++)
+        {
+            sink.AppendEvent(new AgentEvent
+            {
+                AgentId = "perf-agent",
+                Type = EventType.DecisionMade,
+                Description = "policy blocked request",
+                Metadata = new Dictionary<string, object>
+                {
+                    ["category"] = "capability.gap_analysis",
+                    ["workflow_state"] = "capability_gap_policy_blocked",
+                    ["remediation_attempted"] = true,
+                    ["autofix_success"] = false,
+                    ["remediation_duration_ms"] = 15d
+                }
+            });
+        }
+
+        sink.AppendEvent(new AgentEvent
+        {
+            AgentId = "perf-agent",
+            Type = EventType.DecisionMade,
+            Description = "resolved in-scope request",
+            Metadata = new Dictionary<string, object>
+            {
+                ["category"] = "capability.gap_analysis",
+                ["workflow_state"] = "capability_gap_resolved_retrying_original_intent",
+                ["remediation_attempted"] = true,
+                ["autofix_success"] = true,
+                ["remediation_duration_ms"] = 20d
+            }
+        });
+    }
+}
+
 static PerfResult RunAutonomyScorecardReportScenario()
 {
     var playground = new InfernalHierarchy.Host.Tools.AgentPlaygroundService();
@@ -1325,6 +1434,7 @@ internal sealed record PerfEvaluation(string Name, PerfResult Result, PerfBudget
 [SuppressMessage("Performance", "CA1812:Avoid uninstantiated internal classes", Justification = "Instantiated by System.Text.Json during perf-baseline deserialization.")]
 internal sealed class PerfBaseline
 {
+    public string BaselineVersion { get; set; } = string.Empty;
     public PerfBudget ToolAuthorization { get; set; } = new();
     public PerfBudget FederationAggregation { get; set; } = new();
     public PerfBudget LocalCollaboration { get; set; } = new();
@@ -1333,6 +1443,7 @@ internal sealed class PerfBaseline
     public PerfBudget CapabilityGapRemediationConcurrent { get; set; } = new();
     public PerfBudget InboxQuery { get; set; } = new();
     public PerfBudget AutonomySloIntegration { get; set; } = new();
+    public PerfBudget AutonomyInScopeCompliance { get; set; } = new();
     public PerfBudget ReadinessScale { get; set; } = new();
     public PerfBudget AutonomyScorecardReport { get; set; } = new();
     public PerfBudget AutonomySoakStability { get; set; } = new();

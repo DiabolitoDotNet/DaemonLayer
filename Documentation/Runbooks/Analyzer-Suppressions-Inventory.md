@@ -2,6 +2,7 @@
 
 Last updated: 2026-08-03
 Review cadence: every release cut
+Suppression marker budget (src): 27
 
 ## Policy
 
