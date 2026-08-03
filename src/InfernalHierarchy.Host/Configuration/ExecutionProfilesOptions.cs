@@ -17,7 +17,7 @@ public sealed class ExecutionProfilePolicy
 
     public List<string> DeniedTools { get; set; } = new();
 
-    // P2.2 placeholders: currently informational, not enforced at tool auth layer yet.
+    // Enforced by ToolAuthorizationService.EvaluateExecutionScopes.
     public List<string> AllowedFileScopes { get; set; } = new();
 
     public List<string> AllowedNetworkScopes { get; set; } = new();

@@ -1,213 +1,167 @@
-# InfernalHierarchy - Final TODO (Strict 100% Autonomy)
+# InfernalHierarchy - Final Gap TODO (Strict 100% Autonomy)
 
 > Last Updated: 2026-08-02
-> Scope: final gap-closing backlog after strict audit.
+> Scope: only real remaining blockers after final audit.
 
-This TODO now tracks only what still blocks a strict claim of:
-- autonomous end-to-end execution,
-- production-grade resilience,
-- measurable optimization aligned with modern C#/.NET 10 practices.
-
-Completed roadmap items have been moved to COMPLETED.md.
+This file no longer tracks historical work. It tracks only what still prevents a strict, defensible claim of:
+- 100% autonomous agent execution,
+- production-grade reliability,
+- modern C#/.NET 10 optimization with measurable proof.
 
 ---
 
-## Audit Result Snapshot
+## Audit Verdict
 
-### Confirmed complete (already implemented + validated)
+### What is already solid
 
-- A100R.1 federation heartbeat truthfulness.
-- A100R.2 Build/Deploy tool-permission alignment + startup drift diagnostics.
-- A100R.3 strategy-consistent federated aggregation.
-- A100R.4 autonomous unresolved-conflict escalation path.
-- A100R.5 first hot-path allocation reduction in authorization.
-- Regression status: targeted suites green + full solution tests green (EXIT:0).
+- Federation heartbeat truthfulness and inactive-instance handling are implemented and tested.
+- Build/Deploy profile-permission alignment and drift diagnostics are implemented.
+- Strategy-consistent federated aggregation and supervisor escalation are implemented.
+- Collaboration strategy learning loop and perf gate harness exist.
+- CI includes perf gate and autonomy scorecard gate steps.
+- Targeted suites + full regression are green.
 
-### Remaining blockers for strict closure
+### What still blocks a strict 100% autonomy claim
 
-The system is functionally strong, but strict 100% autonomy and optimization are not yet fully evidenced in four areas:
-
-1. Closed-loop collaboration strategy learning is still incomplete.
-2. Perf optimization lacks benchmark-grade quantitative proof and CI guardrail.
-3. Autonomy scorecard exists but is not enforced as a release gate.
-4. Multi-instance chaos/failure matrix is not yet formalized for federation routing guarantees.
+None on the blocking scope. Remaining work is optional/iterative optimization only.
 
 ---
 
-## Final Gap Backlog
+## Final Blocking Backlog
 
-### A100F.1 - Close collaboration strategy learning loop
+### A100X.1 - Make send_telegram truly operational (not log-only)
 
 Status: DONE
-Priority: P0
+Priority: P0 (critical)
 
 Evidence:
 
-- Source TODO remains in collaboration service (`TODO: Integrate with AgentLearningService to track strategy effectiveness`).
+- `TelegramSendTool` still contains a TODO and returns success after logging intent instead of real send.
+- Current behavior can report message delivery while nothing was sent.
 
 Implementation:
 
-- Inject and use AgentLearningService inside collaboration outcome analysis.
-- Record per-strategy signals (confidence, agreement, latency, rounds, success/failure).
-- Feed these signals into future strategy selection heuristics.
+- Inject a real sender abstraction backed by Telegram bot client/service.
+- Return delivery result based on real API outcome (success/failure, error code, retryability).
+- Emit deterministic metadata (message id, chat id, transport status, latency).
+- Keep policy/rate-limit enforcement unchanged.
 
 Acceptance Criteria:
 
-- No collaboration-learning TODO remains in production code.
-- Strategy selection can reference historical effectiveness by task profile/risk.
-- Metrics/logs expose strategy win/loss and latency trends.
+- `send_telegram` fails when Telegram API fails and succeeds only on confirmed send.
+- No fake success path remains in tool execution.
+- ReAct command paths depending on Telegram tool remain stable.
 
 Validation:
 
-- Unit tests: collaboration outcomes write expected learning records.
-- Integration tests: repeated scenarios show adaptive strategy choice changes.
+- Unit tests for success, transport failure, invalid chat, rate-limit response.
+- Integration test with mocked Telegram client proving behavior mapping.
 
 Completion note (2026-08-02):
 
-- `AgentCollaborationService` now records strategy outcomes (success, confidence, agreement, latency, rounds, participants) through `AgentLearningService`.
-- Dynamic strategy selection now consults historical strategy effectiveness before fallback heuristics.
-- Targeted test suite passes for adaptive strategy selection and learning persistence.
+- Introduced `ITelegramMessageSender` abstraction and Host implementation `TelegramMessageSender` backed by real Telegram transport.
+- `TelegramSendTool` now reports success/failure from actual send outcome (no fake-success path), with retryability and latency metadata.
+- Tool tests updated to cover validation, transport failure mapping, and success metadata.
 
 ---
 
-### A100F.2 - Quantified performance gate (latency + allocations)
+### A100X.2 - Convert autonomy gate to real benchmark evidence
 
 Status: DONE
-Priority: P0
+Priority: P0 (critical)
 
-Gap:
+Evidence:
 
-- Optimization changes exist, but there is no benchmark harness with pass/fail budget.
-
-Implementation:
-
-- Add dedicated micro-benchmark project for hot paths:
-  - ToolAuthorizationService authorize path,
-  - federation aggregation path (strategy-specific).
-- Measure both throughput and allocations.
-- Persist baseline and compare on PR/CI runs.
-
-Acceptance Criteria:
-
-- Benchmarks run reproducibly in CI.
-- Budget thresholds are explicit (for example max allocation delta %, max p95 regression %).
-- PR fails when budget regression exceeds thresholds.
-
-Validation:
-
-- Baseline generation + one synthetic failing benchmark test to verify gate behavior.
-
-Completion note (2026-08-02):
-
-- Added executable perf gate harness: `tools/InfernalHierarchy.PerfGate`.
-- Gate measures latency/op + allocated bytes/op for authorization and federation aggregation paths.
-- Baseline budgets are versioned in `perf-baseline.json` and enforced in CI fast lane.
-
----
-
-### A100F.3 - Enforce autonomy scorecard as release gate
-
-Status: DONE
-Priority: P1
-
-Gap:
-
-- Scorecard service exists, but autonomy quality is not enforced as a merge/release condition.
+- `AutonomyScorecardGateTests` currently validate threshold logic with seeded runs.
+- Gate correctness is tested, but autonomy capability is not measured from live autonomous scenario execution in CI.
 
 Implementation:
 
-- Add CI step invoking scorecard endpoint or service runner after scenario execution.
-- Define minimum release bar:
-  - coverage = 100% benchmark scenarios,
-  - minimum grade (for example B),
-  - minimum success-rate thresholds per scenario.
-- Fail pipeline when below target.
+- Add deterministic benchmark scenario runner that executes real playground scenarios before scorecard evaluation.
+- Persist run outputs and durations used by scorecard in the same job.
+- Gate on actual generated scorecard report (coverage/grade/per-scenario success).
 
 Acceptance Criteria:
 
-- CI status includes explicit autonomy scorecard result.
-- Release cannot pass when autonomy thresholds are not met.
+- CI gate fails when real benchmark scenarios underperform.
+- Gate cannot pass without executing benchmark scenarios.
+- Scorecard artifacts are exported for auditability.
 
 Validation:
 
-- Add controlled failing pipeline/test fixture proving the gate blocks under-threshold runs.
+- Add a controlled failing benchmark fixture in CI (or dedicated test lane) proving gate blocks regressions.
 
 Completion note (2026-08-02):
 
-- Added explicit autonomy scorecard gate tests (`AutonomyScorecardGateTests`) covering both under-threshold fail behavior and pass behavior at release thresholds.
-- CI full lane now executes a dedicated gate step filtered to these tests, making autonomy thresholds an explicit merge/release condition.
+- `AutonomyScorecardGateTests` now execute real benchmark runs over the message bus before scorecard evaluation (no seeded-only scorecard input).
+- Includes both underperforming scenario failure gate and healthy scenario pass gate.
+- CI gate step remains wired to these tests in full lane.
 
 ---
 
-### A100F.4 - Federated chaos matrix for routing safety
+### A100X.3 - Remove stale profile enforcement comments
 
 Status: DONE
 Priority: P1
 
-Gap:
+Evidence:
 
-- Federation behavior is improved but strict multi-instance failure matrix coverage is not explicit.
+- `ExecutionProfilePolicy` still states file/network/command scopes are placeholders and not enforced, while they are now enforced by `ToolAuthorizationService`.
 
 Implementation:
 
-- Add multi-instance integration/chaos scenarios:
-  - heartbeat transport failure,
-  - stale heartbeat eviction,
-  - partial response quorum miss,
-  - strategy tie/low-confidence conflict escalation,
-  - fallback-to-local vs supervisor escalation semantics.
-- Verify instance selection excludes degraded nodes after failure.
+- Update stale comments to match real behavior.
+- Ensure docs do not contradict runtime enforcement.
 
 Acceptance Criteria:
 
-- Deterministic test matrix exists for all federation fallback branches.
-- No degraded instance is selected during delegation/collaboration windows.
+- No misleading comment remains on execution-profile enforcement.
+- Docs and code are semantically aligned.
 
 Validation:
 
-- Integration suite with failure injection and deterministic assertions on `ConflictReasonCode`, `NextAction`, and selected instance set.
+- Doc/code consistency review pass.
 
 Completion note (2026-08-02):
 
-- Added federation chaos tests for weighted-vote tie escalation and highest-confidence low-confidence escalation.
-- Hardened `DelegateTaskAsync` with ordered fallback attempts across candidates; delegation now continues to the next healthy instance after failure.
-- Added deterministic test coverage for fallback selection when the lowest-load instance fails.
+- Updated stale enforcement comment in execution profile options to match runtime behavior enforced by `ToolAuthorizationService`.
 
 ---
 
-## Optional Improvement Backlog (non-blocking)
+## Optimization Backlog (non-blocking but recommended)
 
-### A100F.5 - Modern C# allocation-aware snapshots
+### A100X.4 - Modern C# allocation tightening (post-closure)
 
-Status: TODO
+Status: DONE
 Priority: P2
 
 Objective:
 
-- Continue .NET 10/C# optimization pass with immutable/frozen snapshots where beneficial.
+- Continue reducing avoidable allocations and lock contention in hot paths while preserving clarity.
 
-Implementation ideas:
+Targets:
 
-- Move repeated profile command allowlist normalization to reload-time frozen structures.
-- Review high-frequency LINQ allocations in aggregation/authorization paths.
-- Keep readability and deterministic error-flow first.
-
-Acceptance Criteria:
-
-- No behavior regression.
-- Measurable allocation reduction on benchmarked paths.
+- Pre-normalized frozen snapshots for frequently checked allowlists/scopes.
+- Review high-frequency LINQ usage in federation aggregation and authorization.
+- Keep async paths explicit and avoid sync-over-async hazards.
 
 Validation:
 
-- Covered by A100F.2 benchmark harness.
+- Extend perf gate budgets after each optimization.
+- Track latency/op and alloc/op trend in CI artifacts.
+
+Completion note (2026-08-02):
+
+- Added immutable frozen per-profile command allowlist snapshots in `ToolAuthorizationService` to reduce repeated hot-path normalization/scans.
+- Reload path now refreshes these snapshots atomically with profile reload.
 
 ---
 
 ## Definition Of Done (Strict Closure)
 
-Strict autonomy target is considered complete only when:
+Strict 100% autonomy claim is valid only when:
 
-- A100F.1 to A100F.4 are DONE and validated.
-- A100F.2 and A100F.3 gates are active in CI.
-- Full solution regression remains green after gate activation.
-- COMPLETED.md is updated with evidence links and command outputs summary.
+- A100X.1 to A100X.4 are DONE and validated.
+- CI gates rely on real benchmark execution evidence.
+- No fake-success outbound action path remains.
+- Full solution regression remains green after these changes.

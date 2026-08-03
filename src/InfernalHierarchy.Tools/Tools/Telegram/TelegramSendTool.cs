@@ -8,52 +8,74 @@ namespace InfernalHierarchy.Tools.Tools.Telegram;
 public class TelegramSendTool : ITool
 {
     private readonly ILogger<TelegramSendTool> _logger;
+    private readonly ITelegramMessageSender _sender;
 
     public string Name => "send_telegram";
     public string Description => "Send a message to Telegram user. Requires: chat_id, text";
 
-    // Note: We'll need to inject TelegramBotService or create a separate sender service
-    // For now, we'll store messages in a queue that TelegramBotService can process
-
-    public TelegramSendTool(ILogger<TelegramSendTool> logger)
+    public TelegramSendTool(ILogger<TelegramSendTool> logger, ITelegramMessageSender sender)
     {
         _logger = logger;
+        _sender = sender;
     }
 
-    public Task<ToolResult> ExecuteAsync(Dictionary<string, object> parameters, CancellationToken ct = default)
+    public async Task<ToolResult> ExecuteAsync(Dictionary<string, object> parameters, CancellationToken ct = default)
     {
         if (!TryGetInt64Any(parameters, out var chatId, "chat_id", "chatId", "telegram_chat_id", "telegramChatId"))
         {
-            return Task.FromResult(new ToolResult
+            return new ToolResult
             {
                 Success = false,
                 Error = "Missing required parameter: chat_id"
-            });
+            };
         }
 
         if (!TryGetStringAny(parameters, out var text, "text", "message", "content"))
         {
-            return Task.FromResult(new ToolResult
+            return new ToolResult
             {
                 Success = false,
                 Error = "Missing required parameter: text"
-            });
+            };
         }
 
-        // TODO: Implement actual sending via TelegramBotService
-        // For now, log the intent
-        _logger.LogInformation("📤 Telegram send request: ChatId={ChatId}, Text={Text}", chatId, text);
+        var sendResult = await _sender.SendMessageAsync(chatId, text, ct).ConfigureAwait(false);
+        if (!sendResult.Success)
+        {
+            _logger.LogWarning(
+                "Telegram send failed for chat {ChatId} (retryable={Retryable}): {Error}",
+                chatId,
+                sendResult.Retryable,
+                sendResult.Error);
 
-        return Task.FromResult(new ToolResult
+            return new ToolResult
+            {
+                Success = false,
+                Error = sendResult.Error ?? "Unknown Telegram send error",
+                Metadata = new Dictionary<string, object>
+                {
+                    ["chat_id"] = chatId,
+                    ["retryable"] = sendResult.Retryable,
+                    ["latency_ms"] = sendResult.LatencyMs,
+                }
+            };
+        }
+
+        _logger.LogInformation("📤 Telegram message sent: ChatId={ChatId}, MessageId={MessageId}", chatId, sendResult.MessageId);
+
+        return new ToolResult
         {
             Success = true,
-            Output = $"Message queued for Telegram chat {chatId}",
+            Output = $"Message sent to Telegram chat {chatId}",
             Metadata = new Dictionary<string, object>
             {
                 ["chat_id"] = chatId,
-                ["text"] = text
+                ["message_id"] = sendResult.MessageId ?? 0,
+                ["latency_ms"] = sendResult.LatencyMs,
+                ["text_length"] = text.Length,
+                ["delivery_status"] = "sent"
             }
-        });
+        };
     }
 
     private static bool TryGetStringAny(Dictionary<string, object> parameters, out string value, params string[] keys)

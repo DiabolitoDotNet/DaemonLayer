@@ -1,6 +1,7 @@
 using InfernalHierarchy.Core.Entities;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using System.Collections.Frozen;
 using System.Collections.Immutable;
 using System.Threading;
 
@@ -15,6 +16,7 @@ public class ToolAuthorizationService : IToolAuthorizationService
     private readonly IConfiguration _configuration;
     private ExecutionProfilesOptions _executionProfiles;
     private ImmutableDictionary<string, ToolPermissions> _toolPermissions;
+    private ImmutableDictionary<string, FrozenSet<string>> _profileCommandAllowlists;
 
     public ToolAuthorizationService(ILogger<ToolAuthorizationService> logger, IConfiguration configuration)
     {
@@ -22,6 +24,7 @@ public class ToolAuthorizationService : IToolAuthorizationService
         _configuration = configuration;
         _toolPermissions = LoadToolPermissions();
         _executionProfiles = LoadExecutionProfiles();
+        _profileCommandAllowlists = BuildProfileCommandAllowlists(_executionProfiles);
         LogProfilePermissionDrift(_toolPermissions, _executionProfiles);
     }
 
@@ -145,8 +148,26 @@ public class ToolAuthorizationService : IToolAuthorizationService
         var newPermissions = LoadToolPermissions();
         Interlocked.Exchange(ref _toolPermissions, newPermissions);
         _executionProfiles = LoadExecutionProfiles();
+        _profileCommandAllowlists = BuildProfileCommandAllowlists(_executionProfiles);
         LogProfilePermissionDrift(_toolPermissions, _executionProfiles);
         _logger.LogInformation("✅ Tool permissions reloaded - {Count} tools configured", _toolPermissions.Count);
+    }
+
+    private static ImmutableDictionary<string, FrozenSet<string>> BuildProfileCommandAllowlists(ExecutionProfilesOptions profiles)
+    {
+        var builder = ImmutableDictionary.CreateBuilder<string, FrozenSet<string>>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var (profileName, policy) in profiles.Profiles)
+        {
+            var normalized = policy.CommandAllowlist
+                .Where(x => !string.IsNullOrWhiteSpace(x))
+                .Select(x => x.Trim())
+                .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+
+            builder[profileName] = normalized;
+        }
+
+        return builder.ToImmutable();
     }
 
     private void LogProfilePermissionDrift(
@@ -273,7 +294,7 @@ public class ToolAuthorizationService : IToolAuthorizationService
         return AuthorizationResult.Success();
     }
 
-    private static AuthorizationResult EvaluateExecutionScopes(
+    private AuthorizationResult EvaluateExecutionScopes(
         string normalizedToolName,
         string profileName,
         ExecutionProfilePolicy policy,
@@ -305,11 +326,12 @@ public class ToolAuthorizationService : IToolAuthorizationService
             }
         }
 
-        if (policy.CommandAllowlist.Count > 0)
+        if (_profileCommandAllowlists.TryGetValue(profileName, out var commandAllowlist)
+            && commandAllowlist.Count > 0)
         {
             foreach (var commandTarget in ExtractCommandTargets(normalizedToolName, parameters))
             {
-                if (!ContainsIgnoreCase(policy.CommandAllowlist, commandTarget))
+                if (!commandAllowlist.Contains(commandTarget))
                 {
                     return AuthorizationResult.Failure(
                         $"Command '{commandTarget}' is not allowed by execution profile '{profileName}'");

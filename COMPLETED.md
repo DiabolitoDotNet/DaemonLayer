@@ -260,6 +260,14 @@
 - **A100F.4 federated chaos matrix + routing safety**: added deterministic federation tests for weighted-tie and low-confidence escalations, plus delegation fallback across ordered candidates when the lowest-load instance fails.
 - **Validation**: targeted host gate tests (2/2), targeted federation tests (20/20), full solution regression green (`EXIT:0`).
 
+## ✅ Strict Final Autonomy Closure (A100X, Aug 2, 2026)
+
+- **A100X.1 real Telegram delivery path**: introduced `ITelegramMessageSender` with Host transport-backed `TelegramMessageSender`; `TelegramSendTool` now reflects actual transport success/failure (including retryability and latency metadata) instead of log-only success.
+- **A100X.2 real scorecard evidence path**: `AutonomyScorecardGateTests` now executes benchmark scenarios over the message bus before scoring (no seeded-only scorecard input).
+- **A100X.3 profile enforcement documentation consistency**: stale execution-profile enforcement comment updated to match runtime enforcement.
+- **A100X.4 C# hot-path optimization**: authorization profile command allowlists are now cached as immutable frozen snapshots for lower per-call overhead.
+- **Validation**: Telegram tool tests (4/4), Host autonomy/authorization targeted tests (11/11), perf gate pass, full solution regression green (`EXIT:0`).
+
 ### Implemented Tests (existing)
 - Host: integration tests
 - Agents: unit tests

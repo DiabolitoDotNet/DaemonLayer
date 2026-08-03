@@ -94,6 +94,7 @@ internal static class HostDependencyInjection
         builder.Services.AddSingleton<IAgentPlaygroundService, AgentPlaygroundService>();
         builder.Services.AddSingleton<TelegramBotClientFactory>();
         builder.Services.AddSingleton<ITelegramBotClientFactory>(sp => sp.GetRequiredService<TelegramBotClientFactory>());
+        builder.Services.AddSingleton<ITelegramMessageSender, TelegramMessageSender>();
 
         builder.Services.AddSingleton<ResiliencePolicies>();
         builder.Services.AddSingleton<IResiliencePolicyProvider, ResiliencePolicyProvider>();
