@@ -22,6 +22,7 @@ public sealed class TestPersonaLoader : IPersonaLoader
                 {
                     "web_search",
                     "email_send",
+                    "email_inbox_query",
                     "create_sub_agent",
                     "request_collaboration"
                 }

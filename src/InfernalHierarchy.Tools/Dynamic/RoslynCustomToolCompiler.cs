@@ -85,7 +85,7 @@ public sealed class RoslynCustomToolCompiler : ICustomToolCompiler
                 tool = created.FirstOrDefault(t => string.Equals(t.Name, expectedToolName, StringComparison.OrdinalIgnoreCase));
             }
 
-            tool ??= created.First();
+            tool ??= created[0];
 
             return Task.FromResult(new CustomToolCompileResult(
                 Success: true,

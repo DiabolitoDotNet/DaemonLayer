@@ -74,6 +74,38 @@ public sealed class ChatApiE2ETests
     }
 
     [Fact]
+    public async Task ApiChat_InboxQuery_ReadsMailboxAndReturnsSummary()
+    {
+        using var factory = new InfernalHierarchyTestWebAppFactory();
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add(OperationalAuthGuard.HeaderName, "test-operator-key");
+
+        var llm = factory.Services.GetRequiredService<ScriptedLlmClient>();
+        llm.Enqueue("Lucifer",
+            "{\"thought\":\"Check inbox\",\"action\":\"email_inbox_query\",\"actionInput\":{\"from\":\"alerts@example.com\",\"unread_only\":true,\"max_results\":2}}",
+            "{\"thought\":\"Summarize\",\"action\":\"FINAL_ANSWER\",\"actionInput\":\"I found inbox messages from alerts@example.com.\"}");
+
+        await WaitForAgentAsync(factory.Services, "lucifer");
+
+        var response = await client.PostAsJsonAsync("/api/chat", new ChatRequest(
+            Message: "Check if I have unread email from alerts@example.com",
+            ToAgentId: "lucifer",
+            TimeoutMs: 20_000));
+
+        response.EnsureSuccessStatusCode();
+
+        var body = await response.Content.ReadFromJsonAsync<ChatResponse>();
+        body.Should().NotBeNull();
+        body!.content.Should().Contain("inbox messages");
+
+        var inbox = factory.Services.GetRequiredService<FakeEmailInboxQueryClient>();
+        inbox.Calls.Should().HaveCount(1);
+        inbox.Calls[0].FromFilter.Should().Be("alerts@example.com");
+        inbox.Calls[0].UnreadOnly.Should().BeTrue();
+        inbox.Calls[0].MaxResults.Should().Be(2);
+    }
+
+    [Fact]
     public async Task ApiChat_TeamWorkflow_CreatesAgents_Collaborates_Emails()
     {
         using var factory = new InfernalHierarchyTestWebAppFactory();

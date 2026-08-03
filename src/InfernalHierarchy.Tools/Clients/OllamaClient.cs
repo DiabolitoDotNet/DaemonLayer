@@ -1,6 +1,7 @@
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text;
+using System.Diagnostics.CodeAnalysis;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.IO;
@@ -230,7 +231,7 @@ public class OllamaClient : ILlmClient
 
             while (!reader.EndOfStream && !ct.IsCancellationRequested)
             {
-                var line = await reader.ReadLineAsync().ConfigureAwait(false);
+                var line = await reader.ReadLineAsync(ct).ConfigureAwait(false);
                 if (line is null)
                 {
                     break;
@@ -647,18 +648,21 @@ public class OllamaClient : ILlmClient
         public string Content { get; set; } = string.Empty;
     }
 
+    [SuppressMessage("Performance", "CA1812:Avoid uninstantiated internal classes", Justification = "Instantiated by System.Text.Json during chat completion response deserialization.")]
     private sealed class ChatCompletionResponse
     {
         [JsonPropertyName("choices")]
         public List<ChatCompletionChoice>? Choices { get; set; }
     }
 
+    [SuppressMessage("Performance", "CA1812:Avoid uninstantiated internal classes", Justification = "Instantiated by System.Text.Json during chat completion response deserialization.")]
     private sealed class ChatCompletionChoice
     {
         [JsonPropertyName("message")]
         public ChatCompletionResponseMessage? Message { get; set; }
     }
 
+    [SuppressMessage("Performance", "CA1812:Avoid uninstantiated internal classes", Justification = "Instantiated by System.Text.Json during chat completion response deserialization.")]
     private sealed class ChatCompletionResponseMessage
     {
         [JsonPropertyName("content")]

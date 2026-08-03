@@ -39,7 +39,7 @@ public static class ReActTaskComplexityAdvisor
             || availableTools.Contains("workflow_step", StringComparer.OrdinalIgnoreCase)
             || availableTools.Contains("deploy_adapter", StringComparer.OrdinalIgnoreCase);
 
-        var keywordHits = ComplexityKeywordRegex.Matches(content).Count;
+        var keywordHits = ComplexityKeywordRegex.Count(content);
 
         var complexity = ReActTaskComplexity.Medium;
         var reasonCode = "default_medium";

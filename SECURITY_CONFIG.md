@@ -157,6 +157,20 @@ All authorization attempts are logged:
 
 ### Security Considerations
 
+#### Sensitive credentials over Telegram (recommended policy)
+
+When an operator asks for tasks that require third-party credentials (mailbox, cloud account, external API account):
+
+- Do not place raw passwords directly in Telegram messages.
+- Store credentials in a secret store (user-secrets, environment variables, or Docker secrets) and reference them by logical key.
+- Restrict Telegram access with `Telegram:AllowedUserIds`.
+- Keep high-risk execution tools disabled unless explicitly required (`python_exec`, `node_exec`, `http_request`, filesystem tools).
+
+For mailbox operations specifically:
+
+- Current built-in email capability is SMTP sending (`email_send`), not inbox reading.
+- Inbox reading requires an explicit dedicated adapter/tool with least-privilege credentials and explicit `ToolPermissions` authorization.
+
 #### System Monitoring Commands (New)
 The `/usage` and `/models` commands in ReActAgent provide **read-only system monitoring** capabilities:
 

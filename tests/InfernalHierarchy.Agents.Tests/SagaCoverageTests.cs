@@ -110,10 +110,11 @@ public sealed class SagaCoverageTests
         result.Success.Should().BeFalse();
         result.CompensationSuccess.Should().BeFalse();
         result.FailureReasonCode.Should().Be("compensation_retry_exhausted");
-        result.NextAction.Should().Be("request_supervisor_compensation_assistance");
-        result.NeedsSupervisorIntervention.Should().BeTrue();
+        result.NextAction.Should().Be("autonomous_compensation_recovery_exhausted");
+        result.NeedsSupervisorIntervention.Should().BeFalse();
         result.Context.Data["CompensationFailureReasonCode"].Should().Be("compensation_retry_exhausted");
-        result.Context.Data["SupervisorEscalationRequested"].Should().Be(true);
+        result.Context.Data["SupervisorEscalationRequested"].Should().Be(false);
+        result.Context.Data["AutonomousCompensationRecoveryExhausted"].Should().Be(true);
         events.Count(e => e == "comp:a").Should().Be(3);
     }
 

@@ -14,6 +14,7 @@ internal static class TimelineApi
             EventStore store,
             int? minutes,
             int? limit,
+            string? gapWorkflowId,
             CancellationToken ct) =>
         {
             var forbid = OperationalAuthGuard.ForbidIfUnauthorized(ctx, uiOptions.LocalOnly, operatorOptions.ApiKey);
@@ -30,6 +31,7 @@ internal static class TimelineApi
             var events = await store.GetEventsByTimeRangeAsync(start, end, ct).ConfigureAwait(false);
 
             var items = events
+                .Where(e => MatchesGapWorkflow(e, gapWorkflowId))
                 .Where(IsTimelineRelevant)
                 .Select(MapTimeline)
                 .TakeLast(max)
@@ -40,7 +42,16 @@ internal static class TimelineApi
                 items = items.Count,
                 reasoning = items.Count(x => x.Kind == "reasoning"),
                 tool = items.Count(x => x.Kind == "tool"),
-                task = items.Count(x => x.Kind == "task")
+                task = items.Count(x => x.Kind == "task"),
+                gap_workflow_id = gapWorkflowId ?? string.Empty,
+                terminal_state = items
+                    .Select(i => TryGetMetadataString(i.Metadata, "workflow_state"))
+                    .Where(v => !string.IsNullOrWhiteSpace(v))
+                    .LastOrDefault() ?? string.Empty,
+                terminal_reason_code = items
+                    .Select(i => TryGetMetadataString(i.Metadata, "note"))
+                    .Where(v => !string.IsNullOrWhiteSpace(v))
+                    .LastOrDefault() ?? string.Empty
             };
 
             return Results.Ok(new { startUtc = start, endUtc = end, summary, items });
@@ -52,6 +63,7 @@ internal static class TimelineApi
             OperatorExplainabilityService explainability,
             int? minutes,
             int? limit,
+            string? gapWorkflowId,
             CancellationToken ct) =>
         {
             var forbid = OperationalAuthGuard.ForbidIfUnauthorized(ctx, uiOptions.LocalOnly, operatorOptions.ApiKey);
@@ -66,16 +78,87 @@ internal static class TimelineApi
             var end = DateTime.UtcNow;
             var start = end.AddMinutes(-rangeMinutes);
             var events = await store.GetEventsByTimeRangeAsync(start, end, ct).ConfigureAwait(false);
+            events = events.Where(e => MatchesGapWorkflow(e, gapWorkflowId));
 
             var report = explainability.BuildReport(events, max);
             return Results.Ok(new
             {
                 startUtc = start,
                 endUtc = end,
+                gapWorkflowId,
                 summary = report.Summary,
                 items = report.Items
             });
         });
+
+        app.MapGet("/api/perf/timeline/workflow/{gapWorkflowId}", async (
+            HttpContext ctx,
+            EventStore store,
+            string gapWorkflowId,
+            int? minutes,
+            int? limit,
+            CancellationToken ct) =>
+        {
+            var forbid = OperationalAuthGuard.ForbidIfUnauthorized(ctx, uiOptions.LocalOnly, operatorOptions.ApiKey);
+            if (forbid is not null)
+            {
+                return forbid;
+            }
+
+            if (string.IsNullOrWhiteSpace(gapWorkflowId))
+            {
+                return Results.BadRequest(new { error = "gapWorkflowId is required" });
+            }
+
+            var rangeMinutes = minutes is > 0 and <= 24 * 60 ? minutes.Value : 240;
+            var max = limit is > 0 and <= 4000 ? limit.Value : 2000;
+
+            var end = DateTime.UtcNow;
+            var start = end.AddMinutes(-rangeMinutes);
+            var events = await store.GetEventsByTimeRangeAsync(start, end, ct).ConfigureAwait(false);
+
+            var items = events
+                .Where(e => MatchesGapWorkflow(e, gapWorkflowId))
+                .Where(IsTimelineRelevant)
+                .Select(MapTimeline)
+                .TakeLast(max)
+                .ToList();
+
+            return Results.Ok(new
+            {
+                gapWorkflowId,
+                startUtc = start,
+                endUtc = end,
+                count = items.Count,
+                items
+            });
+        });
+    }
+
+    private static bool MatchesGapWorkflow(AgentEvent evt, string? gapWorkflowId)
+    {
+        if (string.IsNullOrWhiteSpace(gapWorkflowId))
+        {
+            return true;
+        }
+
+        if (evt.Metadata.TryGetValue("gap_workflow_id", out var gapObj)
+            && string.Equals(gapObj?.ToString(), gapWorkflowId, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        return false;
+    }
+
+    private static string? TryGetMetadataString(Dictionary<string, object> metadata, string key)
+    {
+        if (!metadata.TryGetValue(key, out var raw) || raw is null)
+        {
+            return null;
+        }
+
+        return raw.ToString();
     }
 
     private static bool IsTimelineRelevant(AgentEvent evt)

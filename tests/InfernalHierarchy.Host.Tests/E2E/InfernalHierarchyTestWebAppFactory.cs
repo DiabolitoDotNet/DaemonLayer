@@ -61,6 +61,16 @@ public class InfernalHierarchyTestWebAppFactory : WebApplicationFactory<Program>
                 ["Email:FromAddress"] = "bot@example.com",
                 ["Email:FromName"] = "Infernal Test Bot",
 
+                ["EmailInbox:Enabled"] = "true",
+                ["EmailInbox:Host"] = "imap.test.local",
+                ["EmailInbox:Port"] = "993",
+                ["EmailInbox:UseSsl"] = "true",
+                ["EmailInbox:Username"] = "reader@example.com",
+                ["EmailInbox:Password"] = "secret",
+                ["EmailInbox:Folder"] = "INBOX",
+                ["EmailInbox:TimeoutMs"] = "5000",
+                ["EmailInbox:MaxResults"] = "20",
+
                 // Keep ReAct deterministic in tests.
                 ["ReActOptions:UseJsonResponse"] = "true",
 
@@ -86,6 +96,9 @@ public class InfernalHierarchyTestWebAppFactory : WebApplicationFactory<Program>
 
             services.AddSingleton<FakeEmailSender>();
             services.AddSingleton<IEmailSender>(sp => sp.GetRequiredService<FakeEmailSender>());
+
+            services.AddSingleton<FakeEmailInboxQueryClient>();
+            services.AddSingleton<IEmailInboxQueryClient>(sp => sp.GetRequiredService<FakeEmailInboxQueryClient>());
 
             // Remove noisy/background hosted services not needed for API E2E.
             RemoveHostedService<InfernalHierarchy.Memory.Vector.VectorMemoryInitializationService>(services);

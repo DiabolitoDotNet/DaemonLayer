@@ -3,6 +3,7 @@ using System.Net.Http;
 using System.Net.Http.Json;
 using FluentAssertions;
 using InfernalHierarchy.Core.Entities;
+using InfernalHierarchy.Core.Interfaces;
 using InfernalHierarchy.Messaging.Federation;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
@@ -29,10 +30,47 @@ public sealed class FederationServiceTests
         }
     }
 
-    private static FederationService CreateService(StubHttpMessageHandler handler, string localInstanceId)
+    private sealed class StubLocalCollaborationService : IAgentCollaborationService
+    {
+        private readonly Func<CollaborationRequest, CollaborationResult> _handler;
+
+        public StubLocalCollaborationService(Func<CollaborationRequest, CollaborationResult> handler)
+        {
+            _handler = handler;
+        }
+
+        public CollaborationRequest? LastRequest { get; private set; }
+
+        public Task<CollaborationResult> RequestCollaborationAsync(CollaborationRequest request, CancellationToken ct = default)
+        {
+            LastRequest = request;
+            return Task.FromResult(_handler(request));
+        }
+
+        public Task SubmitResponseAsync(string requestId, AgentResponse response, CancellationToken ct = default) => Task.CompletedTask;
+
+        public Task<CollaborationRequest?> GetCollaborationStatusAsync(string requestId, CancellationToken ct = default)
+            => Task.FromResult<CollaborationRequest?>(null);
+
+        public Task CancelCollaborationAsync(string requestId, CancellationToken ct = default) => Task.CompletedTask;
+
+        public Task<List<CollaborationRequest>> GetPendingCollaborationsAsync(string agentId, CancellationToken ct = default)
+            => Task.FromResult(new List<CollaborationRequest>());
+
+        public Task<List<CollaborationRequest>> GetCollaborationHistoryAsync(int limit = 50, CancellationToken ct = default)
+            => Task.FromResult(new List<CollaborationRequest>());
+
+        public Task<double> CalculateAgentWeightAsync(string agentId, AgentRank agentRank, string? toolName = null, CancellationToken ct = default)
+            => Task.FromResult(1.0);
+    }
+
+    private static FederationService CreateService(
+        StubHttpMessageHandler handler,
+        string localInstanceId,
+        IAgentCollaborationService? localCollaborationService = null)
     {
         var client = new HttpClient(handler);
-        return new FederationService(NullLogger<FederationService>.Instance, client, localInstanceId);
+        return new FederationService(NullLogger<FederationService>.Instance, client, localInstanceId, localCollaborationService);
     }
 
     [Fact]
@@ -414,7 +452,19 @@ public sealed class FederationServiceTests
             })
         });
 
-        var sut = CreateService(handler, localInstanceId: "local");
+        var localFallback = new StubLocalCollaborationService(_ => new CollaborationResult
+        {
+            Decision = "LOCAL_DECISION",
+            Confidence = 0.81,
+            ParticipantCount = 2,
+            AgreementScore = 0.7,
+            Strategy = CollaborationStrategy.WeightedVoting,
+            AggregatedReasoning = "local fallback succeeded",
+            NextAction = "none",
+            NeedsSupervisorIntervention = false
+        });
+
+        var sut = CreateService(handler, localInstanceId: "local", localFallback);
         await sut.RegisterInstanceAsync(new FederatedInstance { InstanceId = "i1", BaseUrl = "http://r1", IsActive = true, LastHeartbeat = DateTime.UtcNow });
 
         var request = new CollaborationRequest
@@ -429,9 +479,11 @@ public sealed class FederationServiceTests
 
         var result = await sut.RequestCrossInstanceCollaborationAsync(request);
 
-        result.Decision.Should().Be("INSUFFICIENT_CROSS_INSTANCE_PARTICIPANTS");
-        result.ConflictReasonCode.Should().Be("cross_instance_minimum_participants_not_met");
-        result.NextAction.Should().Be("fallback_to_local_collaboration");
+        result.Decision.Should().Be("LOCAL_DECISION");
+        result.NextAction.Should().Be("none");
+        result.NeedsSupervisorIntervention.Should().BeFalse();
+        result.AggregatedReasoning.Should().Contain("Federation fallback executed local collaboration");
+        localFallback.LastRequest.Should().NotBeNull();
     }
 
     [Fact]
@@ -445,7 +497,18 @@ public sealed class FederationServiceTests
                 Payload = new Dictionary<string, object>()
             })
         });
-        var sut = CreateService(handler, localInstanceId: "local");
+        var localFallback = new StubLocalCollaborationService(_ => new CollaborationResult
+        {
+            Decision = "LOCAL_DECISION",
+            Confidence = 0.74,
+            ParticipantCount = 2,
+            AgreementScore = 0.6,
+            Strategy = CollaborationStrategy.Voting,
+            AggregatedReasoning = "local fallback succeeded",
+            NextAction = "none",
+            NeedsSupervisorIntervention = false
+        });
+        var sut = CreateService(handler, localInstanceId: "local", localFallback);
 
         await sut.RegisterInstanceAsync(new FederatedInstance { InstanceId = "i1", BaseUrl = "http://r1", IsActive = true, LastHeartbeat = DateTime.UtcNow });
 
@@ -461,10 +524,11 @@ public sealed class FederationServiceTests
 
         var result = await sut.RequestCrossInstanceCollaborationAsync(request);
 
-        result.Decision.Should().Be("NO_CROSS_INSTANCE_RESPONSE");
-        result.ConflictReasonCode.Should().Be("cross_instance_no_responses");
-        result.NextAction.Should().Be("fallback_to_local_collaboration");
-        result.ParticipantCount.Should().Be(0);
+        result.Decision.Should().Be("LOCAL_DECISION");
+        result.NextAction.Should().Be("none");
+        result.NeedsSupervisorIntervention.Should().BeFalse();
+        result.AggregatedReasoning.Should().Contain("Federation fallback executed local collaboration");
+        localFallback.LastRequest.Should().NotBeNull();
     }
 
     [Fact]

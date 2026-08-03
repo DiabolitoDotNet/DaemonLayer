@@ -142,6 +142,55 @@ public sealed class CapabilityGapAnalyzerTests
         result.Gaps[1].Capability.Should().Be("graphql_access");
     }
 
+    [Fact]
+    public async Task AnalyzeAsync_MailboxIntent_ShouldDetectInboxCapabilityGap()
+    {
+        var analyzer = new DefaultCapabilityGapAnalyzer(skillPackCatalog: null);
+        var context = BuildContext();
+
+        var persona = new Persona
+        {
+            Name = "Agares",
+            SystemPrompt = "You are Agares",
+            AvailableTools = new[] { "email_send", "create_custom_tool" }
+        };
+
+        var result = await analyzer.AnalyzeAsync(context, new AgentMessage
+        {
+            Content = "Check my inbox and tell me if I received mail from alerts@example.com"
+        }, persona, CancellationToken.None);
+
+        result.HasGaps.Should().BeTrue();
+        result.Gaps.Should().Contain(g => g.Capability == "mailbox_read");
+        result.Report.Should().NotBeNull();
+        result.Report!.CandidateTools.Should().Contain("email_inbox_query");
+        result.Plan.Should().NotBeNull();
+        result.Plan!.Steps.Should().Contain(s => s.Name == "retry_original_task");
+    }
+
+    [Fact]
+    public async Task AnalyzeAsync_SensitiveCredentialIntent_ShouldSetHighRiskReport()
+    {
+        var analyzer = new DefaultCapabilityGapAnalyzer(skillPackCatalog: null);
+        var context = BuildContext();
+
+        var persona = new Persona
+        {
+            Name = "Agares",
+            SystemPrompt = "You are Agares",
+            AvailableTools = new[] { "create_custom_tool" }
+        };
+
+        var result = await analyzer.AnalyzeAsync(context, new AgentMessage
+        {
+            Content = "Use my login and password credentials to check mailbox"
+        }, persona, CancellationToken.None);
+
+        result.Report.Should().NotBeNull();
+        result.Report!.SecurityRiskClass.Should().Be(CapabilitySecurityRiskClass.High);
+        result.Report.CanAutofix.Should().BeFalse();
+    }
+
     private static ReActTaskProcessorContext BuildContext()
     {
         return new ReActTaskProcessorContext(

@@ -68,7 +68,8 @@ public class AgentOrchestrator : BackgroundService
             {
                 var handlingResult = await exceptionHandler.HandleExceptionAsync(
                     ex,
-                    "OrchestratorStartup");
+                    "OrchestratorStartup",
+                    ct: stoppingToken);
                 
                 _logger.LogCritical(
                     ex,
@@ -109,7 +110,8 @@ public class AgentOrchestrator : BackgroundService
                 {
                     var handlingResult = await exceptionHandler.HandleExceptionAsync(
                         ex,
-                        $"StopAgent_{_mainAgent.Name}");
+                        $"StopAgent_{_mainAgent.Name}",
+                        ct: cancellationToken);
                     
                     _logger.LogError(
                         ex,
@@ -144,7 +146,8 @@ public class AgentOrchestrator : BackgroundService
                 {
                     var handlingResult = await exceptionHandler.HandleExceptionAsync(
                         ex,
-                        $"StopAgent_{agent.Name}");
+                        $"StopAgent_{agent.Name}",
+                        ct: cancellationToken);
                     
                     _logger.LogError(
                         ex,

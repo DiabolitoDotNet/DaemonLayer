@@ -177,10 +177,11 @@ public abstract class SagaBase : ISaga
         var failedStepsSummary = string.Join(",", failedCompensationSteps.OrderBy(s => s, StringComparer.Ordinal));
         context.Data["CompensationFailureReasonCode"] = "compensation_retry_exhausted";
         context.Data["CompensationFailedSteps"] = failedCompensationSteps;
-        context.Data["SupervisorEscalationRequested"] = true;
+        context.Data["SupervisorEscalationRequested"] = false;
+        context.Data["AutonomousCompensationRecoveryExhausted"] = true;
 
         Logger.LogError(
-            "Compensation failed for saga {SagaName}. Reason={ReasonCode} FailedSteps={FailedSteps} EscalationRequested={EscalationRequested}",
+            "Compensation failed for saga {SagaName}. Reason={ReasonCode} FailedSteps={FailedSteps} AutonomousRecoveryExhausted={AutonomousRecoveryExhausted}",
             Name,
             "compensation_retry_exhausted",
             failedStepsSummary,
@@ -189,8 +190,8 @@ public abstract class SagaBase : ISaga
         return new CompensationOutcome(
             Success: false,
             FailureReasonCode: "compensation_retry_exhausted",
-            NextAction: "request_supervisor_compensation_assistance",
-            NeedsSupervisorIntervention: true);
+            NextAction: "autonomous_compensation_recovery_exhausted",
+            NeedsSupervisorIntervention: false);
     }
 
     /// <summary>

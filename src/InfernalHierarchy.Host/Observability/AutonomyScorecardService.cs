@@ -108,7 +108,7 @@ internal sealed class AutonomyScorecardService
             return false;
         }
 
-        if (content.StartsWith("❌", StringComparison.OrdinalIgnoreCase))
+        if (content.StartsWith('❌'))
         {
             return false;
         }

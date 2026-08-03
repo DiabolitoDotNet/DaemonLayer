@@ -436,7 +436,7 @@ public class TelegramBotService : BackgroundService
 
             if (exceptionHandler != null)
             {
-                var handlingResult = await exceptionHandler.HandleExceptionAsync(ex, $"TelegramMessage_{userId}");
+                var handlingResult = await exceptionHandler.HandleExceptionAsync(ex, $"TelegramMessage_{userId}", ct: ct);
 
                 userMessage = handlingResult.ShouldRetry
                     ? $"⚠️ {handlingResult.Message} (will retry automatically)"
@@ -505,7 +505,8 @@ public class TelegramBotService : BackgroundService
         {
             var handlingResult = exceptionHandler.HandleExceptionAsync(
                 exception,
-                "TelegramPolling").GetAwaiter().GetResult();
+                "TelegramPolling",
+                ct: ct).GetAwaiter().GetResult();
 
             _logger.LogError(
                 exception,

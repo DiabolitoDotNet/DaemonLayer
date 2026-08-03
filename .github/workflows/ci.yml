@@ -31,7 +31,7 @@ jobs:
         run: dotnet build InfernalHierarchy.sln -c Release --no-restore
 
       - name: Analyzer Build
-        run: dotnet build InfernalHierarchy.sln -c Release --no-restore -p:RunAnalyzersDuringBuild=true
+        run: dotnet build InfernalHierarchy.sln -c Release --no-restore -p:RunAnalyzersDuringBuild=true -p:EnforceCriticalWarningsAsErrors=true
 
       - name: Performance Gate
         run: dotnet run --project tools/InfernalHierarchy.PerfGate/InfernalHierarchy.PerfGate.csproj -c Release

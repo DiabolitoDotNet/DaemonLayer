@@ -71,6 +71,16 @@ public sealed class DefaultCapabilityGapAnalyzer : ICapabilityGapAnalyzer
             [
                 new Regex(@"\b(delegate|collaborat|parallel agents?|sub-?agent)\b", RegexOptions.IgnoreCase | RegexOptions.Compiled)
             ],
+            PreferredProfile: "Research"),
+        new(
+            Capability: "mailbox_read",
+            RequiredTool: "email_inbox_query",
+            ReasonCode: "missing_mailbox_read_tool",
+            Description: "Task requires mailbox inbox reading/querying.",
+            Matchers:
+            [
+                new Regex(@"\b(mailbox|inbox|email inbox|mail from|mail de|boite mail|boi?te de reception|imap)\b", RegexOptions.IgnoreCase | RegexOptions.Compiled)
+            ],
             PreferredProfile: "Research")
     };
 
@@ -155,8 +165,162 @@ public sealed class DefaultCapabilityGapAnalyzer : ICapabilityGapAnalyzer
         }
 
         var remediations = BuildRemediations(gaps, allowedTools, executionProfile);
+        var report = BuildReport(task.Content ?? string.Empty, gaps, remediations);
+        var plan = BuildPlan(remediations, report);
 
-        return new CapabilityGapAnalysisResult(gaps, remediations);
+        return new CapabilityGapAnalysisResult(gaps, remediations, report, plan);
+    }
+
+    private static CapabilityGapReport BuildReport(
+        string requestedOutcome,
+        IReadOnlyList<CapabilityGap> gaps,
+        IReadOnlyList<CapabilityRemediationAction> remediations)
+    {
+        var missingCapabilities = gaps
+            .Select(g => g.Capability)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        var candidateTools = remediations
+            .Where(r => !string.IsNullOrWhiteSpace(r.CustomToolName))
+            .Select(r => r.CustomToolName!)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        foreach (var capability in missingCapabilities)
+        {
+            if (string.Equals(capability, "mailbox_read", StringComparison.OrdinalIgnoreCase))
+            {
+                candidateTools.Add("email_inbox_query");
+            }
+
+            if (string.Equals(capability, "graphql_access", StringComparison.OrdinalIgnoreCase))
+            {
+                candidateTools.Add("graphql_request");
+            }
+
+            if (string.Equals(capability, "http_api_integration", StringComparison.OrdinalIgnoreCase))
+            {
+                candidateTools.Add("http_request");
+            }
+
+            if (string.Equals(capability, "sql_read", StringComparison.OrdinalIgnoreCase))
+            {
+                candidateTools.Add("sql_query_readonly");
+            }
+        }
+
+        var risk = ClassifySecurityRisk(requestedOutcome);
+        var canAutofix = remediations.Count > 0 && risk != CapabilitySecurityRiskClass.High;
+        var blockReasonCode = gaps.Count == 0
+            ? "none"
+            : gaps[0].ReasonCode;
+
+        return new CapabilityGapReport(
+            RequestedOutcome: requestedOutcome,
+            MissingCapabilities: missingCapabilities,
+            CandidateTools: candidateTools.Distinct(StringComparer.OrdinalIgnoreCase).ToArray(),
+            SecurityRiskClass: risk,
+            CanAutofix: canAutofix,
+            BlockReasonCode: blockReasonCode);
+    }
+
+    private static CapabilityRemediationPlan BuildPlan(
+        IReadOnlyList<CapabilityRemediationAction> remediations,
+        CapabilityGapReport report)
+    {
+        var steps = new List<CapabilityRemediationPlanStep>();
+
+        foreach (var action in remediations)
+        {
+            steps.Add(new CapabilityRemediationPlanStep(
+                Name: "research_candidates",
+                Description: $"Research implementation candidates for capability '{action.Capability}'.",
+                IsAutomated: true,
+                ActionKind: CapabilityRemediationActionKind.EscalateCollaboration.ToString(),
+                Capability: action.Capability));
+
+            steps.Add(new CapabilityRemediationPlanStep(
+                Name: "select_design",
+                Description: $"Select deterministic design for '{action.Capability}'.",
+                IsAutomated: true,
+                ActionKind: CapabilityRemediationActionKind.EscalateCollaboration.ToString(),
+                Capability: action.Capability));
+
+            steps.Add(new CapabilityRemediationPlanStep(
+                Name: "implement_tool",
+                Description: action.Description,
+                IsAutomated: action.Kind == CapabilityRemediationActionKind.CreateCustomTool,
+                ActionKind: action.Kind.ToString(),
+                Capability: action.Capability));
+
+            steps.Add(new CapabilityRemediationPlanStep(
+                Name: "test_tool",
+                Description: $"Run focused validation for '{action.Capability}'.",
+                IsAutomated: true,
+                ActionKind: CapabilityRemediationActionKind.EscalateCollaboration.ToString(),
+                Capability: action.Capability));
+        }
+
+        steps.Add(new CapabilityRemediationPlanStep(
+            Name: "security_gate",
+            Description: "Validate secret-handling and least-privilege constraints.",
+            IsAutomated: true,
+            ActionKind: CapabilityRemediationActionKind.EscalateCollaboration.ToString(),
+            Capability: "security"));
+
+        steps.Add(new CapabilityRemediationPlanStep(
+            Name: "register_tool",
+            Description: "Register the newly available capability/tool for runtime use.",
+            IsAutomated: true,
+            ActionKind: CapabilityRemediationActionKind.CreateCustomTool.ToString(),
+            Capability: "registration"));
+
+        steps.Add(new CapabilityRemediationPlanStep(
+            Name: "retry_original_task",
+            Description: "Retry the original intent automatically after remediation.",
+            IsAutomated: true,
+            ActionKind: "RetryOriginalIntent",
+            Capability: "original_intent"));
+
+        return new CapabilityRemediationPlan(
+            PlanId: $"gap-plan-{Guid.NewGuid():N}",
+            Steps: steps,
+            MaxAttempts: 3,
+            MaxDurationSeconds: 240,
+            PolicyGateAllowsAutofix: report.CanAutofix);
+    }
+
+    private static CapabilitySecurityRiskClass ClassifySecurityRisk(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return CapabilitySecurityRiskClass.Low;
+        }
+
+        var lowered = text.ToLowerInvariant();
+
+        if (lowered.Contains("password", StringComparison.Ordinal)
+            || lowered.Contains("pwd", StringComparison.Ordinal)
+            || lowered.Contains("token", StringComparison.Ordinal)
+            || lowered.Contains("api key", StringComparison.Ordinal)
+            || lowered.Contains("credentials", StringComparison.Ordinal)
+            || lowered.Contains("login", StringComparison.Ordinal))
+        {
+            return CapabilitySecurityRiskClass.High;
+        }
+
+        if (lowered.Contains("mail", StringComparison.Ordinal)
+            || lowered.Contains("email", StringComparison.Ordinal)
+            || lowered.Contains("database", StringComparison.Ordinal)
+            || lowered.Contains("sql", StringComparison.Ordinal)
+            || lowered.Contains("http", StringComparison.Ordinal)
+            || lowered.Contains("graphql", StringComparison.Ordinal))
+        {
+            return CapabilitySecurityRiskClass.Medium;
+        }
+
+        return CapabilitySecurityRiskClass.Low;
     }
 
     private static IReadOnlyList<CapabilityRemediationAction> BuildRemediations(

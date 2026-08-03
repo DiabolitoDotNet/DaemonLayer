@@ -1,4 +1,5 @@
 namespace InfernalHierarchy.Agents.ReAct;
+using System.Diagnostics.CodeAnalysis;
 
 /// <summary>
 /// Configuration for the ReAct loop output format and parsing.
@@ -18,6 +19,10 @@ public class ReActOptions
     /// This prevents post-success hallucinations and duplicate tool invocations (e.g., sending the
     /// same email multiple times).
     /// </summary>
+    [SuppressMessage(
+        "Performance",
+        "CA1819:Properties should not return arrays",
+        Justification = "Array binding is intentional for simple appsettings configuration and this options object is immutable in runtime hot paths.")]
     public string[] TerminalTools { get; set; } = ["email_send", "send_telegram", "create_custom_tool"];
 
     /// <summary>

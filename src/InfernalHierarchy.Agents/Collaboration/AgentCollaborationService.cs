@@ -187,6 +187,7 @@ public class AgentCollaborationService : IAgentCollaborationService
 
                     if (result.Confidence >= request.MinimumConfidence)
                     {
+                        EnsureTerminalAutonomousOutcome(result);
                         request.Status = CollaborationStatus.Completed;
                         request.CompletedAt = DateTime.UtcNow;
                         request.Result = result;
@@ -198,8 +199,7 @@ public class AgentCollaborationService : IAgentCollaborationService
 
                     // Conflict / low-confidence: attempt resolution.
                     var resolved = await ResolveConflictAsync(validResponses, request.Strategy, request.Id, ct).ConfigureAwait(false);
-                    if (resolved.NeedsSupervisorIntervention
-                        || string.Equals(resolved.NextAction, "supervisor_adjudication_workflow", StringComparison.OrdinalIgnoreCase))
+                    if (RequiresAutonomousAdjudication(resolved))
                     {
                         resolved = await ExecuteSupervisorAdjudicationWorkflowAsync(request, validResponses, resolved, ct).ConfigureAwait(false);
                     }
@@ -207,6 +207,7 @@ public class AgentCollaborationService : IAgentCollaborationService
                     if (resolved.Decision != "CONFLICT_UNRESOLVED_RETRY")
                     {
                         ApplyConflictProtocolMetadata(resolved, request, validResponses);
+                        EnsureTerminalAutonomousOutcome(resolved);
                         request.Status = resolved.Confidence >= request.MinimumConfidence
                             ? CollaborationStatus.Completed
                             : CollaborationStatus.Failed;
@@ -238,11 +239,18 @@ public class AgentCollaborationService : IAgentCollaborationService
 
                     request.Status = CollaborationStatus.Failed;
                     request.CompletedAt = DateTime.UtcNow;
-                    request.Result = result;
-                    AnalyzeCollaborationHistory(request, result);
-                    await PersistCollaborationOutcomeAsync(request, result, ct).ConfigureAwait(false);
+                    var terminalResult = await ExecuteTerminalFallbackAsync(
+                        request,
+                        validResponses,
+                        reasonCode: "max_rounds_exhausted",
+                        reasonDescription: "Multi-round refinement reached max rounds without confidence threshold.",
+                        cancelled: false,
+                        ct).ConfigureAwait(false);
+                    request.Result = terminalResult;
+                    AnalyzeCollaborationHistory(request, terminalResult);
+                    await PersistCollaborationOutcomeAsync(request, terminalResult, ct).ConfigureAwait(false);
                     CleanupResponseChannel(request.Id);
-                    return result;
+                    return terminalResult;
                 }
 
                 var remaining = deadline - DateTime.UtcNow;
@@ -265,51 +273,133 @@ public class AgentCollaborationService : IAgentCollaborationService
             {
                 request.Status = CollaborationStatus.Cancelled;
                 request.CompletedAt = DateTime.UtcNow;
+
+                var cancelledResponses = GetValidResponses(request.Id, round);
+                var cancelledResult = await ExecuteTerminalFallbackAsync(
+                    request,
+                    cancelledResponses,
+                    reasonCode: "request_cancelled",
+                    reasonDescription: "Collaboration was cancelled before minimum participants were reached.",
+                    cancelled: true,
+                    ct).ConfigureAwait(false);
+
+                request.Result = cancelledResult;
+                AnalyzeCollaborationHistory(request, cancelledResult);
+                await PersistCollaborationOutcomeAsync(request, cancelledResult, ct).ConfigureAwait(false);
                 CleanupResponseChannel(request.Id);
-                break;
+                return cancelledResult;
             }
 
             var partial = GetValidResponses(request.Id, round);
             request.Status = CollaborationStatus.TimedOut;
             request.CompletedAt = DateTime.UtcNow;
 
-            if (partial.Count > 0)
-            {
-                var partialResult = await AggregateResponsesAsync(request, partial, ct).ConfigureAwait(false);
-                ApplyConflictProtocolMetadata(partialResult, request, partial);
-                request.Result = partialResult;
-                AnalyzeCollaborationHistory(request, partialResult);
-                await PersistCollaborationOutcomeAsync(request, partialResult, ct).ConfigureAwait(false);
-                CleanupResponseChannel(request.Id);
-                return partialResult;
-            }
+            var timeoutResult = await ExecuteTerminalFallbackAsync(
+                request,
+                partial,
+                reasonCode: "timeout_waiting_for_participants",
+                reasonDescription: "Collaboration timed out before reaching minimum participants.",
+                cancelled: false,
+                ct).ConfigureAwait(false);
 
+            request.Result = timeoutResult;
+            AnalyzeCollaborationHistory(request, timeoutResult);
+            await PersistCollaborationOutcomeAsync(request, timeoutResult, ct).ConfigureAwait(false);
             CleanupResponseChannel(request.Id);
-            return new CollaborationResult
-            {
-                Decision = "TIMEOUT",
-                Confidence = 0.0,
-                AggregatedReasoning = "Collaboration timed out before receiving sufficient responses",
-                Strategy = request.Strategy,
-                ConflictClass = "timeout",
-                ConflictReasonCode = "timeout_waiting_for_participants",
-                NextAction = "retry_with_longer_timeout_or_reduce_minimum_participants",
-                NeedsSupervisorIntervention = false
-            };
+            return timeoutResult;
         }
 
         CleanupResponseChannel(request.Id);
         return new CollaborationResult
         {
-            Decision = request.Status == CollaborationStatus.Cancelled ? "CANCELLED" : "FAILED",
+            Decision = request.Status == CollaborationStatus.Cancelled ? "CANCELLED" : "AUTONOMOUS_COLLABORATION_FAILED",
             Confidence = 0.0,
             AggregatedReasoning = "Collaboration did not complete successfully",
             Strategy = request.Strategy,
             ConflictClass = request.Status == CollaborationStatus.Cancelled ? "cancelled" : "unresolved",
             ConflictReasonCode = request.Status == CollaborationStatus.Cancelled ? "request_cancelled" : "collaboration_failed",
-            NextAction = request.Status == CollaborationStatus.Cancelled ? "restart_collaboration_if_still_needed" : "escalate_to_supervisor",
-            NeedsSupervisorIntervention = request.Status != CollaborationStatus.Cancelled
+            NextAction = "none",
+            NeedsSupervisorIntervention = false
         };
+    }
+
+    private static bool RequiresAutonomousAdjudication(CollaborationResult result)
+    {
+        return string.Equals(result.Decision, "CONFLICT_UNRESOLVED", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(result.ConflictReasonCode, "max_rounds_exhausted", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static void EnsureTerminalAutonomousOutcome(CollaborationResult result)
+    {
+        result.NextAction = "none";
+        result.NeedsSupervisorIntervention = false;
+    }
+
+    private async Task<CollaborationResult> ExecuteTerminalFallbackAsync(
+        CollaborationRequest request,
+        List<AgentResponse> responses,
+        string reasonCode,
+        string reasonDescription,
+        bool cancelled,
+        CancellationToken ct)
+    {
+        if (responses.Count == 0)
+        {
+            return new CollaborationResult
+            {
+                Decision = cancelled ? "CANCELLED" : "AUTONOMOUS_TIMEOUT_NO_RESPONSE",
+                Confidence = 0,
+                Responses = responses,
+                ParticipantCount = 0,
+                AgreementScore = 0,
+                Strategy = request.Strategy,
+                AggregatedReasoning =
+                    $"Autonomous terminal fallback executed ({reasonCode}) but no responses were available. {reasonDescription}",
+                ConflictClass = cancelled ? "cancelled" : "timeout",
+                ConflictReasonCode = reasonCode,
+                NextAction = "none",
+                NeedsSupervisorIntervention = false
+            };
+        }
+
+        var aggregated = await AggregateResponsesAsync(request, responses, ct).ConfigureAwait(false);
+        ApplyConflictProtocolMetadata(aggregated, request, responses);
+
+        if (aggregated.Confidence >= request.MinimumConfidence)
+        {
+            aggregated.NextAction = "none";
+            aggregated.NeedsSupervisorIntervention = false;
+            return aggregated;
+        }
+
+        var resolved = await ResolveConflictAsync(responses, request.Strategy, request.Id, ct).ConfigureAwait(false);
+        if (resolved.Decision == "CONFLICT_UNRESOLVED_RETRY"
+            || RequiresAutonomousAdjudication(resolved))
+        {
+            var unresolved = resolved.Decision == "CONFLICT_UNRESOLVED_RETRY"
+                ? new CollaborationResult
+                {
+                    Decision = "CONFLICT_UNRESOLVED",
+                    Confidence = aggregated.Confidence,
+                    Responses = responses,
+                    ParticipantCount = responses.Count,
+                    AgreementScore = aggregated.AgreementScore,
+                    Strategy = request.Strategy,
+                    AggregatedReasoning = $"Autonomous terminal fallback invoked ({reasonCode}) after unresolved multi-round result.",
+                    ConflictClass = cancelled ? "cancelled" : "timeout",
+                    ConflictReasonCode = reasonCode,
+                    NextAction = "none",
+                    NeedsSupervisorIntervention = false
+                }
+                : resolved;
+
+            resolved = await ExecuteSupervisorAdjudicationWorkflowAsync(request, responses, unresolved, ct).ConfigureAwait(false);
+        }
+
+        ApplyConflictProtocolMetadata(resolved, request, responses);
+        resolved.NextAction = "none";
+        resolved.NeedsSupervisorIntervention = false;
+        return resolved;
     }
 
     private async Task<CollaborationResult> ExecuteSupervisorAdjudicationWorkflowAsync(
@@ -322,8 +412,6 @@ public class AgentCollaborationService : IAgentCollaborationService
             "Executing autonomous supervisor adjudication workflow for collaboration {RequestId} (reason={Reason})",
             request.Id,
             unresolvedResult.ConflictReasonCode);
-
-        await Task.CompletedTask.ConfigureAwait(false);
 
         AgentResponse? supervisorDecision = null;
         var supervisorPriority = int.MaxValue;
@@ -608,7 +696,7 @@ Instruction: If you change your decision, explain why. If you keep it, explain w
     }
 
     /// <inheritdoc/>
-    public async Task<double> CalculateAgentWeightAsync(
+    public Task<double> CalculateAgentWeightAsync(
         string agentId,
         AgentRank agentRank,
         string? toolName = null,
@@ -624,8 +712,7 @@ Instruction: If you change your decision, explain why. If you keep it, explain w
             _ => 1.0
         };
 
-        await Task.CompletedTask;
-        return weight;
+        return Task.FromResult(weight);
     }
 
     /// <summary>
@@ -720,7 +807,7 @@ Instruction: If you change your decision, explain why. If you keep it, explain w
                 AggregatedReasoning = $"Round {currentRound + 1}/3: Agents disagreed, requesting refined responses with conflict context",
                 ConflictClass = "unresolved",
                 ConflictReasonCode = "requires_additional_round",
-                NextAction = "run_next_consensus_round",
+                NextAction = "none",
                 NeedsSupervisorIntervention = false
             };
         }
@@ -737,8 +824,8 @@ Instruction: If you change your decision, explain why. If you keep it, explain w
             AggregatedReasoning = "Multiple strategies and rounds failed to resolve disagreement. Escalating to supervisor adjudication workflow.",
             ConflictClass = "unresolved",
             ConflictReasonCode = "max_rounds_exhausted",
-            NextAction = "supervisor_adjudication_workflow",
-            NeedsSupervisorIntervention = true
+                NextAction = "none",
+                NeedsSupervisorIntervention = false
         };
     }
 
@@ -784,14 +871,14 @@ Instruction: If you change your decision, explain why. If you keep it, explain w
         {
             result.ConflictClass = "tie";
             result.ConflictReasonCode = "decision_tie";
-            result.NextAction = "escalate_strategy_or_supervisor";
+            result.NextAction = "none";
             result.NeedsSupervisorIntervention = false;
             return;
         }
 
         result.ConflictClass = "low_confidence";
         result.ConflictReasonCode = "confidence_below_threshold";
-        result.NextAction = "request_more_evidence_or_escalate";
+        result.NextAction = "none";
         result.NeedsSupervisorIntervention = false;
     }
 
@@ -986,7 +1073,7 @@ Instruction: If you change your decision, explain why. If you keep it, explain w
 
         // If task requires high confidence (financial, security, critical decisions)
         var criticalKeywords = new[] { "financial", "security", "critical", "important", "urgent", "production" };
-        if (criticalKeywords.Any(kw => request.Task.ToLowerInvariant().Contains(kw)))
+        if (criticalKeywords.Any(kw => request.Task.Contains(kw, StringComparison.OrdinalIgnoreCase)))
         {
             _logger.LogInformation("Critical task detected, using Consensus strategy");
             return CollaborationStrategy.Consensus;

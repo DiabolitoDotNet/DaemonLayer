@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Diagnostics.CodeAnalysis;
 
 namespace InfernalHierarchy.Tools.Clients.Search;
 
@@ -112,18 +113,21 @@ public sealed class BraveSearchClient : IBraveSearchClient
         return code >= 500 || code == 429 || code == 408;
     }
 
+    [SuppressMessage("Performance", "CA1812:Avoid uninstantiated internal classes", Justification = "Instantiated by System.Text.Json when parsing Brave search responses.")]
     private sealed class BraveSearchResponse
     {
         [JsonPropertyName("web")]
         public WebResults? Web { get; set; }
     }
 
+    [SuppressMessage("Performance", "CA1812:Avoid uninstantiated internal classes", Justification = "Instantiated by System.Text.Json when parsing Brave search responses.")]
     private sealed class WebResults
     {
         [JsonPropertyName("results")]
         public BraveResult[] Results { get; set; } = Array.Empty<BraveResult>();
     }
 
+    [SuppressMessage("Performance", "CA1812:Avoid uninstantiated internal classes", Justification = "Instantiated by System.Text.Json when parsing Brave search responses.")]
     private sealed class BraveResult
     {
         [JsonPropertyName("title")]

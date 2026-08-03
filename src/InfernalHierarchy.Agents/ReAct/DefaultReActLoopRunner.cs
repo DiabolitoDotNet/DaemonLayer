@@ -970,7 +970,7 @@ public sealed class DefaultReActLoopRunner : IReActLoopRunner
                 continue;
             }
 
-            if (lower.Contains(tool.ToLowerInvariant()))
+            if (t.Contains(tool, StringComparison.OrdinalIgnoreCase))
             {
                 matchedTool = tool;
                 break;

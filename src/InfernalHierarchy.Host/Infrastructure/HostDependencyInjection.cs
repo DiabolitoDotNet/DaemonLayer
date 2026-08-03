@@ -15,7 +15,10 @@ using InfernalHierarchy.Host.Telegram;
 using InfernalHierarchy.Tools.Options;
 using InfernalHierarchy.Personas.Loading;
 using InfernalHierarchy.Agents.Policies;
+using InfernalHierarchy.Messaging.Federation;
+using InfernalHierarchy.Tools.Notifications;
 using InfernalHierarchy.Tools.Tools.GraphQL;
+using InfernalHierarchy.Tools.Tools.Notifications;
 using InfernalHierarchy.Tools.Tools.Sql;
 
 namespace InfernalHierarchy.Host.Infrastructure;
@@ -63,6 +66,7 @@ internal static class HostDependencyInjection
         builder.Services.AddSingleton<IValidateOptions<SearXNGOptions>, WebSearchProvidersValidator>();
         builder.Services.AddSingleton<IValidateOptions<BraveSearchOptions>, WebSearchProvidersValidator>();
         builder.Services.AddSingleton<IValidateOptions<EmailNotificationOptions>, EmailNotificationOptionsValidator>();
+        builder.Services.AddSingleton<IValidateOptions<EmailInboxQueryOptions>, EmailInboxQueryOptionsValidator>();
         builder.Services.AddSingleton<IValidateOptions<ToolRateLimitingOptions>, ToolRateLimitingOptionsValidator>();
         builder.Services.AddSingleton<IValidateOptions<ToolResultCacheOptions>, ToolResultCacheOptionsValidator>();
         builder.Services.AddSingleton<IValidateOptions<VectorMemoryOptions>, VectorMemoryOptionsValidator>();
@@ -186,8 +190,31 @@ internal static class HostDependencyInjection
         AddNotifications(builder);
         AddAdvancedMemory(builder, vectorMemoryOptions, memoryPruningOptions, memoryLearningOptions);
         AddCollaboration(builder);
+        AddFederation(builder);
         AddTemplates(builder);
         AddEventSourcing(builder);
+    }
+
+    private static void AddFederation(WebApplicationBuilder builder)
+    {
+        builder.Services.AddHttpClient("FederationServiceClient", client =>
+        {
+            client.Timeout = TimeSpan.FromSeconds(15);
+        });
+
+        builder.Services.AddSingleton<IFederationService>(sp =>
+        {
+            var logger = sp.GetRequiredService<ILogger<FederationService>>();
+            var httpClient = sp.GetRequiredService<IHttpClientFactory>().CreateClient("FederationServiceClient");
+            var collaboration = sp.GetRequiredService<IAgentCollaborationService>();
+
+            var configuredInstanceId = builder.Configuration.GetValue<string>("Federation:LocalInstanceId");
+            var localInstanceId = string.IsNullOrWhiteSpace(configuredInstanceId)
+                ? $"{Environment.MachineName}-{Environment.ProcessId}"
+                : configuredInstanceId.Trim();
+
+            return new FederationService(logger, httpClient, localInstanceId, collaboration);
+        });
     }
 
     private static void AddVoiceCopilot(WebApplicationBuilder builder)
@@ -371,7 +398,7 @@ internal static class HostDependencyInjection
             var logger = sp.GetRequiredService<ILogger<EventStore>>();
             return new EventStore(storePath, logger);
         });
-        builder.Services.AddSingleton<IAgentEventSink>(sp => sp.GetRequiredService<EventStore>());
+        builder.Services.AddSingleton<IAgentEventSink, CapabilityGapMetricsEventSink>();
     }
 
     public static void AddTools(WebApplicationBuilder builder)
@@ -428,6 +455,8 @@ internal static class HostDependencyInjection
         builder.Services.AddSingleton<ITool, SendAgentMessageTool>();
         builder.Services.AddSingleton<ITool, RequestSkillPackTool>();
         builder.Services.AddSingleton<ITool, EmailNotificationTool>();
+        builder.Services.AddSingleton<IEmailInboxQueryClient, ImapEmailInboxQueryClient>();
+        builder.Services.AddSingleton<ITool, EmailInboxQueryTool>();
         builder.Services.AddSingleton<ITool, FileReadTool>();
         builder.Services.AddSingleton<ITool, FileWriteTool>();
         builder.Services.AddSingleton<ITool, FileSearchTool>();
@@ -471,6 +500,7 @@ internal static class HostDependencyInjection
         builder.Services.AddInfernalTelegramCommandHandlers();
         builder.Services.AddHostedService<TelegramBotService>();
         builder.Services.AddHostedService<AgentOrchestrator>();
+        builder.Services.AddHostedService<FederationHealthMonitorHostedService>();
 
         builder.Services.AddSingleton<IAgentSupervisor, AgentSupervisor>();
         builder.Services.AddHostedService(sp => (AgentSupervisor)sp.GetRequiredService<IAgentSupervisor>());

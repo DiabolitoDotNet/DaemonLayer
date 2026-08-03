@@ -15,7 +15,7 @@ public sealed class ConsensusAggregationStrategy : IAggregationStrategy
         if (uniqueResponses.Count == 1)
         {
             var averageConfidence = responses.Average(r => r.Confidence);
-            var firstResponse = responses.First();
+            var firstResponse = responses[0];
 
             return new CollaborationResult
             {
@@ -43,7 +43,7 @@ public sealed class ConsensusAggregationStrategy : IAggregationStrategy
             Confidence = 0.0,
             Responses = responses.ToList(),
             ParticipantCount = responses.Count,
-            AgreementScore = (double)grouped.First().Count() / responses.Count,
+            AgreementScore = (double)grouped[0].Count() / responses.Count,
             Strategy = Strategy,
             AggregatedReasoning = "Agents could not reach unanimous agreement. " + conflictSummary
         };

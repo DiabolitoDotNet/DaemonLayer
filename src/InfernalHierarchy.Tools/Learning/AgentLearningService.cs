@@ -164,7 +164,7 @@ public class AgentLearningService
             Rank = profile.Rank,
             TotalToolExecutions = profile.TotalToolUses,
             TopTools = topTools,
-            OverallSuccessRate = profile.ToolProficiency.Any()
+            OverallSuccessRate = profile.ToolProficiency.Count > 0
                 ? profile.ToolProficiency.Average(kv => kv.Value.SuccessRate)
                 : 0
         };
@@ -328,12 +328,13 @@ public class AgentLearningProfile
     {
         TotalToolUses++;
 
-        if (!ToolProficiency.ContainsKey(toolName))
+        if (!ToolProficiency.TryGetValue(toolName, out var proficiency))
         {
-            ToolProficiency[toolName] = new ToolProficiency { ToolName = toolName };
+            proficiency = new ToolProficiency { ToolName = toolName };
+            ToolProficiency[toolName] = proficiency;
         }
 
-        ToolProficiency[toolName].RecordUse(success);
+        proficiency.RecordUse(success);
     }
 }
 

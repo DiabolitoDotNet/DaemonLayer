@@ -16,8 +16,9 @@ public sealed class HierarchicalAggregationStrategy : IAggregationStrategy
             .Where(r => r.AgentRank == winner.AgentRank)
             .ToList();
 
+        var winnerResponse = winner.Response.Trim();
         var sameRankAgreement = sameRankResponses
-            .Count(r => r.Response.Trim().ToLowerInvariant() == winner.Response.Trim().ToLowerInvariant());
+            .Count(r => string.Equals(r.Response.Trim(), winnerResponse, StringComparison.OrdinalIgnoreCase));
 
         var agreementScore = sameRankResponses.Count == 0
             ? 0.0

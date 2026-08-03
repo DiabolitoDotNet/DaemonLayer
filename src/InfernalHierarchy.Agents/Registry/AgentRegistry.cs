@@ -116,7 +116,7 @@ public class AgentRegistry : IAgentRegistry
             IdleCount = agents.Count(a => a.Status == AgentStatus.Idle),
             ThinkingCount = agents.Count(a => a.Status == AgentStatus.Thinking),
             ActiveCount = agents.Count(a => a.Status == AgentStatus.ActingWithTool),
-            OldestAgentAge = _agentCreationTimes.Values.Any()
+            OldestAgentAge = !_agentCreationTimes.IsEmpty
                 ? DateTime.UtcNow - _agentCreationTimes.Values.Min()
                 : TimeSpan.Zero
         };

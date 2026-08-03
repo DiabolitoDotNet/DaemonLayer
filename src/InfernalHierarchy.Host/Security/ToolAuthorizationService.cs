@@ -741,6 +741,13 @@ public class ToolAuthorizationService : IToolAuthorizationService
                 WhitelistedAgents = new(),
                 BlacklistedAgents = new()
             },
+            ["email_inbox_query"] = new()
+            {
+                Enabled = true,
+                AllowedRanks = new() { AgentRank.Supreme, AgentRank.Prince, AgentRank.Duke },
+                WhitelistedAgents = new(),
+                BlacklistedAgents = new()
+            },
             ["brave_search"] = new()
             {
                 Enabled = true,
@@ -853,7 +860,7 @@ public class ToolAuthorizationService : IToolAuthorizationService
                 [
                     "web_search", "read_memory", "write_memory", "request_collaboration",
                     "get_agent_status", "request_skill_pack", "create_sub_agent", "send_agent_message",
-                    "create_agent_from_template", "list_templates", "email_send", "send_telegram",
+                    "create_agent_from_template", "list_templates", "email_send", "email_inbox_query", "send_telegram",
                     "vision_describe", "audio_transcribe", "tts_speak", "repo_analyze"
                 ],
                 DeniedTools = ["fs_write", "python_exec", "node_exec"]

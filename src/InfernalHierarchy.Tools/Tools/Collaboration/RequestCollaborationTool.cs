@@ -48,15 +48,18 @@ public class RequestCollaborationTool : ITool
     private readonly ILogger<RequestCollaborationTool> _logger;
     private readonly IAgentCollaborationService _collaborationService;
     private readonly IAgentRegistry _agentRegistry;
+    private readonly IFederationService? _federationService;
 
     public RequestCollaborationTool(
         ILogger<RequestCollaborationTool> logger,
         IAgentCollaborationService collaborationService,
-        IAgentRegistry agentRegistry)
+        IAgentRegistry agentRegistry,
+        IFederationService? federationService = null)
     {
         _logger = logger;
         _collaborationService = collaborationService;
         _agentRegistry = agentRegistry;
+        _federationService = federationService;
     }
 
     public string Name => "request_collaboration";
@@ -66,7 +69,7 @@ public class RequestCollaborationTool : ITool
         "Parameters: task (string, required), strategy (voting/weighted/consensus/highest_confidence/hierarchical, default: weighted), " +
         "template (parallel_research_adjudicate/debate_then_synthesize/hierarchical_risk_review, optional), " +
         "min_participants (int, default: 2), min_confidence (double, default: 0.7), participant_ranks (comma-separated ranks, optional), " +
-        "timeout_seconds (int, default: 120), include_thinking (bool, default: false).";
+        "timeout_seconds (int, default: 120), include_thinking (bool, default: false), cross_instance (bool, default: false).";
 
     public async Task<ToolResult> ExecuteAsync(
         Dictionary<string, object> parameters,
@@ -107,7 +110,7 @@ public class RequestCollaborationTool : ITool
                 _ => "weighted"
             };
 
-            var strategyStr = parameters.GetValueOrDefault("strategy", defaultStrategy ?? "weighted")?.ToString()?.ToLowerInvariant() ?? "weighted";
+            var strategyStr = parameters.GetValueOrDefault("strategy", defaultStrategy)?.ToString()?.ToLowerInvariant() ?? "weighted";
             var strategy = strategyStr switch
             {
                 "voting" => CollaborationStrategy.Voting,
@@ -255,8 +258,30 @@ public class RequestCollaborationTool : ITool
                 Timeout = TimeSpan.FromSeconds(timeoutSeconds)
             };
 
+            var crossInstance = false;
+            if (parameters.TryGetValue("cross_instance", out var crossInstanceObj) && crossInstanceObj is not null)
+            {
+                if (crossInstanceObj is bool enabled)
+                {
+                    crossInstance = enabled;
+                }
+                else if (bool.TryParse(crossInstanceObj.ToString(), out var parsed))
+                {
+                    crossInstance = parsed;
+                }
+            }
+
             // Request collaboration
-            var result = await _collaborationService.RequestCollaborationAsync(request, ct);
+            CollaborationResult result;
+            if (crossInstance && _federationService is not null)
+            {
+                _logger.LogInformation("Using cross-instance federation collaboration for request {RequestId}", request.Id);
+                result = await _federationService.RequestCrossInstanceCollaborationAsync(request, ct).ConfigureAwait(false);
+            }
+            else
+            {
+                result = await _collaborationService.RequestCollaborationAsync(request, ct).ConfigureAwait(false);
+            }
 
             // Format result
             var resultJson = JsonSerializer.Serialize(new

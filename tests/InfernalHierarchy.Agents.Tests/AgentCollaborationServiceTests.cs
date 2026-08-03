@@ -352,6 +352,8 @@ public class AgentCollaborationServiceTests
         request.Status.Should().Be(CollaborationStatus.TimedOut);
         result.Decision.Should().Be("A");
         result.ParticipantCount.Should().Be(1);
+        result.NextAction.Should().Be("none");
+        result.NeedsSupervisorIntervention.Should().BeFalse();
     }
 
     [Fact]
@@ -388,6 +390,8 @@ public class AgentCollaborationServiceTests
 
         request.Status.Should().Be(CollaborationStatus.Cancelled);
         result.Decision.Should().Be("CANCELLED");
+        result.NextAction.Should().Be("none");
+        result.NeedsSupervisorIntervention.Should().BeFalse();
     }
 
     [Fact]

@@ -1,5 +1,6 @@
 using System.Text.RegularExpressions;
 using System.Text.Json;
+using System.Diagnostics;
 using InfernalHierarchy.Core.Serialization;
 
 namespace InfernalHierarchy.Agents.ReAct;
@@ -43,6 +44,27 @@ public sealed class DefaultReActTaskProcessor : IReActTaskProcessor
             return await HandleTelegramCommandAsync(effectiveContext, command, task, ct).ConfigureAwait(false);
         }
 
+        var sensitiveInputAssessment = SensitiveInputGuard.Assess(task);
+        if (sensitiveInputAssessment.RequiresSecretReference)
+        {
+            TryAppendSensitiveInputGuardEvent(effectiveContext, task, sensitiveInputAssessment.ReasonCode);
+
+            return new AgentMessage
+            {
+                FromAgentId = effectiveContext.AgentId,
+                ToAgentId = task.FromAgentId,
+                Type = MessageType.Report,
+                Content = "Sensitive credentials detected. Use a secret reference (for example secret://mailbox/prod/main) instead of raw login/password.",
+                Payload = new Dictionary<string, object>(task.Payload ?? new Dictionary<string, object>())
+                {
+                    ["capability_gap_state"] = "blocked_by_sensitive_input_guard",
+                    ["block_reason_code"] = sensitiveInputAssessment.ReasonCode
+                },
+                CorrelationId = task.CorrelationId ?? task.Id,
+                CausationId = task.Id
+            };
+        }
+
         CapabilityGapAnalysisResult? gapAnalysis = null;
         CapabilityRemediationExecutionResult? remediationResult = null;
         Dictionary<string, object> effectivePayload = new(task.Payload ?? new Dictionary<string, object>());
@@ -53,13 +75,55 @@ public sealed class DefaultReActTaskProcessor : IReActTaskProcessor
                 .AnalyzeAsync(effectiveContext, task, effectiveContext.Persona, ct)
                 .ConfigureAwait(false);
 
+            if (gapAnalysis.HasGaps && gapAnalysis.Report is not null)
+            {
+                var gapWorkflowId = task.CorrelationId ?? task.Id;
+                effectivePayload["original_intent"] = task.Content ?? string.Empty;
+                effectivePayload["capability_gap_state"] = "capability_gap_detected";
+                effectivePayload["capability_gap_block_reason_code"] = gapAnalysis.Report.BlockReasonCode;
+                effectivePayload["capability_gap_workflow_id"] = gapWorkflowId;
+            }
+
             if (gapAnalysis.HasGaps)
             {
+                if (gapAnalysis.Report is not null && !gapAnalysis.Report.CanAutofix)
+                {
+                    EmitCapabilityGapDecisionEvent(
+                        effectiveContext,
+                        task,
+                        gapAnalysis,
+                        remediation: null,
+                        remediationDurationMs: null,
+                        workflowState: "capability_gap_policy_blocked");
+
+                    effectivePayload["capability_gap_state"] = "capability_gap_policy_blocked";
+                    effectivePayload["capability_gap_report"] = JsonSerializer.Serialize(gapAnalysis.Report, JsonDefaults.Web);
+
+                    return new AgentMessage
+                    {
+                        FromAgentId = effectiveContext.AgentId,
+                        ToAgentId = task.FromAgentId,
+                        Type = MessageType.Report,
+                        Content = $"Capability gap detected but auto-fix is blocked by policy/risk ({gapAnalysis.Report.BlockReasonCode}).",
+                        Payload = effectivePayload,
+                        CorrelationId = task.CorrelationId ?? task.Id,
+                        CausationId = task.Id
+                    };
+                }
+
+                var remediationStopwatch = Stopwatch.StartNew();
                 remediationResult = await _capabilityRemediationOrchestrator
                     .ExecuteAsync(effectiveContext, task, gapAnalysis, ct)
                     .ConfigureAwait(false);
+                remediationStopwatch.Stop();
 
-                EmitCapabilityGapDecisionEvent(effectiveContext, task, gapAnalysis, remediationResult);
+                EmitCapabilityGapDecisionEvent(
+                    effectiveContext,
+                    task,
+                    gapAnalysis,
+                    remediationResult,
+                    remediationStopwatch.Elapsed.TotalMilliseconds,
+                    remediationResult.WorkflowState);
 
                 if (remediationResult.NewlyAvailableTools.Count > 0)
                 {
@@ -82,12 +146,55 @@ public sealed class DefaultReActTaskProcessor : IReActTaskProcessor
                         switchedProfile,
                         switchReasonCode);
                 }
+
+                effectivePayload["capability_gap_state"] = remediationResult.WorkflowState;
+                effectivePayload["capability_gap_terminal_reason_code"] = remediationResult.TerminalReasonCode;
+
+                if (string.Equals(remediationResult.WorkflowState, "capability_gap_unresolved_terminal", StringComparison.OrdinalIgnoreCase))
+                {
+                    effectivePayload["capability_gap_report"] = JsonSerializer.Serialize(gapAnalysis.Report, JsonDefaults.Web);
+                    effectivePayload["capability_gap_plan"] = JsonSerializer.Serialize(gapAnalysis.Plan, JsonDefaults.Web);
+
+                    return new AgentMessage
+                    {
+                        FromAgentId = effectiveContext.AgentId,
+                        ToAgentId = task.FromAgentId,
+                        Type = MessageType.Report,
+                        Content = "Capability gap could not be remediated autonomously. Workflow terminated with audit trace.",
+                        Payload = effectivePayload,
+                        CorrelationId = task.CorrelationId ?? task.Id,
+                        CausationId = task.Id
+                    };
+                }
+
+                if (remediationResult.ReplayRequested)
+                {
+                    var alreadyReplayed = IsReplayAlreadyAttempted(effectivePayload);
+                    if (alreadyReplayed)
+                    {
+                        effectivePayload["capability_gap_state"] = "capability_gap_replay_guard_triggered";
+
+                        return new AgentMessage
+                        {
+                            FromAgentId = effectiveContext.AgentId,
+                            ToAgentId = task.FromAgentId,
+                            Type = MessageType.Report,
+                            Content = "Capability gap remediation succeeded but replay guard prevented duplicate automatic replay.",
+                            Payload = effectivePayload,
+                            CorrelationId = task.CorrelationId ?? task.Id,
+                            CausationId = task.Id
+                        };
+                    }
+
+                    effectivePayload["capability_gap_replay_attempted"] = true;
+                    effectivePayload["capability_gap_state"] = "capability_gap_replay_in_progress";
+                }
             }
         }
 
         var effectiveTask = CloneTaskWithPayload(task, effectivePayload);
 
-        var effectiveTaskContent = task.Content;
+        var effectiveTaskContent = ResolveReplayTaskContent(task, effectivePayload);
         if (IsSupervisorReplan(task))
         {
             effectiveTaskContent = BuildSupervisorReplanTaskContent(task);
@@ -211,7 +318,7 @@ public sealed class DefaultReActTaskProcessor : IReActTaskProcessor
             await effectiveContext.SharedMemory.AddDecisionAsync(new Decision
             {
                 CreatedBy = effectiveContext.AgentId,
-                Context = task.Content,
+                Context = task.Content ?? string.Empty,
                 Action = result.FinalAnswer,
                 Reasoning = result.Reasoning
             }, ct).ConfigureAwait(false);
@@ -252,6 +359,8 @@ public sealed class DefaultReActTaskProcessor : IReActTaskProcessor
             {
                 responsePayload["capability_gap_analysis"] = JsonSerializer.Serialize(new
                 {
+                    report = gapAnalysis.Report,
+                    plan = gapAnalysis.Plan,
                     gaps = gapAnalysis.Gaps.Select(g => new
                     {
                         capability = g.Capability,
@@ -270,7 +379,8 @@ public sealed class DefaultReActTaskProcessor : IReActTaskProcessor
                     }).ToArray(),
                     applied = remediationResult?.AppliedActions.Select(a => a.Kind.ToString()).ToArray() ?? Array.Empty<string>(),
                     failed = remediationResult?.FailedActions.Select(a => a.Kind.ToString()).ToArray() ?? Array.Empty<string>(),
-                    notes = remediationResult?.Notes.ToArray() ?? Array.Empty<string>()
+                    notes = remediationResult?.Notes.ToArray() ?? Array.Empty<string>(),
+                    workflow_state = remediationResult?.WorkflowState ?? "none"
                 }, JsonDefaults.Web);
             }
 
@@ -357,6 +467,37 @@ public sealed class DefaultReActTaskProcessor : IReActTaskProcessor
         return true;
     }
 
+    private static bool IsReplayAlreadyAttempted(Dictionary<string, object> payload)
+    {
+        if (!payload.TryGetValue("capability_gap_replay_attempted", out var raw) || raw is null)
+        {
+            return false;
+        }
+
+        return raw switch
+        {
+            bool b => b,
+            string s when bool.TryParse(s, out var parsed) => parsed,
+            _ => false
+        };
+    }
+
+    private static string ResolveReplayTaskContent(AgentMessage task, Dictionary<string, object> payload)
+    {
+        var state = payload.TryGetValue("capability_gap_state", out var stateObj)
+            ? stateObj?.ToString()
+            : null;
+
+        if (string.Equals(state, "capability_gap_replay_in_progress", StringComparison.OrdinalIgnoreCase)
+            && payload.TryGetValue("original_intent", out var originalIntentObj)
+            && !string.IsNullOrWhiteSpace(originalIntentObj?.ToString()))
+        {
+            return originalIntentObj?.ToString() ?? string.Empty;
+        }
+
+        return task.Content ?? string.Empty;
+    }
+
     private static void TryAppendExecutionProfileSwitchEvent(
         ReActTaskProcessorContext context,
         AgentMessage task,
@@ -384,6 +525,38 @@ public sealed class DefaultReActTaskProcessor : IReActTaskProcessor
                     ["status"] = "applied",
                     ["target_execution_profile"] = profile,
                     ["note"] = $"Execution profile switched to {profile}"
+                }
+            });
+        }
+        catch
+        {
+            // best-effort eventing only
+        }
+    }
+
+    private static void TryAppendSensitiveInputGuardEvent(
+        ReActTaskProcessorContext context,
+        AgentMessage task,
+        string reasonCode)
+    {
+        if (context.EventSink is null)
+        {
+            return;
+        }
+
+        try
+        {
+            context.EventSink.AppendEvent(new AgentEvent
+            {
+                AgentId = context.AgentId,
+                Type = EventType.DecisionMade,
+                Description = "Sensitive input guard blocked raw credential payload",
+                Metadata = new Dictionary<string, object>
+                {
+                    ["category"] = "capability.security",
+                    ["task_id"] = task.Id,
+                    ["reason_code"] = reasonCode,
+                    ["status"] = "blocked"
                 }
             });
         }
@@ -424,7 +597,9 @@ public sealed class DefaultReActTaskProcessor : IReActTaskProcessor
         ReActTaskProcessorContext context,
         AgentMessage task,
         CapabilityGapAnalysisResult analysis,
-        CapabilityRemediationExecutionResult remediation)
+        CapabilityRemediationExecutionResult? remediation,
+        double? remediationDurationMs,
+        string workflowState)
     {
         if (context.EventSink is null)
         {
@@ -442,11 +617,16 @@ public sealed class DefaultReActTaskProcessor : IReActTaskProcessor
                 {
                     ["category"] = "capability.gap_analysis",
                     ["task_id"] = task.Id,
+                    ["gap_workflow_id"] = task.CorrelationId ?? task.Id,
                     ["gap_count"] = analysis.Gaps.Count,
                     ["remediation_count"] = analysis.Remediations.Count,
-                    ["failed_remediation_count"] = remediation.FailedActions.Count,
+                    ["failed_remediation_count"] = remediation?.FailedActions.Count ?? 0,
                     ["reason_codes"] = string.Join(",", analysis.Gaps.Select(g => g.ReasonCode).Distinct(StringComparer.OrdinalIgnoreCase)),
-                    ["remediation_notes"] = string.Join(" | ", remediation.Notes)
+                    ["remediation_notes"] = remediation is null ? string.Empty : string.Join(" | ", remediation.Notes),
+                    ["workflow_state"] = workflowState,
+                    ["remediation_attempted"] = remediation is not null,
+                    ["autofix_success"] = string.Equals(workflowState, "capability_gap_resolved_retrying_original_intent", StringComparison.OrdinalIgnoreCase),
+                    ["remediation_duration_ms"] = remediationDurationMs ?? 0d
                 }
             });
         }

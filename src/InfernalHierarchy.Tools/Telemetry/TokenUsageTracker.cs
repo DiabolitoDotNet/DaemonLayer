@@ -34,12 +34,12 @@ public class TokenUsageTracker
             _totalOutputTokens += record.OutputTokens;
             _totalDuration += record.Duration;
 
-            if (!_modelStats.ContainsKey(record.ModelName))
+            if (!_modelStats.TryGetValue(record.ModelName, out var stats))
             {
-                _modelStats[record.ModelName] = new ModelUsageStats();
+                stats = new ModelUsageStats();
+                _modelStats[record.ModelName] = stats;
             }
 
-            var stats = _modelStats[record.ModelName];
             stats.CallCount++;
             stats.TotalInputTokens += record.InputTokens;
             stats.TotalOutputTokens += record.OutputTokens;
@@ -57,14 +57,15 @@ public class TokenUsageTracker
     {
         lock (_statsLock)
         {
+            var totalCalls = _usageRecords.Count;
             return new TokenUsageStats
             {
-                TotalCalls = _usageRecords.Count,
+                TotalCalls = totalCalls,
                 TotalInputTokens = _totalInputTokens,
                 TotalOutputTokens = _totalOutputTokens,
                 TotalTokens = _totalInputTokens + _totalOutputTokens,
-                AverageDuration = _usageRecords.Count > 0
-                    ? TimeSpan.FromMilliseconds(_totalDuration.TotalMilliseconds / _usageRecords.Count)
+                AverageDuration = !_usageRecords.IsEmpty
+                    ? TimeSpan.FromMilliseconds(_totalDuration.TotalMilliseconds / totalCalls)
                     : TimeSpan.Zero,
                 ModelBreakdown = _modelStats.ToDictionary(
                     kvp => kvp.Key,
@@ -80,7 +81,7 @@ public class TokenUsageTracker
     {
         var agentRecords = _usageRecords.Where(r => r.AgentId == agentId).ToList();
 
-        if (!agentRecords.Any())
+        if (agentRecords.Count == 0)
         {
             return new TokenUsageStats();
         }

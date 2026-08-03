@@ -76,6 +76,9 @@ internal static class HostAddOptions
         builder.Services.AddOptions<EmailNotificationOptions>()
             .Bind(builder.Configuration.GetSection("Email"))
             .ValidateOnStart();
+        builder.Services.AddOptions<EmailInboxQueryOptions>()
+            .Bind(builder.Configuration.GetSection("EmailInbox"))
+            .ValidateOnStart();
     }
 
     private static void AddToolOptions(WebApplicationBuilder builder)

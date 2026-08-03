@@ -18,6 +18,7 @@ public class FederationService : IFederationService
     private readonly HttpClient _httpClient;
     private readonly ConcurrentDictionary<string, FederatedInstance> _instances = new();
     private readonly string _localInstanceId;
+    private readonly IAgentCollaborationService? _localCollaborationService;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="FederationService"/> class.
@@ -29,10 +30,20 @@ public class FederationService : IFederationService
         ILogger<FederationService> logger,
         HttpClient httpClient,
         string localInstanceId)
+        : this(logger, httpClient, localInstanceId, localCollaborationService: null)
+    {
+    }
+
+    public FederationService(
+        ILogger<FederationService> logger,
+        HttpClient httpClient,
+        string localInstanceId,
+        IAgentCollaborationService? localCollaborationService)
     {
         _logger = logger;
         _httpClient = httpClient;
         _localInstanceId = localInstanceId;
+        _localCollaborationService = localCollaborationService;
     }
 
     /// <inheritdoc/>
@@ -171,39 +182,23 @@ public class FederationService : IFederationService
 
         if (responses.Count == 0)
         {
-            return new CollaborationResult
-            {
-                Decision = "NO_CROSS_INSTANCE_RESPONSE",
-                Confidence = 0,
-                Responses = [],
-                ParticipantCount = 0,
-                AgreementScore = 0,
-                AggregatedReasoning = "No remote collaboration response received from active instances.",
-                Strategy = request.Strategy,
-                ConflictClass = "unresolved",
-                ConflictReasonCode = "cross_instance_no_responses",
-                NextAction = "fallback_to_local_collaboration",
-                NeedsSupervisorIntervention = false
-            };
+            return await ExecuteLocalCollaborationFallbackAsync(
+                request,
+                remoteResponses: responses,
+                reasonCode: "cross_instance_no_responses",
+                reasonDescription: "No remote collaboration response received from active instances.",
+                ct).ConfigureAwait(false);
         }
 
         var collectedResponses = responses;
         if (collectedResponses.Count < request.MinimumParticipants)
         {
-            return new CollaborationResult
-            {
-                Decision = "INSUFFICIENT_CROSS_INSTANCE_PARTICIPANTS",
-                Confidence = 0,
-                Responses = collectedResponses,
-                ParticipantCount = collectedResponses.Count,
-                AgreementScore = 0,
-                AggregatedReasoning = $"Received {collectedResponses.Count} responses but minimum participants is {request.MinimumParticipants}.",
-                Strategy = request.Strategy,
-                ConflictClass = "unresolved",
-                ConflictReasonCode = "cross_instance_minimum_participants_not_met",
-                NextAction = "fallback_to_local_collaboration",
-                NeedsSupervisorIntervention = false
-            };
+            return await ExecuteLocalCollaborationFallbackAsync(
+                request,
+                remoteResponses: collectedResponses,
+                reasonCode: "cross_instance_minimum_participants_not_met",
+                reasonDescription: $"Received {collectedResponses.Count} responses but minimum participants is {request.MinimumParticipants}.",
+                ct).ConfigureAwait(false);
         }
 
         var strategyOutcome = AggregateByStrategy(request.Strategy, collectedResponses, request.MinimumConfidence);
@@ -758,6 +753,74 @@ public class FederationService : IFederationService
         };
 
         return true;
+    }
+
+    private async Task<CollaborationResult> ExecuteLocalCollaborationFallbackAsync(
+        CollaborationRequest request,
+        List<AgentResponse> remoteResponses,
+        string reasonCode,
+        string reasonDescription,
+        CancellationToken ct)
+    {
+        if (_localCollaborationService is null)
+        {
+            return new CollaborationResult
+            {
+                Decision = "AUTONOMOUS_LOCAL_FALLBACK_UNAVAILABLE",
+                Confidence = 0,
+                Responses = remoteResponses,
+                ParticipantCount = remoteResponses.Count,
+                AgreementScore = 0,
+                AggregatedReasoning =
+                    $"Autonomous federation fallback could not execute local collaboration because no local collaboration service is configured ({reasonCode}). {reasonDescription}",
+                Strategy = request.Strategy,
+                ConflictClass = "unresolved",
+                ConflictReasonCode = "local_fallback_service_unavailable",
+                NextAction = "none",
+                NeedsSupervisorIntervention = false
+            };
+        }
+
+        try
+        {
+            var localRequest = new CollaborationRequest
+            {
+                Id = $"{request.Id}-local-{Guid.NewGuid():N}",
+                InitiatorAgentId = request.InitiatorAgentId,
+                Task = request.Task,
+                Strategy = request.Strategy,
+                MinimumConfidence = request.MinimumConfidence,
+                MinimumParticipants = request.MinimumParticipants,
+                ParticipantAgentIds = request.ParticipantAgentIds.ToList(),
+                Timeout = request.Timeout
+            };
+
+            var localResult = await _localCollaborationService.RequestCollaborationAsync(localRequest, ct).ConfigureAwait(false);
+            localResult.AggregatedReasoning =
+                $"Federation fallback executed local collaboration after {reasonCode}: {reasonDescription} | local_request_id={localRequest.Id} | {localResult.AggregatedReasoning}";
+            localResult.NextAction = "none";
+            localResult.NeedsSupervisorIntervention = false;
+            return localResult;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Local collaboration fallback failed for request {RequestId} ({ReasonCode})", request.Id, reasonCode);
+            return new CollaborationResult
+            {
+                Decision = "AUTONOMOUS_LOCAL_FALLBACK_FAILED",
+                Confidence = 0,
+                Responses = remoteResponses,
+                ParticipantCount = remoteResponses.Count,
+                AgreementScore = 0,
+                AggregatedReasoning =
+                    $"Federation fallback attempted local collaboration after {reasonCode} but execution failed: {ex.Message}",
+                Strategy = request.Strategy,
+                ConflictClass = "unresolved",
+                ConflictReasonCode = "local_fallback_execution_failed",
+                NextAction = "none",
+                NeedsSupervisorIntervention = false
+            };
+        }
     }
 
     private List<FederatedInstance> GetActiveRemoteInstancesSnapshot()

@@ -319,4 +319,53 @@ public class RequestCollaborationToolTests
         result.Metadata["conflict_reason_code"].Should().Be("max_rounds_exhausted");
         result.Metadata["needs_supervisor_intervention"].Should().Be(true);
     }
+
+    [Fact]
+    public async Task ExecuteAsync_WithCrossInstanceTrue_ShouldUseFederationService()
+    {
+        var logger = new Mock<ILogger<RequestCollaborationTool>>();
+        var collaboration = new Mock<IAgentCollaborationService>();
+        var federation = new Mock<IFederationService>();
+        var registry = new Mock<IAgentRegistry>();
+
+        registry.Setup(r => r.GetAllAgents()).Returns(new[]
+        {
+            CreateAgent("initiator", AgentRank.Duke, AgentStatus.Idle),
+            CreateAgent("a", AgentRank.Worker, AgentStatus.Idle),
+            CreateAgent("b", AgentRank.Worker, AgentStatus.Idle)
+        });
+
+        federation
+            .Setup(s => s.RequestCrossInstanceCollaborationAsync(It.IsAny<CollaborationRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new CollaborationResult
+            {
+                Decision = "FEDERATED_DECISION",
+                Confidence = 0.9,
+                AgreementScore = 0.8,
+                ParticipantCount = 2,
+                Strategy = CollaborationStrategy.WeightedVoting,
+                AggregatedReasoning = "from federation",
+                NextAction = "none",
+                NeedsSupervisorIntervention = false
+            });
+
+        var tool = new RequestCollaborationTool(logger.Object, collaboration.Object, registry.Object, federation.Object);
+
+        var result = await tool.ExecuteAsync(new Dictionary<string, object>
+        {
+            ["task"] = "Need cross-instance consensus",
+            ["agent_id"] = "initiator",
+            ["cross_instance"] = true
+        });
+
+        result.Success.Should().BeTrue();
+        result.Output.Should().Contain("FEDERATED_DECISION");
+
+        federation.Verify(
+            s => s.RequestCrossInstanceCollaborationAsync(It.IsAny<CollaborationRequest>(), It.IsAny<CancellationToken>()),
+            Times.Once);
+        collaboration.Verify(
+            s => s.RequestCollaborationAsync(It.IsAny<CollaborationRequest>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
 }

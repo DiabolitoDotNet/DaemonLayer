@@ -9,8 +9,9 @@ public sealed class HighestConfidenceAggregationStrategy : IAggregationStrategy
     {
         var winner = responses.OrderByDescending(r => r.Confidence).First();
 
+        var winnerResponse = winner.Response.Trim();
         var similarResponses = responses
-            .Where(r => r.Response.Trim().ToLowerInvariant() == winner.Response.Trim().ToLowerInvariant())
+            .Where(r => string.Equals(r.Response.Trim(), winnerResponse, StringComparison.OrdinalIgnoreCase))
             .ToList();
 
         var agreementScore = (double)similarResponses.Count / responses.Count;

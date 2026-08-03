@@ -2,20 +2,67 @@ namespace InfernalHierarchy.Agents.ReAct;
 
 public sealed class DefaultCapabilityRemediationOrchestrator : ICapabilityRemediationOrchestrator
 {
+    private static readonly string[] RequiredAuditArtifacts =
+    [
+        "research.md",
+        "design.json",
+        "test-report.json",
+        "security-report.json"
+    ];
+
     public async Task<CapabilityRemediationExecutionResult> ExecuteAsync(
         ReActTaskProcessorContext context,
         AgentMessage task,
         CapabilityGapAnalysisResult analysis,
         CancellationToken ct)
     {
-        var applied = new List<CapabilityRemediationAction>();
-        var failed = new List<CapabilityRemediationAction>();
-        var notes = new List<string>();
+        var expectedActionCount = analysis.Remediations.Count;
+        var applied = new List<CapabilityRemediationAction>(expectedActionCount);
+        var failed = new List<CapabilityRemediationAction>(expectedActionCount);
+        var notes = new List<string>(Math.Max(4, expectedActionCount));
         var newTools = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var workflowState = "capability_gap_detected";
+        var terminalReasonCode = "none";
+
+        var maxAttempts = Math.Max(1, analysis.Plan?.MaxAttempts ?? analysis.Remediations.Count);
+        var maxDuration = TimeSpan.FromSeconds(Math.Max(1, analysis.Plan?.MaxDurationSeconds ?? 120));
+        var startedAt = DateTime.UtcNow;
+        var attemptsUsed = 0;
+        var collaborationCalls = 0;
+        var toolCalls = 0;
+
+        const int maxCollaborationCalls = 2;
+        const int maxToolCalls = 8;
 
         foreach (var action in analysis.Remediations)
         {
             ct.ThrowIfCancellationRequested();
+
+            if (DateTime.UtcNow - startedAt > maxDuration)
+            {
+                terminalReasonCode = "duration_exhausted";
+                notes.Add($"remediation duration budget exhausted ({maxDuration.TotalSeconds:0}s)");
+                EmitRemediationDecisionEvent(context, task, action, status: "guardrail_triggered", note: terminalReasonCode);
+                break;
+            }
+
+            if (attemptsUsed >= maxAttempts)
+            {
+                terminalReasonCode = "budget_exhausted";
+                notes.Add($"remediation attempts exhausted ({attemptsUsed}/{maxAttempts})");
+                EmitRemediationDecisionEvent(context, task, action, status: "guardrail_triggered", note: terminalReasonCode);
+                break;
+            }
+
+            if (toolCalls >= maxToolCalls)
+            {
+                terminalReasonCode = "tool_call_budget_exhausted";
+                notes.Add($"remediation tool call budget exhausted ({toolCalls}/{maxToolCalls})");
+                EmitRemediationDecisionEvent(context, task, action, status: "guardrail_triggered", note: terminalReasonCode);
+                break;
+            }
+
+            attemptsUsed++;
 
             EmitRemediationDecisionEvent(context, task, action, status: "started");
 
@@ -47,6 +94,7 @@ public sealed class DefaultCapabilityRemediationOrchestrator : ICapabilityRemedi
                             agentRank: context.AgentRank.ToString(),
                             agentName: context.AgentName,
                             ct: ct).ConfigureAwait(false);
+                        toolCalls++;
 
                         if (!createResult.Success)
                         {
@@ -88,6 +136,7 @@ public sealed class DefaultCapabilityRemediationOrchestrator : ICapabilityRemedi
                             agentRank: context.AgentRank.ToString(),
                             agentName: context.AgentName,
                             ct: ct).ConfigureAwait(false);
+                        toolCalls++;
 
                         if (!requestResult.Success)
                         {
@@ -109,9 +158,26 @@ public sealed class DefaultCapabilityRemediationOrchestrator : ICapabilityRemedi
                         break;
 
                     case CapabilityRemediationActionKind.EscalateCollaboration:
-                        applied.Add(action);
-                        notes.Add($"collaboration escalation recommended for capability {action.Capability}");
-                        EmitRemediationDecisionEvent(context, task, action, status: "recommended", note: "collaboration escalation");
+                        if (collaborationCalls >= maxCollaborationCalls)
+                        {
+                            failed.Add(action);
+                            terminalReasonCode = "collaboration_budget_exhausted";
+                            notes.Add($"collaboration guardrail triggered ({collaborationCalls}/{maxCollaborationCalls})");
+                            EmitRemediationDecisionEvent(context, task, action, status: "guardrail_triggered", note: terminalReasonCode);
+                            break;
+                        }
+
+                        collaborationCalls++;
+                        if (await TryRunCollaborationAuditAsync(context, task, action, notes, ct).ConfigureAwait(false))
+                        {
+                            applied.Add(action);
+                            EmitRemediationDecisionEvent(context, task, action, status: "applied", note: "collaboration audit executed");
+                        }
+                        else
+                        {
+                            failed.Add(action);
+                            EmitRemediationDecisionEvent(context, task, action, status: "failed", note: "collaboration audit failed");
+                        }
                         break;
 
                     default:
@@ -129,11 +195,92 @@ public sealed class DefaultCapabilityRemediationOrchestrator : ICapabilityRemedi
             }
         }
 
+        if (analysis.HasGaps)
+        {
+            if (failed.Count > 0 || !string.Equals(terminalReasonCode, "none", StringComparison.OrdinalIgnoreCase))
+            {
+                workflowState = "capability_gap_unresolved_terminal";
+                if (string.Equals(terminalReasonCode, "none", StringComparison.OrdinalIgnoreCase))
+                {
+                    terminalReasonCode = "remediation_action_failed";
+                }
+            }
+            else
+            {
+                workflowState = "capability_gap_resolved_retrying_original_intent";
+            }
+        }
+
         return new CapabilityRemediationExecutionResult(
             AppliedActions: applied,
             FailedActions: failed,
             NewlyAvailableTools: newTools.ToArray(),
-            Notes: notes);
+            Notes: notes,
+            WorkflowState: workflowState,
+            TerminalReasonCode: terminalReasonCode,
+            ReplayRequested: string.Equals(workflowState, "capability_gap_resolved_retrying_original_intent", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static async Task<bool> TryRunCollaborationAuditAsync(
+        ReActTaskProcessorContext context,
+        AgentMessage task,
+        CapabilityRemediationAction action,
+        List<string> notes,
+        CancellationToken ct)
+    {
+        var parameters = new Dictionary<string, object>
+        {
+            ["task"] =
+                $"Capability-gap audit for '{action.Capability}'. Produce: research.md, design.json, test-report.json, security-report.json. Original intent: {task.Content}",
+            ["strategy"] = "weighted",
+            ["min_participants"] = 2,
+            ["agent_id"] = context.AgentId,
+            ["include_thinking"] = true
+        };
+
+        var result = await context.ToolRegistry.ExecuteToolWithTrackingAsync(
+            "request_collaboration",
+            parameters,
+            agentId: context.AgentId,
+            agentRank: context.AgentRank.ToString(),
+            agentName: context.AgentName,
+            ct: ct).ConfigureAwait(false);
+
+        if (!result.Success)
+        {
+            notes.Add($"collaboration audit failed for {action.Capability}: {result.Error ?? result.Output}");
+            return false;
+        }
+
+        if (!ContainsRequiredArtifacts(result.Output, out var missingArtifacts))
+        {
+            notes.Add($"collaboration audit missing required artifacts for {action.Capability}: {string.Join(", ", missingArtifacts)}");
+            return false;
+        }
+
+        notes.Add($"collaboration audit executed for {action.Capability}; expected artifacts: research.md, design.json, test-report.json, security-report.json");
+        return true;
+    }
+
+    private static bool ContainsRequiredArtifacts(string? output, out List<string> missingArtifacts)
+    {
+        missingArtifacts = new List<string>(RequiredAuditArtifacts.Length);
+
+        if (string.IsNullOrWhiteSpace(output))
+        {
+            missingArtifacts.AddRange(RequiredAuditArtifacts);
+            return false;
+        }
+
+        foreach (var artifact in RequiredAuditArtifacts)
+        {
+            if (output.IndexOf(artifact, StringComparison.OrdinalIgnoreCase) < 0)
+            {
+                missingArtifacts.Add(artifact);
+            }
+        }
+
+        return missingArtifacts.Count == 0;
     }
 
     private static void EmitRemediationDecisionEvent(
@@ -159,6 +306,7 @@ public sealed class DefaultCapabilityRemediationOrchestrator : ICapabilityRemedi
                 {
                     ["category"] = "capability.remediation",
                     ["task_id"] = task.Id,
+                    ["gap_workflow_id"] = task.CorrelationId ?? task.Id,
                     ["reason_code"] = action.ReasonCode,
                     ["capability"] = action.Capability,
                     ["action_kind"] = action.Kind.ToString(),

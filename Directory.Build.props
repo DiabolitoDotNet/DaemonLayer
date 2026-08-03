@@ -12,6 +12,8 @@
     <!-- Nullable reference types -->
     <Nullable>enable</Nullable>
     <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <CriticalWarningsAsErrors>CS8600;CS8602;CS8603;CS8604;CA2000;CA2016;CA2100</CriticalWarningsAsErrors>
+    <WarningsAsErrors Condition="'$(EnforceCriticalWarningsAsErrors)' == 'true'">$(WarningsAsErrors);$(CriticalWarningsAsErrors)</WarningsAsErrors>
     
     <!-- Generate XML documentation -->
     <GenerateDocumentationFile>true</GenerateDocumentationFile>

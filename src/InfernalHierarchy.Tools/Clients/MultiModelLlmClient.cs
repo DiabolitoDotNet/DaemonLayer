@@ -128,10 +128,7 @@ public class MultiModelLlmClient : IDisposable
             }
         }
 
-        var errorMessage = lastException?.Message is { Length: > 0 }
-            ? $"All LLM models failed. Last error: {lastException.Message}"
-            : "All LLM models failed.";
-
+        var errorMessage = $"All LLM models failed. Last error: {lastException!.Message}";
         return Result.Fail<LlmResponse>(errorMessage, ErrorCodeAllModelsFailed, lastException);
     }
 
@@ -221,7 +218,7 @@ public class MultiModelLlmClient : IDisposable
     {
         if (!_modelClients.TryGetValue(model.Name, out var client))
         {
-            throw new Exception($"Model {model.Name} not found");
+            throw new InvalidOperationException($"Model {model.Name} not found");
         }
 
         var startTime = DateTime.UtcNow;
@@ -327,9 +324,9 @@ public class MultiModelLlmClient : IDisposable
             .OrderBy(m => m.Priority)
             .ToList();
 
-        if (candidates.Any())
+        if (candidates.Count > 0)
         {
-            return candidates.First();
+            return candidates[0];
         }
 
         // Fallback to medium if exact match not found

@@ -583,7 +583,7 @@ public sealed class {{className}} : ITool
         {
             if (p.Length == 0) continue;
             sb.Append(char.ToUpperInvariant(p[0]));
-            if (p.Length > 1) sb.Append(p.Substring(1));
+            if (p.Length > 1) sb.Append(p.AsSpan(1));
         }
         return sb.ToString();
     }

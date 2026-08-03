@@ -46,7 +46,7 @@ public sealed class SmtpEmailSender : IEmailSender
         {
             try
             {
-                await client.SendMailAsync(message).ConfigureAwait(false);
+                await client.SendMailAsync(message, ct).ConfigureAwait(false);
                 _logger.LogInformation("✅ SMTP email sent | Host={Host} Port={Port} To={To} Subject={Subject}",
                     _options.Host,
                     _options.Port,

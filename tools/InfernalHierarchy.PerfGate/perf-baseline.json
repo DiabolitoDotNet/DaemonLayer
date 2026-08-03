@@ -6,5 +6,21 @@
   "federationAggregation": {
     "maxLatencyPerOpMs": 25.0,
     "maxAllocatedBytesPerOp": 35000
+  },
+  "localCollaboration": {
+    "maxLatencyPerOpMs": 25.0,
+    "maxAllocatedBytesPerOp": 15000
+  },
+  "capabilityGapPlanning": {
+    "maxLatencyPerOpMs": 25.0,
+    "maxAllocatedBytesPerOp": 90000
+  },
+  "capabilityGapRemediation": {
+    "maxLatencyPerOpMs": 25.0,
+    "maxAllocatedBytesPerOp": 150000
+  },
+  "inboxQuery": {
+    "maxLatencyPerOpMs": 15.0,
+    "maxAllocatedBytesPerOp": 80000
   }
 }

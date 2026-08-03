@@ -2,10 +2,15 @@
 namespace InfernalHierarchy.Agents.Base;
 
 using System.Text.Json;
+using System.Diagnostics.CodeAnalysis;
 
 /// <summary>
 /// Base abstract agent implementing common functionality
 /// </summary>
+[SuppressMessage(
+    "Design",
+    "CA1051:Do not declare visible instance fields",
+    Justification = "Protected fields are intentionally exposed to derived agent implementations for extensibility and backward compatibility.")]
 public abstract class BaseAgent : IAgent
 {
     protected readonly ILogger<BaseAgent> _logger;

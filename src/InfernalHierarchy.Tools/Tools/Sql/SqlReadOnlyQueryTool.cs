@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using System.Diagnostics.CodeAnalysis;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Options;
 
@@ -22,6 +23,10 @@ public sealed class SqlReadOnlyQueryTool : ITool
 
     public string Description => "Run read-only SQL SELECT queries with strict guardrails. Params: query (required), connection_string (required unless configured default).";
 
+    [SuppressMessage(
+        "Security",
+        "CA2100:Review SQL queries for security vulnerabilities",
+        Justification = "CommandText assignment is constrained by single-statement and read-only SELECT guardrails before execution.")]
     public async Task<ToolResult> ExecuteAsync(Dictionary<string, object> parameters, CancellationToken ct = default)
     {
         if (!_options.Enabled)

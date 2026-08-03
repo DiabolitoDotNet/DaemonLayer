@@ -312,7 +312,7 @@ public sealed class TextToSpeechTool : ITool, IAsyncDisposable
             };
 
             _logger.LogInformation("🔊 Loading Piper.Net voice model: {VoicePath}", voicePath);
-            var model = await LocalSynthesizer.LoadAsync(voicePath, modelOptions).ConfigureAwait(false);
+            var model = await LocalSynthesizer.LoadAsync(voicePath, modelOptions, progress: null, cancellationToken: ct).ConfigureAwait(false);
 
             if (warmup)
             {

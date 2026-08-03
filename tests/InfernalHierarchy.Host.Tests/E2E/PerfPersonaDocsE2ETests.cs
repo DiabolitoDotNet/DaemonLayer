@@ -1,7 +1,9 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Reflection;
 using System.Text.Json;
 using FluentAssertions;
+using InfernalHierarchy.Core.Eventing;
 using InfernalHierarchy.Core.Interfaces;
 using InfernalHierarchy.Host.Configuration;
 using Microsoft.AspNetCore.Hosting;
@@ -256,6 +258,110 @@ public sealed class PerfPersonaDocsE2ETests
 
         doc.RootElement.TryGetProperty("items", out var items).Should().BeTrue();
         items.ValueKind.Should().Be(JsonValueKind.Array);
+    }
+
+    [Fact]
+    public async Task Perf_TimelineWorkflow_ReturnsOnlyRequestedWorkflowEvents()
+    {
+        using var factory = new InfernalHierarchyTestWebAppFactory();
+        var client = factory.CreateClient();
+
+        var operatorOptions = factory.Services.GetRequiredService<IOptions<OperatorApiOptions>>().Value;
+        if (!string.IsNullOrWhiteSpace(operatorOptions.ApiKey))
+        {
+            client.DefaultRequestHeaders.Remove("X-Infernal-Operator-Key");
+            client.DefaultRequestHeaders.Add("X-Infernal-Operator-Key", operatorOptions.ApiKey);
+        }
+
+        var workflowId = $"wf-{Guid.NewGuid():N}";
+        var eventStore = factory.Services.GetRequiredService<EventStore>();
+
+        eventStore.AppendEvent(new AgentEvent
+        {
+            AgentId = "lucifer",
+            Type = EventType.DecisionMade,
+            Description = "Capability remediation action",
+            Metadata = new Dictionary<string, object>
+            {
+                ["category"] = "capability.remediation",
+                ["gap_workflow_id"] = workflowId,
+                ["status"] = "started",
+                ["note"] = "none"
+            }
+        });
+
+        eventStore.AppendEvent(new AgentEvent
+        {
+            AgentId = "lucifer",
+            Type = EventType.DecisionMade,
+            Description = "Capability remediation action",
+            Metadata = new Dictionary<string, object>
+            {
+                ["category"] = "capability.remediation",
+                ["gap_workflow_id"] = "other-workflow",
+                ["status"] = "started",
+                ["note"] = "none"
+            }
+        });
+
+        var flushMethod = typeof(EventStore).GetMethod("FlushEventsAsync", BindingFlags.Instance | BindingFlags.NonPublic);
+        flushMethod.Should().NotBeNull();
+        var flushTask = flushMethod!.Invoke(eventStore, null) as Task;
+        flushTask.Should().NotBeNull();
+        await flushTask!;
+
+        var res = await client.GetAsync(new Uri($"/api/perf/timeline/workflow/{workflowId}", UriKind.Relative));
+        res.EnsureSuccessStatusCode();
+
+        var json = await res.Content.ReadAsStringAsync();
+        using var doc = JsonDocument.Parse(json);
+
+        doc.RootElement.GetProperty("gapWorkflowId").GetString().Should().Be(workflowId);
+
+        var items = doc.RootElement.GetProperty("items");
+        items.ValueKind.Should().Be(JsonValueKind.Array);
+        items.GetArrayLength().Should().BeGreaterThan(0);
+
+        foreach (var item in items.EnumerateArray())
+        {
+            var metadata = item.GetProperty("metadata");
+            metadata.GetProperty("gap_workflow_id").GetString().Should().Be(workflowId);
+        }
+    }
+
+    [Fact]
+    public async Task Metrics_GuardrailTriggeredEvent_ExposesCountersByReasonCode()
+    {
+        using var factory = new InfernalHierarchyTestWebAppFactory();
+        var client = factory.CreateClient();
+
+        var operatorOptions = factory.Services.GetRequiredService<IOptions<OperatorApiOptions>>().Value;
+        if (!string.IsNullOrWhiteSpace(operatorOptions.ApiKey))
+        {
+            client.DefaultRequestHeaders.Remove("X-Infernal-Operator-Key");
+            client.DefaultRequestHeaders.Add("X-Infernal-Operator-Key", operatorOptions.ApiKey);
+        }
+
+        var sink = factory.Services.GetRequiredService<IAgentEventSink>();
+        sink.AppendEvent(new AgentEvent
+        {
+            AgentId = "lucifer",
+            Type = EventType.DecisionMade,
+            Description = "Capability remediation action",
+            Metadata = new Dictionary<string, object>
+            {
+                ["category"] = "capability.remediation",
+                ["status"] = "guardrail_triggered",
+                ["note"] = "budget_exhausted"
+            }
+        });
+
+        var res = await client.GetAsync(new Uri("/metrics", UriKind.Relative));
+        res.EnsureSuccessStatusCode();
+
+        var body = await res.Content.ReadAsStringAsync();
+        body.Should().Contain("infernal_guardrail_triggered_total_total");
+        body.Should().Contain("infernal_guardrail_triggered_budget_exhausted_total");
     }
 
     [Fact]

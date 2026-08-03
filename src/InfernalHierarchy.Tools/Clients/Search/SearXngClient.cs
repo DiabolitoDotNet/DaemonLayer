@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Diagnostics.CodeAnalysis;
 
 namespace InfernalHierarchy.Tools.Clients.Search;
 
@@ -107,11 +108,13 @@ public sealed class SearXngClient : ISearXngClient
         return code >= 500 || code == 429 || code == 408;
     }
 
+    [SuppressMessage("Performance", "CA1812:Avoid uninstantiated internal classes", Justification = "Instantiated by System.Text.Json when parsing SearXNG responses.")]
     private sealed class SearXngResponse
     {
         public SearXngResult[] Results { get; set; } = Array.Empty<SearXngResult>();
     }
 
+    [SuppressMessage("Performance", "CA1812:Avoid uninstantiated internal classes", Justification = "Instantiated by System.Text.Json when parsing SearXNG responses.")]
     private sealed class SearXngResult
     {
         public string? Title { get; set; }

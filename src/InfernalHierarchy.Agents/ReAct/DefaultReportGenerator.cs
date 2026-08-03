@@ -30,7 +30,7 @@ public sealed class DefaultReportGenerator : IReportGenerator
         report.AppendLine($"**Total Tokens:** {stats.TotalTokens:N0}");
         report.AppendLine($"**Avg Duration:** {stats.AverageDuration.TotalMilliseconds:F0}ms\n");
 
-        if (stats.ModelBreakdown?.Any() == true)
+        if (stats.ModelBreakdown is { Count: > 0 })
         {
             report.AppendLine("**Per-Model Breakdown:**");
             foreach (var kvp in stats.ModelBreakdown.OrderByDescending(x => x.Value.CallCount))

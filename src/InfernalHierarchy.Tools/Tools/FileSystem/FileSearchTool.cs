@@ -111,7 +111,7 @@ public sealed class FileSearchTool : ITool
                 continue;
             }
 
-            if (content.IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0)
+            if (content.Contains(query, StringComparison.OrdinalIgnoreCase))
             {
                 hits.Add(RelativizePath(rootPath, fullPath));
                 if (hits.Count >= maxResults)

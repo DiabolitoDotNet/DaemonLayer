@@ -45,6 +45,11 @@ This is the consolidated feature list of the InfernalHierarchy solution. It inte
 - Command routing and input validation
 - Bot-to-agent bridging (updates become tasks)
 
+## Email operations
+
+- Outbound email notifications via SMTP (`email_send` tool)
+- No built-in mailbox inbox reader in the current tool surface (IMAP/POP/Gmail read is not provided by default)
+
 ## Observability
 
 - Structured logging and log enrichment

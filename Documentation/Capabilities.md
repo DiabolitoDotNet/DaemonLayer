@@ -130,6 +130,19 @@ The repo includes an executable perf gate (`tools/InfernalHierarchy.PerfGate`) a
 2. Host surfaces health/metrics or a summarized state
 3. Operator-only actions require the operator API key and proper permissions
 
+### Credentialed mailbox checks (scope boundary)
+
+Current default scope:
+
+1. Telegram can be used to request an email-related task.
+2. The platform can send outbound emails via `email_send`.
+3. The platform does not include a built-in inbox-reading tool by default.
+
+Implication:
+
+- A request like "check if I received mail from X" requires an explicit mailbox-reading adapter/tool (for example IMAP or provider API) plus permission configuration.
+- Without that adapter, the request cannot complete autonomously end-to-end.
+
 ### Deterministic tool execution
 
 1. Operator sends an explicit tool invocation through `/api/chat`
