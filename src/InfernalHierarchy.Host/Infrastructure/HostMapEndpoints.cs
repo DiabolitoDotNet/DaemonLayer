@@ -18,6 +18,7 @@ internal static class HostMapEndpoints
         MetricsEndpoint.Map(app, uiOptions);
 
         PerfApi.Map(app, uiOptions);
+        AutonomyApi.Map(app, uiOptions);
         TimelineApi.Map(app, uiOptions);
         AgentsApi.Map(app, uiOptions);
 

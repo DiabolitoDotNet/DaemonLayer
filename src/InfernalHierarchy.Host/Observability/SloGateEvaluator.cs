@@ -133,6 +133,101 @@ internal sealed class SloGateEvaluator
                 Message: $"count={taskLatencyStats.Count}, p95={taskLatencyStats.P95:F2}"));
         }
 
+        var autonomyTaskTotal = _metrics.GetCounter("autonomy.task.total");
+        var autonomyTaskCompletionRatio = _metrics.GetGauge("autonomy_task_completion_ratio");
+        var autonomyTerminalFailureRatio = _metrics.GetGauge("autonomy_terminal_failure_ratio");
+
+        if (autonomyTaskTotal < options.MinAutonomyTaskSamples)
+        {
+            checks.Add(new SloGateCheckResult(
+                Gate: "autonomy.task_completion_ratio",
+                Passed: true,
+                Status: "insufficient_data",
+                Value: autonomyTaskTotal,
+                Threshold: options.MinAutonomyTaskSamples,
+                Unit: "samples",
+                Message: "Not enough autonomy task samples to enforce completion ratio gate yet."));
+
+            checks.Add(new SloGateCheckResult(
+                Gate: "autonomy.terminal_failure_ratio",
+                Passed: true,
+                Status: "insufficient_data",
+                Value: autonomyTaskTotal,
+                Threshold: options.MinAutonomyTaskSamples,
+                Unit: "samples",
+                Message: "Not enough autonomy task samples to enforce terminal failure ratio gate yet."));
+        }
+        else
+        {
+            checks.Add(new SloGateCheckResult(
+                Gate: "autonomy.task_completion_ratio",
+                Passed: autonomyTaskCompletionRatio >= options.MinAutonomyTaskCompletionRatio,
+                Status: "enforced",
+                Value: autonomyTaskCompletionRatio,
+                Threshold: options.MinAutonomyTaskCompletionRatio,
+                Unit: "ratio",
+                Message: $"task_total={autonomyTaskTotal}"));
+
+            checks.Add(new SloGateCheckResult(
+                Gate: "autonomy.terminal_failure_ratio",
+                Passed: autonomyTerminalFailureRatio <= options.MaxAutonomyTerminalFailureRatio,
+                Status: "enforced",
+                Value: autonomyTerminalFailureRatio,
+                Threshold: options.MaxAutonomyTerminalFailureRatio,
+                Unit: "ratio",
+                Message: $"task_total={autonomyTaskTotal}"));
+        }
+
+        var autonomyReplayTotal = _metrics.GetCounter("autonomy.replay.total");
+        var autonomyReplaySuccessRatio = _metrics.GetGauge("autonomy_replay_success_ratio");
+
+        if (autonomyReplayTotal < options.MinAutonomyReplaySamples)
+        {
+            checks.Add(new SloGateCheckResult(
+                Gate: "autonomy.replay_success_ratio",
+                Passed: true,
+                Status: "insufficient_data",
+                Value: autonomyReplayTotal,
+                Threshold: options.MinAutonomyReplaySamples,
+                Unit: "samples",
+                Message: "Not enough autonomy replay samples to enforce replay success ratio gate yet."));
+        }
+        else
+        {
+            checks.Add(new SloGateCheckResult(
+                Gate: "autonomy.replay_success_ratio",
+                Passed: autonomyReplaySuccessRatio >= options.MinAutonomyReplaySuccessRatio,
+                Status: "enforced",
+                Value: autonomyReplaySuccessRatio,
+                Threshold: options.MinAutonomyReplaySuccessRatio,
+                Unit: "ratio",
+                Message: $"replay_total={autonomyReplayTotal}"));
+        }
+
+        var autonomyTerminalStats = _metrics.GetHistogramStats("autonomy.time_to_terminal_ms");
+        if (autonomyTerminalStats.Count < options.MinAutonomyTerminalSamples)
+        {
+            checks.Add(new SloGateCheckResult(
+                Gate: "autonomy.median_time_to_terminal_ms",
+                Passed: true,
+                Status: "insufficient_data",
+                Value: autonomyTerminalStats.Count,
+                Threshold: options.MinAutonomyTerminalSamples,
+                Unit: "samples",
+                Message: "Not enough autonomy terminal latency samples to enforce median gate yet."));
+        }
+        else
+        {
+            checks.Add(new SloGateCheckResult(
+                Gate: "autonomy.median_time_to_terminal_ms",
+                Passed: autonomyTerminalStats.P50 <= options.MaxAutonomyMedianTimeToTerminalMs,
+                Status: "enforced",
+                Value: autonomyTerminalStats.P50,
+                Threshold: options.MaxAutonomyMedianTimeToTerminalMs,
+                Unit: "ms",
+                Message: $"count={autonomyTerminalStats.Count}, p50={autonomyTerminalStats.P50:F2}"));
+        }
+
         return new SloGateEvaluationResult(
             Passed: checks.All(c => c.Passed),
             EvaluatedAtUtc: DateTimeOffset.UtcNow,

@@ -52,7 +52,14 @@ public sealed class PerfPersonaDocsE2ETests
                     ["SloGates:MaxQueueRejectRate"] = "0.0",
                     ["SloGates:MinQueueSamples"] = "1",
                     ["SloGates:MaxTaskCompletionP95Ms"] = "100",
-                    ["SloGates:MinTaskCompletionSamples"] = "1"
+                    ["SloGates:MinTaskCompletionSamples"] = "1",
+                    ["SloGates:MinAutonomyTaskCompletionRatio"] = "1.0",
+                    ["SloGates:MaxAutonomyTerminalFailureRatio"] = "0.0",
+                    ["SloGates:MinAutonomyReplaySuccessRatio"] = "1.0",
+                    ["SloGates:MaxAutonomyMedianTimeToTerminalMs"] = "50",
+                    ["SloGates:MinAutonomyTaskSamples"] = "1",
+                    ["SloGates:MinAutonomyReplaySamples"] = "1",
+                    ["SloGates:MinAutonomyTerminalSamples"] = "1"
                 });
             });
         }
@@ -365,6 +372,87 @@ public sealed class PerfPersonaDocsE2ETests
     }
 
     [Fact]
+    public async Task Autonomy_Slo_ReturnsRatiosCountersAndMedianFromDerivedMetrics()
+    {
+        using var factory = new InfernalHierarchyTestWebAppFactory();
+        var client = factory.CreateClient();
+
+        var operatorOptions = factory.Services.GetRequiredService<IOptions<OperatorApiOptions>>().Value;
+        if (!string.IsNullOrWhiteSpace(operatorOptions.ApiKey))
+        {
+            client.DefaultRequestHeaders.Remove("X-Infernal-Operator-Key");
+            client.DefaultRequestHeaders.Add("X-Infernal-Operator-Key", operatorOptions.ApiKey);
+        }
+
+        var sink = factory.Services.GetRequiredService<IAgentEventSink>();
+        sink.AppendEvent(new AgentEvent
+        {
+            AgentId = "lucifer",
+            Type = EventType.DecisionMade,
+            Description = "Gap analysis completed",
+            Metadata = new Dictionary<string, object>
+            {
+                ["category"] = "capability.gap_analysis",
+                ["workflow_state"] = "capability_gap_resolved_retrying_original_intent",
+                ["remediation_attempted"] = true,
+                ["autofix_success"] = true,
+                ["remediation_duration_ms"] = 100d
+            }
+        });
+
+        sink.AppendEvent(new AgentEvent
+        {
+            AgentId = "lucifer",
+            Type = EventType.DecisionMade,
+            Description = "Gap analysis terminal",
+            Metadata = new Dictionary<string, object>
+            {
+                ["category"] = "capability.gap_analysis",
+                ["workflow_state"] = "capability_gap_unresolved_terminal",
+                ["remediation_attempted"] = true,
+                ["autofix_success"] = false,
+                ["remediation_duration_ms"] = 300d
+            }
+        });
+
+        sink.AppendEvent(new AgentEvent
+        {
+            AgentId = "lucifer",
+            Type = EventType.DecisionMade,
+            Description = "Replay outcome",
+            Metadata = new Dictionary<string, object>
+            {
+                ["category"] = "capability.replay",
+                ["status"] = "success",
+                ["attempts"] = 2
+            }
+        });
+
+        var res = await client.GetAsync(new Uri("/api/autonomy/slo", UriKind.Relative));
+        res.EnsureSuccessStatusCode();
+
+        var body = await res.Content.ReadAsStringAsync();
+        using var json = JsonDocument.Parse(body);
+
+        var ratios = json.RootElement.GetProperty("ratios");
+        ratios.GetProperty("autonomy_task_completion_ratio").GetDouble().Should().BeApproximately(0.5, 0.0001);
+        ratios.GetProperty("autonomy_terminal_failure_ratio").GetDouble().Should().BeApproximately(0.5, 0.0001);
+        ratios.GetProperty("autonomy_replay_success_ratio").GetDouble().Should().BeApproximately(1.0, 0.0001);
+
+        var counters = json.RootElement.GetProperty("counters");
+        counters.GetProperty("autonomy_task_total").GetInt64().Should().Be(2);
+        counters.GetProperty("autonomy_task_completed").GetInt64().Should().Be(1);
+        counters.GetProperty("autonomy_terminal_failure").GetInt64().Should().Be(1);
+        counters.GetProperty("autonomy_replay_total").GetInt64().Should().Be(1);
+        counters.GetProperty("autonomy_replay_success").GetInt64().Should().Be(1);
+
+        var terminal = json.RootElement.GetProperty("time_to_terminal_ms");
+        terminal.GetProperty("count").GetInt32().Should().Be(2);
+        terminal.GetProperty("median").GetDouble().Should().Be(100d);
+        terminal.GetProperty("p95").GetDouble().Should().Be(300d);
+    }
+
+    [Fact]
     public async Task Perf_SloGates_StrictThresholds_ReturnsServiceUnavailable()
     {
         using var factory = new StrictSloGateFactory();
@@ -373,6 +461,35 @@ public sealed class PerfPersonaDocsE2ETests
         var metrics = factory.Services.GetRequiredService<InfernalHierarchy.Host.Observability.MetricsCollector>();
         metrics.IncrementCounter("deadletter.replay.failed");
         metrics.RecordValue("http.latency.post.api.chat.ms", 500);
+
+        var sink = factory.Services.GetRequiredService<IAgentEventSink>();
+        sink.AppendEvent(new AgentEvent
+        {
+            AgentId = "lucifer",
+            Type = EventType.DecisionMade,
+            Description = "Gap terminal",
+            Metadata = new Dictionary<string, object>
+            {
+                ["category"] = "capability.gap_analysis",
+                ["workflow_state"] = "capability_gap_unresolved_terminal",
+                ["remediation_attempted"] = true,
+                ["autofix_success"] = false,
+                ["remediation_duration_ms"] = 250d
+            }
+        });
+
+        sink.AppendEvent(new AgentEvent
+        {
+            AgentId = "lucifer",
+            Type = EventType.DecisionMade,
+            Description = "Replay failed",
+            Metadata = new Dictionary<string, object>
+            {
+                ["category"] = "capability.replay",
+                ["status"] = "failed",
+                ["attempts"] = 1
+            }
+        });
 
         var store = factory.Services.GetRequiredService<IFailedOperationStore>();
         await store.RecordAsync(new FailedOperationRecord
@@ -400,6 +517,10 @@ public sealed class PerfPersonaDocsE2ETests
 
         doc.RootElement.GetProperty("passed").GetBoolean().Should().BeFalse();
         doc.RootElement.GetProperty("checks").EnumerateArray().Any(c => !c.GetProperty("passed").GetBoolean()).Should().BeTrue();
+        doc.RootElement.GetProperty("checks").EnumerateArray()
+            .Any(c => string.Equals(c.GetProperty("gate").GetString(), "autonomy.task_completion_ratio", StringComparison.OrdinalIgnoreCase)
+                && !c.GetProperty("passed").GetBoolean())
+            .Should().BeTrue();
     }
 
     [Fact]

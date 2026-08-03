@@ -130,7 +130,9 @@ public sealed class DefaultCapabilityRemediationOrchestratorTests
         result.WorkflowState.Should().Be("capability_gap_unresolved_terminal");
         result.TerminalReasonCode.Should().Be("remediation_action_failed");
         result.FailedActions.Should().HaveCount(1);
-        result.Notes.Should().Contain(note => note.Contains("missing required artifacts", StringComparison.OrdinalIgnoreCase));
+        result.Notes.Should().Contain(note =>
+            note.Contains("manifest parsing failed", StringComparison.OrdinalIgnoreCase)
+            || note.Contains("missing required artifacts", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
@@ -198,6 +200,80 @@ public sealed class DefaultCapabilityRemediationOrchestratorTests
         result.TerminalReasonCode.Should().Be("none");
         result.ReplayRequested.Should().BeTrue();
         result.NewlyAvailableTools.Should().Contain("email_inbox_query");
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_WhenCollaborationReturnsManifest_ShouldAcceptArtifacts()
+    {
+        var toolRegistry = new Mock<IToolRegistry>();
+        toolRegistry.Setup(x => x.ExecuteToolWithTrackingAsync(
+                "request_collaboration",
+                It.IsAny<Dictionary<string, object>>(),
+                It.IsAny<string?>(),
+                It.IsAny<string?>(),
+                It.IsAny<string?>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ToolResult
+            {
+                Success = true,
+                Output = """
+                    {
+                      "artifacts": [
+                        { "path": "research.md", "exists": true, "status": "pass" },
+                        { "path": "design.json", "exists": true, "status": "pass" },
+                        { "path": "test-report.json", "exists": true, "status": "pass" },
+                        { "path": "security-report.json", "exists": true, "status": "pass" }
+                      ],
+                      "allChecksPassed": true
+                    }
+                    """
+            });
+
+        var orchestrator = new DefaultCapabilityRemediationOrchestrator();
+        var context = BuildContext(toolRegistry.Object);
+
+        var analysis = new CapabilityGapAnalysisResult(
+            Gaps:
+            [
+                new CapabilityGap(
+                    Capability: "integration_qualification",
+                    ReasonCode: "requires_capability_qualification",
+                    Description: "Need qualification",
+                    BlockedByProfile: false,
+                    SuggestedSkillPackId: null,
+                    SuggestedExecutionProfile: "Research")
+            ],
+            Remediations:
+            [
+                new CapabilityRemediationAction(
+                    Kind: CapabilityRemediationActionKind.EscalateCollaboration,
+                    ReasonCode: "capability_qualification_required",
+                    Capability: "integration_qualification",
+                    Description: "Run qualification workflow")
+            ],
+            Report: new CapabilityGapReport(
+                RequestedOutcome: "integration",
+                MissingCapabilities: new[] { "integration_qualification" },
+                CandidateTools: new[] { "request_collaboration" },
+                SecurityRiskClass: CapabilitySecurityRiskClass.Medium,
+                CanAutofix: true,
+                BlockReasonCode: "requires_capability_qualification"),
+            Plan: new CapabilityRemediationPlan(
+                PlanId: "plan-manifest",
+                Steps: Array.Empty<CapabilityRemediationPlanStep>(),
+                MaxAttempts: 3,
+                MaxDurationSeconds: 120,
+                PolicyGateAllowsAutofix: true));
+
+        var result = await orchestrator.ExecuteAsync(
+            context,
+            BuildTask(),
+            analysis,
+            CancellationToken.None);
+
+        result.WorkflowState.Should().Be("capability_gap_resolved_retrying_original_intent");
+        result.FailedActions.Should().BeEmpty();
+        result.ReplayRequested.Should().BeTrue();
     }
 
     private static AgentMessage BuildTask()

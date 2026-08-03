@@ -191,6 +191,99 @@ public sealed class CapabilityGapAnalyzerTests
         result.Report.CanAutofix.Should().BeFalse();
     }
 
+    [Fact]
+    public async Task AnalyzeAsync_ExternalProviderIntegration_ShouldRequireQualificationEvenWhenCollaborationToolExists()
+    {
+        var analyzer = new DefaultCapabilityGapAnalyzer(skillPackCatalog: null);
+        var context = BuildContext();
+
+        var persona = new Persona
+        {
+            Name = "Agares",
+            SystemPrompt = "You are Agares",
+            AvailableTools = new[] { "request_collaboration", "create_custom_tool" }
+        };
+
+        var result = await analyzer.AnalyzeAsync(context, new AgentMessage
+        {
+            Content = "Integrate with Salesforce and configure OAuth flow for lead sync"
+        }, persona, CancellationToken.None);
+
+        result.HasGaps.Should().BeTrue();
+        result.Gaps.Should().Contain(g => g.Capability == "integration_qualification");
+        result.Remediations.Should().Contain(r =>
+            r.Kind == CapabilityRemediationActionKind.EscalateCollaboration
+            && r.ReasonCode == "capability_qualification_required");
+    }
+
+    [Fact]
+    public async Task AnalyzeAsync_FilesystemReadIntent_ShouldInferFilesystemReadCapabilityGap()
+    {
+        var analyzer = new DefaultCapabilityGapAnalyzer(skillPackCatalog: null);
+        var context = BuildContext();
+
+        var persona = new Persona
+        {
+            Name = "Agares",
+            SystemPrompt = "You are Agares",
+            AvailableTools = new[] { "read_memory", "create_custom_tool" }
+        };
+
+        var result = await analyzer.AnalyzeAsync(context, new AgentMessage
+        {
+            Content = "Read the source files from the repo and summarize the findings"
+        }, persona, CancellationToken.None);
+
+        result.HasGaps.Should().BeTrue();
+        result.Gaps.Should().Contain(g => g.Capability == "filesystem_read");
+    }
+
+    [Fact]
+    public async Task AnalyzeAsync_WorkflowIntent_ShouldInferWorkflowOrchestrationGap()
+    {
+        var analyzer = new DefaultCapabilityGapAnalyzer(skillPackCatalog: null);
+        var context = BuildContext();
+
+        var persona = new Persona
+        {
+            Name = "Agares",
+            SystemPrompt = "You are Agares",
+            AvailableTools = new[] { "read_memory", "create_custom_tool" }
+        };
+
+        var result = await analyzer.AnalyzeAsync(context, new AgentMessage
+        {
+            Content = "Orchestrate release workflow steps for deployment"
+        }, persona, CancellationToken.None);
+
+        result.HasGaps.Should().BeTrue();
+        result.Gaps.Should().Contain(g => g.Capability == "workflow_orchestration");
+    }
+
+    [Fact]
+    public async Task AnalyzeAsync_ConnectorOnboardingIntent_ShouldUseLowConfidenceQualificationFallback()
+    {
+        var analyzer = new DefaultCapabilityGapAnalyzer(skillPackCatalog: null);
+        var context = BuildContext();
+
+        var persona = new Persona
+        {
+            Name = "Agares",
+            SystemPrompt = "You are Agares",
+            AvailableTools = new[] { "request_collaboration", "create_custom_tool" }
+        };
+
+        var result = await analyzer.AnalyzeAsync(context, new AgentMessage
+        {
+            Content = "Onboard a connector to sync our internal CRM system"
+        }, persona, CancellationToken.None);
+
+        result.HasGaps.Should().BeTrue();
+        result.Gaps.Should().Contain(g =>
+            g.Capability == "integration_qualification"
+            && (g.ReasonCode == "requires_capability_qualification" || g.ReasonCode == "low_confidence_capability_inference"));
+    }
+
     private static ReActTaskProcessorContext BuildContext()
     {
         return new ReActTaskProcessorContext(

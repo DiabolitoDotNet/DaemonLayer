@@ -1,3 +1,6 @@
+using System.Text.Json;
+using System.Diagnostics.CodeAnalysis;
+
 namespace InfernalHierarchy.Agents.ReAct;
 
 public sealed class DefaultCapabilityRemediationOrchestrator : ICapabilityRemediationOrchestrator
@@ -9,6 +12,16 @@ public sealed class DefaultCapabilityRemediationOrchestrator : ICapabilityRemedi
         "test-report.json",
         "security-report.json"
     ];
+
+    private sealed record ArtifactManifest(
+        IReadOnlyList<ArtifactItem> Artifacts,
+        bool AllChecksPassed);
+
+    [SuppressMessage("Performance", "CA1812:Avoid uninstantiated internal classes", Justification = "Instantiated by System.Text.Json when parsing collaboration artifact manifests.")]
+    private sealed record ArtifactItem(
+        string Path,
+        bool Exists,
+        string Status);
 
     public async Task<CapabilityRemediationExecutionResult> ExecuteAsync(
         ReActTaskProcessorContext context,
@@ -231,7 +244,7 @@ public sealed class DefaultCapabilityRemediationOrchestrator : ICapabilityRemedi
         var parameters = new Dictionary<string, object>
         {
             ["task"] =
-                $"Capability-gap audit for '{action.Capability}'. Produce: research.md, design.json, test-report.json, security-report.json. Original intent: {task.Content}",
+                $"Capability-gap audit for '{action.Capability}'. Produce machine-verifiable artifacts and return JSON only with schema: {{\"artifacts\":[{{\"path\":\"research.md\",\"exists\":true,\"status\":\"pass\"}}],\"allChecksPassed\":true}}. Required files: research.md, design.json, test-report.json, security-report.json. Original intent: {task.Content}",
             ["strategy"] = "weighted",
             ["min_participants"] = 2,
             ["agent_id"] = context.AgentId,
@@ -252,9 +265,21 @@ public sealed class DefaultCapabilityRemediationOrchestrator : ICapabilityRemedi
             return false;
         }
 
-        if (!ContainsRequiredArtifacts(result.Output, out var missingArtifacts))
+        if (!TryReadArtifactManifest(result.Output, out var manifest, out var parseError))
+        {
+            notes.Add($"collaboration audit manifest parsing failed for {action.Capability}: {parseError}");
+            return false;
+        }
+
+        if (!ValidateRequiredArtifacts(manifest, out var missingArtifacts))
         {
             notes.Add($"collaboration audit missing required artifacts for {action.Capability}: {string.Join(", ", missingArtifacts)}");
+            return false;
+        }
+
+        if (!manifest.AllChecksPassed)
+        {
+            notes.Add($"collaboration audit reported failing checks for {action.Capability}");
             return false;
         }
 
@@ -262,21 +287,66 @@ public sealed class DefaultCapabilityRemediationOrchestrator : ICapabilityRemedi
         return true;
     }
 
-    private static bool ContainsRequiredArtifacts(string? output, out List<string> missingArtifacts)
+    private static bool TryReadArtifactManifest(string? output, out ArtifactManifest manifest, out string error)
     {
-        missingArtifacts = new List<string>(RequiredAuditArtifacts.Length);
+        manifest = new ArtifactManifest(Array.Empty<ArtifactItem>(), false);
+        error = string.Empty;
 
         if (string.IsNullOrWhiteSpace(output))
         {
-            missingArtifacts.AddRange(RequiredAuditArtifacts);
+            error = "empty output";
             return false;
         }
 
-        foreach (var artifact in RequiredAuditArtifacts)
+        var payload = output.Trim();
+        var firstBrace = payload.IndexOf('{');
+        if (firstBrace > 0)
         {
-            if (output.IndexOf(artifact, StringComparison.OrdinalIgnoreCase) < 0)
+            payload = payload[firstBrace..];
+        }
+
+        try
+        {
+            var parsed = JsonSerializer.Deserialize<ArtifactManifest>(
+                payload,
+                new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+
+            if (parsed is null)
             {
-                missingArtifacts.Add(artifact);
+                error = "manifest payload deserialized to null";
+                return false;
+            }
+
+            manifest = parsed;
+            return true;
+        }
+        catch (Exception ex)
+        {
+            error = ex.Message;
+            return false;
+        }
+    }
+
+    private static bool ValidateRequiredArtifacts(ArtifactManifest manifest, out List<string> missingArtifacts)
+    {
+        missingArtifacts = new List<string>(RequiredAuditArtifacts.Length);
+
+        var byPath = manifest.Artifacts
+            .Where(a => !string.IsNullOrWhiteSpace(a.Path))
+            .GroupBy(a => a.Path.Trim(), StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+
+        foreach (var required in RequiredAuditArtifacts)
+        {
+            if (!byPath.TryGetValue(required, out var item))
+            {
+                missingArtifacts.Add(required);
+                continue;
+            }
+
+            if (!item.Exists || !string.Equals(item.Status, "pass", StringComparison.OrdinalIgnoreCase))
+            {
+                missingArtifacts.Add(required);
             }
         }
 

@@ -48,12 +48,26 @@ internal sealed class CapabilityGapMetricsEventSink : IAgentEventSink
             }
         }
 
+        if (string.Equals(category, "capability.replay", StringComparison.OrdinalIgnoreCase))
+        {
+            _metrics.IncrementCounter("autonomy.replay.total");
+            if (evt.Metadata.TryGetValue("status", out var replayStatusObj)
+                && string.Equals(replayStatusObj?.ToString(), "success", StringComparison.OrdinalIgnoreCase))
+            {
+                _metrics.IncrementCounter("autonomy.replay.success");
+            }
+
+            UpdateAutonomyRatios();
+            return;
+        }
+
         if (!string.Equals(category, "capability.gap_analysis", StringComparison.OrdinalIgnoreCase))
         {
             return;
         }
 
         _metrics.IncrementCounter("capability_gap_detected_total");
+        _metrics.IncrementCounter("autonomy.task.total");
 
         if (TryGetBool(evt.Metadata, "remediation_attempted", out var attempted) && attempted)
         {
@@ -69,6 +83,41 @@ internal sealed class CapabilityGapMetricsEventSink : IAgentEventSink
         {
             _metrics.IncrementCounter("capability_gap_autofix_success_total");
         }
+
+        if (evt.Metadata.TryGetValue("workflow_state", out var workflowStateObj))
+        {
+            var workflowState = workflowStateObj?.ToString() ?? string.Empty;
+            if (string.Equals(workflowState, "capability_gap_resolved_retrying_original_intent", StringComparison.OrdinalIgnoreCase))
+            {
+                _metrics.IncrementCounter("autonomy.task.completed");
+            }
+            else if (string.Equals(workflowState, "capability_gap_unresolved_terminal", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(workflowState, "capability_gap_policy_blocked", StringComparison.OrdinalIgnoreCase))
+            {
+                _metrics.IncrementCounter("autonomy.task.terminal_failure");
+            }
+        }
+
+        if (TryGetDouble(evt.Metadata, "remediation_duration_ms", out var terminalMs) && terminalMs >= 0)
+        {
+            _metrics.RecordValue("autonomy.time_to_terminal_ms", terminalMs);
+        }
+
+        UpdateAutonomyRatios();
+    }
+
+    private void UpdateAutonomyRatios()
+    {
+        var total = _metrics.GetCounter("autonomy.task.total");
+        var completed = _metrics.GetCounter("autonomy.task.completed");
+        var failed = _metrics.GetCounter("autonomy.task.terminal_failure");
+
+        var replayTotal = _metrics.GetCounter("autonomy.replay.total");
+        var replaySuccess = _metrics.GetCounter("autonomy.replay.success");
+
+        _metrics.SetGauge("autonomy_task_completion_ratio", total == 0 ? 0 : (double)completed / total);
+        _metrics.SetGauge("autonomy_terminal_failure_ratio", total == 0 ? 0 : (double)failed / total);
+        _metrics.SetGauge("autonomy_replay_success_ratio", replayTotal == 0 ? 0 : (double)replaySuccess / replayTotal);
     }
 
     private static bool IsGuardrailTriggered(IDictionary<string, object> metadata)

@@ -4,13 +4,26 @@ namespace InfernalHierarchy.Agents.ReAct;
 
 public sealed class DefaultCapabilityGapAnalyzer : ICapabilityGapAnalyzer
 {
+    private static readonly char[] TokenDelimiters = [' ', '\t', '\r', '\n', '.', ',', ';', ':', '!', '?', '(', ')', '[', ']', '{', '}', '"', '\'', '/', '\\', '-', '_'];
+
     private sealed record CapabilityRule(
         string Capability,
         string RequiredTool,
         string ReasonCode,
         string Description,
         Regex[] Matchers,
-        string? PreferredProfile = null);
+        string? PreferredProfile = null,
+        bool AlwaysRequireQualification = false);
+
+    private sealed record InferencePattern(
+        string Capability,
+        string RequiredTool,
+        string ReasonCode,
+        string Description,
+        string[] Verbs,
+        string[] Objects,
+        string? PreferredProfile = null,
+        bool AlwaysRequireQualification = false);
 
     private static readonly CapabilityRule[] Rules =
     {
@@ -81,7 +94,55 @@ public sealed class DefaultCapabilityGapAnalyzer : ICapabilityGapAnalyzer
             [
                 new Regex(@"\b(mailbox|inbox|email inbox|mail from|mail de|boite mail|boi?te de reception|imap)\b", RegexOptions.IgnoreCase | RegexOptions.Compiled)
             ],
-            PreferredProfile: "Research")
+            PreferredProfile: "Research"),
+        new(
+            Capability: "integration_qualification",
+            RequiredTool: "request_collaboration",
+            ReasonCode: "requires_capability_qualification",
+            Description: "Task appears to require external integration/provider onboarding and needs deterministic capability qualification before execution.",
+            Matchers:
+            [
+                new Regex(@"\b(integrate with|connect to|adapter|provider|oauth|sso|salesforce|servicenow|workday|hubspot|zendesk|notion|confluence|jira|slack|teams|airtable)\b", RegexOptions.IgnoreCase | RegexOptions.Compiled)
+            ],
+            PreferredProfile: "Research",
+            AlwaysRequireQualification: true)
+    };
+
+    private static readonly InferencePattern[] InferencePatterns =
+    {
+        new(
+            Capability: "filesystem_read",
+            RequiredTool: "fs_read",
+            ReasonCode: "missing_filesystem_read_tool",
+            Description: "Task likely requires reading local files.",
+            Verbs: ["read", "inspect", "open", "parse"],
+            Objects: ["file", "files", "folder", "directory", "path", "source", "repo"],
+            PreferredProfile: "Build"),
+        new(
+            Capability: "filesystem_write",
+            RequiredTool: "fs_write",
+            ReasonCode: "missing_filesystem_write_tool",
+            Description: "Task likely requires writing local files.",
+            Verbs: ["write", "save", "create", "update", "edit", "patch", "generate", "export"],
+            Objects: ["file", "files", "folder", "directory", "path", "json", "csv", "report", "output"],
+            PreferredProfile: "Build"),
+        new(
+            Capability: "workflow_orchestration",
+            RequiredTool: "workflow_step",
+            ReasonCode: "missing_workflow_orchestration_tool",
+            Description: "Task likely requires workflow orchestration steps.",
+            Verbs: ["orchestrate", "coordinate", "pipeline", "workflow", "run"],
+            Objects: ["steps", "stage", "deploy", "release", "sequence", "job"],
+            PreferredProfile: "Build"),
+        new(
+            Capability: "integration_qualification",
+            RequiredTool: "request_collaboration",
+            ReasonCode: "requires_capability_qualification",
+            Description: "Task appears to involve external/system integration and needs deterministic capability qualification before execution.",
+            Verbs: ["integrate", "connect", "sync", "onboard", "bridge"],
+            Objects: ["provider", "service", "crm", "erp", "system", "connector", "saas"],
+            PreferredProfile: "Research",
+            AlwaysRequireQualification: true)
     };
 
     private readonly ISkillPackCatalog? _skillPackCatalog;
@@ -119,7 +180,7 @@ public sealed class DefaultCapabilityGapAnalyzer : ICapabilityGapAnalyzer
             var hasTool = allowedTools.Contains(rule.RequiredTool);
             var blockedByProfile = profileAllowedTools is not null && !profileAllowedTools.Contains(rule.RequiredTool);
 
-            if (hasTool && !blockedByProfile)
+            if (hasTool && !blockedByProfile && !rule.AlwaysRequireQualification)
             {
                 continue;
             }
@@ -163,6 +224,13 @@ public sealed class DefaultCapabilityGapAnalyzer : ICapabilityGapAnalyzer
                 SuggestedSkillPackId: suggestedSkillPackId,
                 SuggestedExecutionProfile: toolRule?.PreferredProfile));
         }
+
+        await EnrichWithInferredCapabilitiesAsync(
+            content,
+            allowedTools,
+            profileAllowedTools,
+            gaps,
+            ct).ConfigureAwait(false);
 
         var remediations = BuildRemediations(gaps, allowedTools, executionProfile);
         var report = BuildReport(task.Content ?? string.Empty, gaps, remediations);
@@ -343,6 +411,16 @@ public sealed class DefaultCapabilityGapAnalyzer : ICapabilityGapAnalyzer
                 continue;
             }
 
+            if (string.Equals(gap.Capability, "integration_qualification", StringComparison.OrdinalIgnoreCase))
+            {
+                remediations.Add(new CapabilityRemediationAction(
+                    Kind: CapabilityRemediationActionKind.EscalateCollaboration,
+                    ReasonCode: "capability_qualification_required",
+                    Capability: gap.Capability,
+                    Description: "Run deterministic capability qualification workflow before execution."));
+                continue;
+            }
+
             if (!string.IsNullOrWhiteSpace(gap.SuggestedSkillPackId) && allowedTools.Contains("request_skill_pack"))
             {
                 remediations.Add(new CapabilityRemediationAction(
@@ -415,6 +493,122 @@ public sealed class DefaultCapabilityGapAnalyzer : ICapabilityGapAnalyzer
         }
 
         return false;
+    }
+
+    private async Task EnrichWithInferredCapabilitiesAsync(
+        string content,
+        HashSet<string> allowedTools,
+        HashSet<string>? profileAllowedTools,
+        List<CapabilityGap> gaps,
+        CancellationToken ct)
+    {
+        var tokens = Tokenize(content);
+
+        foreach (var pattern in InferencePatterns)
+        {
+            if (!TryInferPattern(tokens, content, pattern, out var weakSignalOnly))
+            {
+                continue;
+            }
+
+            if (gaps.Any(g => string.Equals(g.Capability, pattern.Capability, StringComparison.OrdinalIgnoreCase)))
+            {
+                continue;
+            }
+
+            var hasTool = allowedTools.Contains(pattern.RequiredTool);
+            var blockedByProfile = profileAllowedTools is not null && !profileAllowedTools.Contains(pattern.RequiredTool);
+
+            // For normal inferred capabilities, only create a gap if the tool is missing/blocked.
+            // For qualification capabilities we keep the gap even when tool exists because the task
+            // still requires qualification execution before safe runtime.
+            if (hasTool && !blockedByProfile && !pattern.AlwaysRequireQualification)
+            {
+                continue;
+            }
+
+            var reasonCode = blockedByProfile
+                ? "profile_constraint_blocked_tool"
+                : weakSignalOnly
+                    ? "low_confidence_capability_inference"
+                    : pattern.ReasonCode;
+
+            var suggestedSkillPackId = await FindSkillPackForToolAsync(pattern.RequiredTool, ct).ConfigureAwait(false);
+
+            gaps.Add(new CapabilityGap(
+                Capability: pattern.Capability,
+                ReasonCode: reasonCode,
+                Description: pattern.Description,
+                BlockedByProfile: blockedByProfile,
+                SuggestedSkillPackId: suggestedSkillPackId,
+                SuggestedExecutionProfile: pattern.PreferredProfile));
+        }
+    }
+
+    private static bool TryInferPattern(HashSet<string> tokens, string content, InferencePattern pattern, out bool weakSignalOnly)
+    {
+        weakSignalOnly = false;
+
+        var verbMatches = CountMatches(tokens, content, pattern.Verbs);
+        var objectMatches = CountMatches(tokens, content, pattern.Objects);
+
+        if (verbMatches > 0 && objectMatches > 0)
+        {
+            return true;
+        }
+
+        // Deterministic weak-signal fallback for external integration wording.
+        if (pattern.AlwaysRequireQualification && (verbMatches + objectMatches) >= 2)
+        {
+            weakSignalOnly = true;
+            return true;
+        }
+
+        return false;
+    }
+
+    private static int CountMatches(HashSet<string> tokens, string content, IEnumerable<string> candidates)
+    {
+        var count = 0;
+        foreach (var candidate in candidates)
+        {
+            if (string.IsNullOrWhiteSpace(candidate))
+            {
+                continue;
+            }
+
+            var normalized = candidate.Trim().ToLowerInvariant();
+            if (normalized.Contains(' ', StringComparison.Ordinal))
+            {
+                if (content.Contains(normalized, StringComparison.OrdinalIgnoreCase))
+                {
+                    count++;
+                }
+
+                continue;
+            }
+
+            if (tokens.Contains(normalized))
+            {
+                count++;
+            }
+        }
+
+        return count;
+    }
+
+    private static HashSet<string> Tokenize(string content)
+    {
+        if (string.IsNullOrWhiteSpace(content))
+        {
+            return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        }
+
+        var tokens = content
+            .ToLowerInvariant()
+            .Split(TokenDelimiters, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+        return new HashSet<string>(tokens, StringComparer.OrdinalIgnoreCase);
     }
 
     private static HashSet<string>? TryReadProfileAllowedTools(Dictionary<string, object>? payload)

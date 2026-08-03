@@ -48,7 +48,7 @@ This is the consolidated feature list of the InfernalHierarchy solution. It inte
 ## Email operations
 
 - Outbound email notifications via SMTP (`email_send` tool)
-- No built-in mailbox inbox reader in the current tool surface (IMAP/POP/Gmail read is not provided by default)
+- Read-only mailbox query via `email_inbox_query` (requires explicit inbox configuration and credentials)
 
 ## Observability
 
@@ -56,6 +56,8 @@ This is the consolidated feature list of the InfernalHierarchy solution. It inte
 - OpenTelemetry tracing across agent runs and tool invocations
 - Prometheus metrics endpoint + health checks
 - Performance monitoring services
+- Autonomy readiness preflight report endpoint (`/api/autonomy/readiness`)
+- Autonomy SLO endpoint (`/api/autonomy/slo`) exposing completion/failure/replay ratios and terminal latency percentiles
 - Autonomy scorecard quality gate driven by real playground scenario runs
 - Executable perf gate harness with versioned latency/allocation budgets for hot paths
 

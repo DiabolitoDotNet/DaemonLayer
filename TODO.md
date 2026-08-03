@@ -1,235 +1,287 @@
-# InfernalHierarchy - TODO Final (objectif 100% autonomie)
+# InfernalHierarchy - TODO Final (audit verite terrain)
 
 > Last Updated: 2026-08-03
-> Goal: atteindre une autonomie operationnelle 100% (pas de re-demande utilisateur pour terminer la tache), avec garde-fous cout/securite, observabilite complete, et performance stable.
+> Goal: atteindre une autonomie operationnelle 100% defendable en production, avec performance stable et code moderne C#.
 
 ---
 
-## 0) Bilan objectif de la passe finale
+## 0) Etat actuel valide
 
-### 0.1 Acquis verifies (DONE)
+### 0.1 Acquis confirmes (DONE)
 
-- Capability-gap detection + structured report/plan en place.
-- Sensitive input guard actif (secret reference requise).
-- Tool inbox read-only email_inbox_query implemente, autorise et teste.
-- Telemetry capability-gap exposee (detected/attempt/success/duration).
-- Perf gate capabilityGapPlanning actif et vert.
-- Build Release solution verte, tests verts.
+- Build stricte analyzers verte en Release (0 warning / 0 error sur la derniere passe).
+- Suite tests globale verte (920/920).
+- Pipeline capability-gap present: detection, remediation, replay, events, reason codes.
+- Guardrails runtime actifs (attempts, duration, budgets, terminal states).
+- Tool email_inbox_query implemente, autorise, et couvert par tests.
+- Perf gate present avec budgets pour authorization/federation/capability-gap/inbox.
 
-### 0.2 Gaps restants qui bloquent le vrai 100%
+### 0.2 Conclusion objective
 
-- Aucun gap bloquant restant identifie sur les parcours cibles de l audit final.
+- Le systeme est tres proche de la cible, mais le 100% autonomie universel n est pas encore defendable sans reserves.
+- Les gaps restants ci-dessous sont des gaps de generalisation et de robustesse de preuve, pas des regressions fonctionnelles.
 
 ---
 
-## 1) P0 - Cloture autonomie fonctionnelle
+## 1) Gaps P0 bloquants pour un vrai 100% autonomie
 
-### A300.1 - Replay automatique deterministe du message initial
+### A400.1 - Couverture capability-gap trop limitee (regex rules statiques)
+
+Status: DONE (phase 2)  
+Priority: P0
+
+Constat:
+
+- La detection capability-gap repose sur un ensemble ferme de regex/rules.
+- Une tache hors vocabulaire couvert peut passer sans gap detecte, donc sans remediation auto.
+
+Objectif:
+
+- Passer d un mapping lexical ferme a une detection hybride (intent + required capabilities + verification toolability).
+
+Implementation cible:
+
+- Ajouter une etape de "capability inference" structuree (liste capacites requises + confiance + preuves).
+- Ajouter un fallback deterministe: si confiance faible, lancer une collaboration de qualification avant execution.
+- Couvrir explicitement les familles manquantes (filesystem, orchestration, data export, auth flows, provider adapters).
+
+Etat implemente:
+
+- Ajout d une regle `integration_qualification` qui force une qualification collaborative pour les intents d integration/provider onboarding (meme si `request_collaboration` est deja disponible).
+- Remediation associee forcee en `EscalateCollaboration` avec reason code dedie.
+- Ajout d inference hybride verbe+objet pour families supplementaires:
+  - filesystem_read (`fs_read`),
+  - filesystem_write (`fs_write`),
+  - workflow_orchestration (`workflow_step`),
+  - integration_qualification (fallback faible confiance deterministe).
+- Enrichissement automatique des gaps meme hors vocabulaire regex strict via tokenization + matching deterministe.
+
+Residual risk (a poursuivre en P1):
+
+- Le moteur reste heuristique/deterministe; une inference semantique LLM-scored reste souhaitable pour les cas tres ambigus multi-domaines.
+
+### A400.2 - Validation d artefacts de remediation insuffisante (preuve textuelle uniquement)
 
 Status: DONE  
 Priority: P0
 
+Constat:
+
+- La validation actuelle verifie la presence de noms de fichiers dans un output texte.
+- Cela ne prouve ni existence reelle, ni schema, ni statut pass/fail des artefacts.
+
 Objectif:
 
-- Quand remediation est succes, re-executer automatiquement la tache originale sans nouvelle action utilisateur.
+- Exiger une preuve machine-verifiable des artefacts de remediation.
 
 Implementation cible:
 
-- Ajouter un runner de replay base sur original_intent + correlation id.
-- Appliquer idempotence guard (anti double replay).
-- Ajouter retry budget local (tentatives + timeout) pour replay.
+- Exiger un manifest JSON signe (ou hashable) avec:
+  - chemins artefacts reels,
+  - statut de validation,
+  - metadata de version/outils/tests.
+- Verifier existence fichier + schema + statut avant de marquer resolved.
 
-Acceptance:
+Etat implemente:
 
-- Aucun message utilisateur supplementaire requis apres remediation succes.
-- Retour terminal explicite si replay echoue apres budget.
+- La remediation collaborative exige maintenant un manifest JSON machine-readable (`artifacts[]`, `allChecksPassed`).
+- Validation stricte des artefacts requis (`research.md`, `design.json`, `test-report.json`, `security-report.json`) avec `exists=true` et `status=pass`.
+- Echec de parsing/validation => terminal unresolved.
 
-Validation:
-
-- E2E: gap -> remediation -> replay -> report final success.
-- E2E: gap -> remediation success mais replay fail -> terminal explicite.
-
-### A300.2 - Validation stricte des artefacts de remediation
+### A400.3 - Replay automatique sans budget de retry explicite
 
 Status: DONE  
 Priority: P0
 
+Constat:
+
+- Le replay est protege contre le double replay, mais il n y a pas de budget de retry dedie avec backoff/timeout de replay.
+- Une remediation reussie suivie d un echec transitoire de replay peut rester sous-optimale.
+
 Objectif:
 
-- Ne pas marquer un gap "resolved" sans preuves d execution des etapes critiques.
+- Ajouter un orchestrateur de replay robuste et borne.
 
 Implementation cible:
 
-- Definir un contrat artefact minimal par capability:
-  - research.md
-  - design.json
-  - test-report.json
-  - security-report.json
-- Valider presence + schema minimal + statut pass/fail.
-- Basculer en unresolved_terminal si artefacts invalides/incomplets.
+- Introduire ReplayAttemptsMax + ReplayTimeout + ReplayBackoff.
+- Emettre des reason codes distincts: replay_transient_failed, replay_budget_exhausted, replay_success.
+- Reporter clairement la derniere erreur utile dans le terminal report.
 
-Acceptance:
+Etat implemente:
 
-- workflow_state=capability_gap_resolved_retrying_original_intent seulement si artefacts valides.
+- Ajout de budgets de replay dans `ReActOptions` (`ReplayMaxAttempts`, `ReplayAttemptTimeoutMs`, `ReplayBackoffMs`).
+- Execution du replay via retry borne + timeout par tentative.
+- En cas d epuisement: terminal autonome explicite avec `capability_gap_terminal_reason_code=replay_budget_exhausted`.
 
-Validation:
-
-- Tests unitaires sur validateur d artefacts.
-- Test integration remediation sans artefact -> unresolved_terminal.
-
-### A300.3 - Enforcement runtime des budgets de plan
+### A400.4 - Preconditions externes non garanties by default
 
 Status: DONE  
 Priority: P0
 
+Constat:
+
+- Certaines capacites critiques dependent de configuration externe (credentials, endpoints, providers).
+- Exemple: inbox query existe mais la configuration EmailInbox n est pas pre-provisionnee par defaut.
+
 Objectif:
 
-- Limiter blast radius et garantir terminaison autonome sous contrainte.
+- Rendre l autonomie independante des oublis de config par un preflight bloquant et actionnable.
 
 Implementation cible:
 
-- Appliquer MaxAttempts et MaxDurationSeconds pendant ExecuteAsync.
-- Arret deterministic avec reason_code explicite (budget_exhausted / duration_exhausted).
-- Tracer les depassements dans events + metrics.
+- Ajouter un startup preflight "autonomy readiness" par capability critique.
+- Publier un rapport readiness (OK/KO + reason + remediation guide) via API et logs.
+- Refuser la revendication "100%" tant que readiness globale < 100%.
 
-Acceptance:
+Etat implemente:
 
-- Aucune remediation ne depasse ses limites configurees.
-
-Validation:
-
-- Tests integration avec budget bas forcent une terminaison propre.
+- Ajout d un preflight startup `AutonomyReadinessHostedService` + stockage `AutonomyReadinessReportStore`.
+- Ajout endpoint operateur `GET /api/autonomy/readiness`.
+- Verification de readiness sur capacites critiques configurees (incluant `email_inbox_query` avec preconditions de config).
+- Option de blocage demarrage si critique non pret (`FailStartupOnCriticalNotReady`).
 
 ---
 
-## 2) P1 - Observabilite et gouvernance exploitables
+## 2) P1 - Robustesse et preuves de performance
 
-### A301.1 - Vue workflow-first par gap_workflow_id
+### A401.1 - Perf gate trop synthetique pour conclure seul
 
 Status: DONE  
 Priority: P1
 
+Constat:
+
+- Les scenarios perf actuels utilisent majoritairement des stubs deterministes.
+- Tres utile pour regressions unitaires, mais insuffisant comme preuve finale de comportement reel.
+
 Objectif:
 
-- Permettre un audit operateur simple d un cas capability-gap du debut a la fin.
+- Ajouter des scenarios representative-runtime (host + tool pipeline + event sink reel).
 
 Implementation cible:
 
-- Ajouter endpoint timeline filtre par gap_workflow_id.
-- Inclure etapes: detection -> planning -> remediation actions -> replay -> terminal state.
-- Ajouter resume compact: status final, duree, action dominante, reason_code final.
+- Introduire scenarios perf integration light (sans reseau externe instable) avec stores/outils reels locaux.
+- Suivre p50/p95 + alloc/op + variance.
 
 Acceptance:
 
-- Un seul id permet de reconstruire 100% de la chronologie utile.
+- Les budgets restent PASS sur scenarios synthetiques ET integration light.
 
-Validation:
+Progression actuelle:
 
-- Test API de timeline ciblee + verification payload.
+- Scenario integration-light ajoute au PerfGate: `autonomySloIntegration`.
+- Le scenario exerce le sink d evenements autonomie + evaluation SLO locale (sans reseau externe instable).
+- Budget versionne dans `tools/InfernalHierarchy.PerfGate/perf-baseline.json`.
 
-### A301.2 - Guardrails multi-dimension (cout/agent/time)
+### A401.2 - SLO autonomie end-to-end manquants
 
 Status: DONE  
 Priority: P1
 
+Constat:
+
+- On a des metrics techniques, mais pas encore de SLO final orientee "task autonomy outcome".
+
 Objectif:
 
-- Eviter derive cout et explosion de branches pendant remediation.
+- Mesurer la promesse produit directement.
 
 Implementation cible:
 
-- Caps sur nombre de sub-agents, tours de collaboration, et tool calls remediation.
-- Coupe-circuit quand seuil depasse, avec retour autonome terminal.
-- Telemetry dediee: guardrail_triggered_total par reason_code.
+- Ajouter metriques:
+  - autonomy_task_completion_ratio,
+  - autonomy_terminal_failure_ratio,
+  - autonomy_replay_success_ratio,
+  - autonomy_median_time_to_terminal.
+- Ajouter gates CI/ops sur seuils minimaux.
 
 Acceptance:
 
-- Les workflows hors budget se terminent proprement et predictiblement.
+- La cible 100% est suivie par des KPI metier auditable.
 
-Validation:
+Progression actuelle:
 
-- Tests de surcharge simulant derive et verifiant la coupure.
+- Metriques derivees ajoutees dans le pipeline d'evenements:
+  - autonomy_task_completion_ratio
+  - autonomy_terminal_failure_ratio
+  - autonomy_replay_success_ratio
+  - autonomie.time_to_terminal_ms (p50 expose comme mediane)
+- Endpoint operateur ajoute: GET /api/autonomy/slo
+- Gates CI/ops explicites ajoutes dans SloGateEvaluator pour ces 4 KPI avec mode insufficient_data + enforcement.
 
 ---
 
-## 3) P1 - Couverture tests de fermeture
+## 3) P2 - Qualite C# moderne et hygiene continue
 
-### A302.1 - Suite capability-gap de bout en bout
-
-Status: DONE  
-Priority: P1
-
-Objectif:
-
-- Couvrir les chemins qui conditionnent l autonomie reelle.
-
-Scenarios minimum:
-
-- nominal: gap detecte -> remediation valide -> replay auto -> success.
-- policy blocked: gap detecte -> blocage securite/policy -> terminal explicite.
-- remediation failed: echec action/tool -> unresolved_terminal.
-- budget exhausted: coupe-circuit propre.
-
-Acceptance:
-
-- Les 4 scenarios passent en CI.
-
-### A302.2 - E2E Telegram mailbox nominal
-
-Status: DONE  
-Priority: P1
-
-Objectif:
-
-- Verifier le parcours reel cote transport Telegram (pas uniquement HTTP chat API).
-
-Acceptance:
-
-- Requete Telegram "mail from X" produit une reponse terminale autonome et tracable.
-
----
-
-## 4) P2 - Optimisation et pratiques C# modernes
-
-### A303.1 - Gate qualite C# en build CI
+### A402.1 - Analyzer policy durable (dev + CI)
 
 Status: DONE  
 Priority: P2
 
 Constat:
 
-- Les analyzers sont configures mais desactives pendant le build (RunAnalyzersDuringBuild=false).
+- Les analyzers sont forces en CI, mais `RunAnalyzersDuringBuild` reste desactive par defaut dans les props.
 
-Action:
+Objectif:
 
-- Activer analyzers en CI (au moins sur src) avec baseline progressive.
-- Promouvoir un sous-ensemble critique en warning-as-error (nullable/perf/securite).
+- Eviter le drift local -> CI et maintenir la discipline moderne C# sur la duree.
 
-Etat actuel:
+Implementation cible:
 
-- CI build lance deja `RunAnalyzersDuringBuild=true`.
-- CI build promeut explicitement un sous-ensemble critique en erreurs (`CS8600`, `CS8602`, `CS8603`, `CS8604`, `CA2000`, `CA2016`, `CA2100`).
+- Definir une strategie explicite:
+  - soit analyzers on by default (avec mode rapide documente),
+  - soit script standard local qui reproduit exactement la CI.
+- Documenter policy de suppression (justification obligatoire + revue).
 
-### A303.2 - Micro-optimisations hot path remediation/inbox
+Acceptance:
+
+- Plus de surprise "vert local / rouge CI" sur les regles critiques.
+
+Progression actuelle:
+
+- `RunAnalyzersDuringBuild` active par defaut dans `Directory.Build.props`.
+- Runbook policy ajoute: `Documentation/Runbooks/Analyzer-Policy.md` (parite CI + mode local rapide explicite).
+
+### A402.2 - Documentation de capacites a realigner
 
 Status: DONE  
 Priority: P2
 
-Action:
+Constat:
 
-- Mesurer allocations sur chemins remediation et inbox query.
-- Eviter allocations evitables (materialisations inutiles, parsing repetitif, logging boxe).
-- Completer par benchmarks cibles si regression suspectee.
+- Certaines sections documentaires ne reflettent plus exactement l etat courant des tools (ex: inbox query present mais conditionnel par configuration).
+
+Objectif:
+
+- Garder la doc comme source de verite exploitable par ops et reviewers.
+
+Implementation cible:
+
+- Aligner Capabilities/Features/Security sur:
+  - capability disponible,
+  - prerequis de config,
+  - niveau de readiness.
+
+Acceptance:
+
+- Un lecteur externe peut determiner sans ambiguite ce qui est autonome par defaut vs autonome apres provisioning.
+
+Progression actuelle:
+
+- Docs alignees pour `email_inbox_query` conditionnel a la configuration.
+- Ajout des surfaces `GET /api/autonomy/readiness` et `GET /api/autonomy/slo` dans la doc fonctionnelle/SLO/matrice active.
 
 ---
 
-## 5) Definition of Done 100% autonomie
+## 4) Definition of Done (version defendable)
 
-Le niveau cible est atteint si:
+La revendication "100% autonomie" est consideree atteinte uniquement si:
 
-- Toute tache capability-gap remediable va jusqu au report final sans relance utilisateur.
-- Toute tache non remediable termine de facon autonome explicite et auditable.
-- Les budgets runtime sont appliques et prouves par tests.
-- Le workflow est observable de bout en bout par gap_workflow_id.
-- Les scenarios E2E critiques (dont Telegram mailbox) sont verts en CI.
-- Perf gate reste PASS et la build Release reste propre.
+- Capability-gap detection couvre les cas hors vocabulaire fixe (pas seulement regex rules statiques).
+- Remediation ne peut pas etre marquee success sans artefacts verifies machine (existence + schema + statut).
+- Replay post-remediation est robuste avec retry budget borne et reason codes explicites.
+- Preconditions externes sont validees au boot via un readiness report bloquant.
+- SLO autonomie metier sont publies et respectes en continu.
+- Perf gate couvre a la fois scenarios synthetiques et integration light representative.
+- Build stricte analyzers + tests restent verts durablement.

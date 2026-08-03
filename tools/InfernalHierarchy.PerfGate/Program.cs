@@ -1,10 +1,12 @@
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using InfernalHierarchy.Agents.Collaboration;
 using InfernalHierarchy.Agents.Registry;
 using InfernalHierarchy.Core.Entities;
+using InfernalHierarchy.Core.Eventing;
 using InfernalHierarchy.Core.Interfaces;
 using InfernalHierarchy.Host.Security;
 using InfernalHierarchy.Messaging.Federation;
@@ -17,6 +19,8 @@ using InfernalHierarchy.Tools.Options;
 using InfernalHierarchy.Tools.Tools.Notifications;
 
 var baselinePath = Path.Combine(AppContext.BaseDirectory, "perf-baseline.json");
+var perfGatePassToken = "PERF_GATE:PASS";
+var perfGateFailToken = "PERF_GATE:FAIL";
 if (!File.Exists(baselinePath))
 {
     baselinePath = Path.Combine(Directory.GetCurrentDirectory(), "perf-baseline.json");
@@ -43,6 +47,7 @@ var collaboration = await RunLocalCollaborationScenarioAsync().ConfigureAwait(fa
 var capabilityGapPlanning = await RunCapabilityGapPlanningScenarioAsync().ConfigureAwait(false);
 var capabilityGapRemediation = await RunCapabilityGapRemediationScenarioAsync().ConfigureAwait(false);
 var inboxQuery = await RunInboxQueryToolScenarioAsync().ConfigureAwait(false);
+var autonomySloIntegration = await RunAutonomySloIntegrationScenarioAsync().ConfigureAwait(false);
 
 PrintResult("toolAuthorization", authorization, baseline.ToolAuthorization);
 PrintResult("federationAggregation", federation, baseline.FederationAggregation);
@@ -50,6 +55,7 @@ PrintResult("localCollaboration", collaboration, baseline.LocalCollaboration);
 PrintResult("capabilityGapPlanning", capabilityGapPlanning, baseline.CapabilityGapPlanning);
 PrintResult("capabilityGapRemediation", capabilityGapRemediation, baseline.CapabilityGapRemediation);
 PrintResult("inboxQuery", inboxQuery, baseline.InboxQuery);
+PrintResult("autonomySloIntegration", autonomySloIntegration, baseline.AutonomySloIntegration);
 
 var failures = new List<string>();
 Evaluate("toolAuthorization", authorization, baseline.ToolAuthorization, failures);
@@ -58,14 +64,15 @@ Evaluate("localCollaboration", collaboration, baseline.LocalCollaboration, failu
 Evaluate("capabilityGapPlanning", capabilityGapPlanning, baseline.CapabilityGapPlanning, failures);
 Evaluate("capabilityGapRemediation", capabilityGapRemediation, baseline.CapabilityGapRemediation, failures);
 Evaluate("inboxQuery", inboxQuery, baseline.InboxQuery, failures);
+Evaluate("autonomySloIntegration", autonomySloIntegration, baseline.AutonomySloIntegration, failures);
 
 if (failures.Count == 0)
 {
-    Console.WriteLine("PERF_GATE:PASS");
+    Console.WriteLine(perfGatePassToken);
     return 0;
 }
 
-Console.Error.WriteLine("PERF_GATE:FAIL");
+Console.Error.WriteLine(perfGateFailToken);
 foreach (var failure in failures)
 {
     Console.Error.WriteLine($" - {failure}");
@@ -498,6 +505,101 @@ static async Task<PerfResult> RunInboxQueryToolScenarioAsync()
         AllocatedBytesPerOp: (afterAlloc - beforeAlloc) / (double)iterations);
 }
 
+static Task<PerfResult> RunAutonomySloIntegrationScenarioAsync()
+{
+    using var eventStore = new InfernalHierarchy.Core.Eventing.EventStore(
+        Path.Combine(Path.GetTempPath(), $"infernal_perf_events_{Guid.NewGuid():N}"),
+        NullLogger<InfernalHierarchy.Core.Eventing.EventStore>.Instance);
+
+    var metrics = new InfernalHierarchy.Host.Observability.MetricsCollector();
+    var sink = new InfernalHierarchy.Host.Observability.CapabilityGapMetricsEventSink(eventStore, metrics);
+    var failedStore = new PerfFailedOperationStore();
+    var bus = new PerfMessageBus();
+    var evaluator = new InfernalHierarchy.Host.Observability.SloGateEvaluator(metrics, failedStore, bus);
+
+    var options = new InfernalHierarchy.Host.Observability.SloGateOptions
+    {
+        Enabled = true,
+        MaxDeadLetterBacklogGrowth = 1000,
+        MinReplaySamples = int.MaxValue,
+        MinQueueSamples = int.MaxValue,
+        MinTaskCompletionSamples = int.MaxValue,
+        MinAutonomyTaskSamples = 1,
+        MinAutonomyReplaySamples = 1,
+        MinAutonomyTerminalSamples = 1,
+        MinAutonomyTaskCompletionRatio = 0.5,
+        MaxAutonomyTerminalFailureRatio = 0.5,
+        MinAutonomyReplaySuccessRatio = 0.5,
+        MaxAutonomyMedianTimeToTerminalMs = 1000
+    };
+
+    const int warmup = 20;
+    const int iterations = 200;
+
+    for (var i = 0; i < warmup; i++)
+    {
+        EmitAutonomyEvents(sink, i);
+        _ = evaluator.Evaluate(options);
+    }
+
+    GC.Collect();
+    GC.WaitForPendingFinalizers();
+    GC.Collect();
+
+    var beforeAlloc = GC.GetTotalAllocatedBytes(true);
+    var sw = Stopwatch.StartNew();
+
+    for (var i = 0; i < iterations; i++)
+    {
+        EmitAutonomyEvents(sink, i + warmup);
+        var result = evaluator.Evaluate(options);
+        if (!result.Passed)
+        {
+            throw new InvalidOperationException("Autonomy SLO integration perf scenario produced an unexpected failed gate.");
+        }
+    }
+
+    sw.Stop();
+    var afterAlloc = GC.GetTotalAllocatedBytes(true);
+
+    return Task.FromResult(new PerfResult(
+        LatencyPerOpMs: sw.Elapsed.TotalMilliseconds / iterations,
+        AllocatedBytesPerOp: (afterAlloc - beforeAlloc) / (double)iterations));
+
+    static void EmitAutonomyEvents(InfernalHierarchy.Host.Observability.CapabilityGapMetricsEventSink sink, int i)
+    {
+        sink.AppendEvent(new AgentEvent
+        {
+            AgentId = "perf-agent",
+            Type = EventType.DecisionMade,
+            Description = "Gap workflow resolved",
+            Metadata = new Dictionary<string, object>
+            {
+                ["category"] = "capability.gap_analysis",
+                ["workflow_state"] = i % 2 == 0
+                    ? "capability_gap_resolved_retrying_original_intent"
+                    : "capability_gap_unresolved_terminal",
+                ["remediation_attempted"] = true,
+                ["autofix_success"] = i % 2 == 0,
+                ["remediation_duration_ms"] = 50d + (i % 5)
+            }
+        });
+
+        sink.AppendEvent(new AgentEvent
+        {
+            AgentId = "perf-agent",
+            Type = EventType.DecisionMade,
+            Description = "Replay outcome",
+            Metadata = new Dictionary<string, object>
+            {
+                ["category"] = "capability.replay",
+                ["status"] = "success",
+                ["attempts"] = 1
+            }
+        });
+    }
+}
+
 static void Evaluate(string name, PerfResult result, PerfBudget budget, List<string> failures)
 {
     if (result.LatencyPerOpMs > budget.MaxLatencyPerOpMs)
@@ -550,6 +652,7 @@ internal sealed class StaticFederationHttpHandler : HttpMessageHandler
 
 internal sealed record PerfResult(double LatencyPerOpMs, double AllocatedBytesPerOp);
 
+[SuppressMessage("Performance", "CA1812:Avoid uninstantiated internal classes", Justification = "Instantiated by System.Text.Json during perf-baseline deserialization.")]
 internal sealed class PerfBaseline
 {
     public PerfBudget ToolAuthorization { get; set; } = new();
@@ -558,6 +661,7 @@ internal sealed class PerfBaseline
     public PerfBudget CapabilityGapPlanning { get; set; } = new();
     public PerfBudget CapabilityGapRemediation { get; set; } = new();
     public PerfBudget InboxQuery { get; set; } = new();
+    public PerfBudget AutonomySloIntegration { get; set; } = new();
 }
 
 internal sealed class PerfBudget
@@ -755,5 +859,42 @@ internal sealed class PerfInboxQueryClient : IEmailInboxQueryClient
         CancellationToken ct = default)
     {
         return Task.FromResult(Messages);
+    }
+}
+
+internal sealed class PerfFailedOperationStore : IFailedOperationStore
+{
+    public Task RecordAsync(FailedOperationRecord record, CancellationToken ct = default) => Task.CompletedTask;
+
+    public Task<IReadOnlyList<FailedOperationRecord>> GetRecentAsync(int limit, bool pendingOnly, CancellationToken ct = default)
+        => Task.FromResult<IReadOnlyList<FailedOperationRecord>>(Array.Empty<FailedOperationRecord>());
+
+    public Task<FailedOperationRecord?> GetByIdAsync(string id, CancellationToken ct = default)
+        => Task.FromResult<FailedOperationRecord?>(null);
+
+    public Task<FailedOperationRecord?> TryStartReplayAsync(string id, string requestedBy, CancellationToken ct = default)
+        => Task.FromResult<FailedOperationRecord?>(null);
+
+    public Task MarkReplaySucceededAsync(string id, CancellationToken ct = default) => Task.CompletedTask;
+
+    public Task MarkReplayFailedAsync(string id, string reasonCode, string? error, CancellationToken ct = default) => Task.CompletedTask;
+
+    public FailedOperationStats GetStats() => new(Total: 0, Pending: 0, Replayed: 0, ReplayFailed: 0);
+}
+
+internal sealed class PerfMessageBus : IMessageBus
+{
+    public Task PublishAsync(AgentMessage message, CancellationToken ct = default) => Task.CompletedTask;
+
+    public async IAsyncEnumerable<AgentMessage> SubscribeAsync(string agentId, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
+    {
+        await Task.CompletedTask;
+        yield break;
+    }
+
+    public async IAsyncEnumerable<AgentMessage> SubscribeToBroadcastsAsync([System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
+    {
+        await Task.CompletedTask;
+        yield break;
     }
 }

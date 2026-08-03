@@ -82,6 +82,7 @@ internal static class HostDependencyInjection
         builder.Services.AddSingleton<IValidateOptions<VoiceTranscriptionToolOptions>, VoiceTranscriptionToolOptionsValidator>();
         builder.Services.AddSingleton<IValidateOptions<TextToSpeechToolOptions>, TextToSpeechToolOptionsValidator>();
         builder.Services.AddSingleton<IValidateOptions<VisionToolOptions>, VisionToolOptionsValidator>();
+        builder.Services.AddSingleton<IValidateOptions<AutonomyReadinessOptions>, AutonomyReadinessOptionsValidator>();
     }
 
     public static void AddResourceLimits(WebApplicationBuilder builder)
@@ -133,6 +134,7 @@ internal static class HostDependencyInjection
         builder.Services.AddSingleton<MetricsService>();
         builder.Services.AddSingleton<SloGateEvaluator>();
         builder.Services.AddSingleton<AutonomyScorecardService>();
+        builder.Services.AddSingleton<AutonomyReadinessReportStore>();
         builder.Services.AddSingleton<OperatorExplainabilityService>();
         builder.Services.AddSingleton<PerformanceMonitor>();
         builder.Services.AddSingleton<DistributedTracing>();
@@ -493,6 +495,7 @@ internal static class HostDependencyInjection
         builder.Services.AddHostedService<ConfigurationReloadService>();
         builder.Services.AddHostedService<SecretRotationService>();
         builder.Services.AddHostedService<StartupFeatureReportService>();
+        builder.Services.AddHostedService<AutonomyReadinessHostedService>();
     }
 
     public static void AddHostedServices(WebApplicationBuilder builder)

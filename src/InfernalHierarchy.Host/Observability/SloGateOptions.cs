@@ -38,6 +38,41 @@ public sealed class SloGateOptions
     /// Minimum /api/chat latency samples required before enforcing latency gate.
     /// </summary>
     public int MinTaskCompletionSamples { get; set; } = 5;
+
+    /// <summary>
+    /// Minimum acceptable autonomy task completion ratio.
+    /// </summary>
+    public double MinAutonomyTaskCompletionRatio { get; set; } = 0.95;
+
+    /// <summary>
+    /// Maximum acceptable autonomy terminal failure ratio.
+    /// </summary>
+    public double MaxAutonomyTerminalFailureRatio { get; set; } = 0.05;
+
+    /// <summary>
+    /// Minimum acceptable autonomy replay success ratio.
+    /// </summary>
+    public double MinAutonomyReplaySuccessRatio { get; set; } = 0.90;
+
+    /// <summary>
+    /// Maximum acceptable autonomy median (p50) time to terminal in milliseconds.
+    /// </summary>
+    public double MaxAutonomyMedianTimeToTerminalMs { get; set; } = 60000;
+
+    /// <summary>
+    /// Minimum autonomy tasks required before enforcing completion/failure ratio gates.
+    /// </summary>
+    public int MinAutonomyTaskSamples { get; set; } = 5;
+
+    /// <summary>
+    /// Minimum replay samples required before enforcing autonomy replay success ratio gate.
+    /// </summary>
+    public int MinAutonomyReplaySamples { get; set; } = 3;
+
+    /// <summary>
+    /// Minimum terminal-latency samples required before enforcing autonomy median terminal time gate.
+    /// </summary>
+    public int MinAutonomyTerminalSamples { get; set; } = 5;
 }
 
 public sealed record SloGateCheckResult(

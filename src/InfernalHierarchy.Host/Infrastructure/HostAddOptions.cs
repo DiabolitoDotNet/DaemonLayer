@@ -63,6 +63,9 @@ internal static class HostAddOptions
         builder.Services.AddOptions<SloGateOptions>()
             .Bind(builder.Configuration.GetSection("SloGates"))
             .ValidateOnStart();
+        builder.Services.AddOptions<AutonomyReadinessOptions>()
+            .Bind(builder.Configuration.GetSection("AutonomyReadiness"))
+            .ValidateOnStart();
     }
 
     private static void AddSearchAndProviderOptions(WebApplicationBuilder builder)

@@ -243,7 +243,125 @@ public sealed class CapabilityGapTaskProcessorTests
         loopRunner.Verify(x => x.RunAsync(It.IsAny<ReActLoopContext>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
-    private static ReActTaskProcessorContext BuildContext(ISharedMemory? sharedMemory = null, IReActLoopRunner? loopRunner = null)
+    [Fact]
+    public async Task ProcessAsync_WhenReplayFirstAttemptFails_ShouldRetryAndSucceedWithinBudget()
+    {
+        var analyzer = new Mock<ICapabilityGapAnalyzer>();
+        analyzer.Setup(x => x.AnalyzeAsync(
+                It.IsAny<ReActTaskProcessorContext>(),
+                It.IsAny<AgentMessage>(),
+                It.IsAny<Persona>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new CapabilityGapAnalysisResult(
+                Gaps: [new CapabilityGap("mailbox_read", "missing_mailbox_read_tool", "Need inbox read tool", false, null, "Research")],
+                Remediations: [new CapabilityRemediationAction(CapabilityRemediationActionKind.CreateCustomTool, "synthesize_custom_tool", "mailbox_read", "Create inbox adapter", CustomToolName: "email_inbox_query", CustomToolRequirement: "read-only")],
+                Report: new CapabilityGapReport("Check inbox", new[] { "mailbox_read" }, new[] { "email_inbox_query" }, CapabilitySecurityRiskClass.Medium, true, "missing_mailbox_read_tool"),
+                Plan: new CapabilityRemediationPlan("plan-replay", Array.Empty<CapabilityRemediationPlanStep>(), 3, 120, true)));
+
+        var remediator = new Mock<ICapabilityRemediationOrchestrator>();
+        remediator.Setup(x => x.ExecuteAsync(
+                It.IsAny<ReActTaskProcessorContext>(),
+                It.IsAny<AgentMessage>(),
+                It.IsAny<CapabilityGapAnalysisResult>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new CapabilityRemediationExecutionResult(
+                AppliedActions: [new CapabilityRemediationAction(CapabilityRemediationActionKind.CreateCustomTool, "synthesize_custom_tool", "mailbox_read", "Create inbox adapter", CustomToolName: "email_inbox_query", CustomToolRequirement: "read-only")],
+                FailedActions: Array.Empty<CapabilityRemediationAction>(),
+                NewlyAvailableTools: new[] { "email_inbox_query" },
+                Notes: new[] { "created" },
+                WorkflowState: "capability_gap_resolved_retrying_original_intent",
+                TerminalReasonCode: "none",
+                ReplayRequested: true));
+
+        var loopRunner = new Mock<IReActLoopRunner>();
+        loopRunner.SetupSequence(x => x.RunAsync(It.IsAny<ReActLoopContext>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("transient failure"))
+            .ReturnsAsync(new ReActLoopResult("done", "ok", 1, Array.Empty<string>()));
+
+        var processor = new DefaultReActTaskProcessor(
+            new DefaultRagContextEnricher(),
+            new DefaultAgentEventAppender(),
+            analyzer.Object,
+            remediator.Object);
+
+        var context = BuildContext(
+            loopRunner: loopRunner.Object,
+            reActOptions: new ReActOptions { UseJsonResponse = true, ReplayMaxAttempts = 2, ReplayAttemptTimeoutMs = 5000, ReplayBackoffMs = 0 });
+
+        var response = await processor.ProcessAsync(context, new AgentMessage
+        {
+            Id = Guid.NewGuid().ToString("N"),
+            FromAgentId = "user",
+            ToAgentId = "lucifer",
+            Type = MessageType.Task,
+            Content = "Check inbox for alerts"
+        }, CancellationToken.None);
+
+        response.Content.Should().Be("done");
+        loopRunner.Verify(x => x.RunAsync(It.IsAny<ReActLoopContext>(), It.IsAny<CancellationToken>()), Times.Exactly(2));
+    }
+
+    [Fact]
+    public async Task ProcessAsync_WhenReplayBudgetExhausted_ShouldReturnTerminalReport()
+    {
+        var analyzer = new Mock<ICapabilityGapAnalyzer>();
+        analyzer.Setup(x => x.AnalyzeAsync(
+                It.IsAny<ReActTaskProcessorContext>(),
+                It.IsAny<AgentMessage>(),
+                It.IsAny<Persona>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new CapabilityGapAnalysisResult(
+                Gaps: [new CapabilityGap("mailbox_read", "missing_mailbox_read_tool", "Need inbox read tool", false, null, "Research")],
+                Remediations: [new CapabilityRemediationAction(CapabilityRemediationActionKind.CreateCustomTool, "synthesize_custom_tool", "mailbox_read", "Create inbox adapter", CustomToolName: "email_inbox_query", CustomToolRequirement: "read-only")],
+                Report: new CapabilityGapReport("Check inbox", new[] { "mailbox_read" }, new[] { "email_inbox_query" }, CapabilitySecurityRiskClass.Medium, true, "missing_mailbox_read_tool"),
+                Plan: new CapabilityRemediationPlan("plan-replay-fail", Array.Empty<CapabilityRemediationPlanStep>(), 3, 120, true)));
+
+        var remediator = new Mock<ICapabilityRemediationOrchestrator>();
+        remediator.Setup(x => x.ExecuteAsync(
+                It.IsAny<ReActTaskProcessorContext>(),
+                It.IsAny<AgentMessage>(),
+                It.IsAny<CapabilityGapAnalysisResult>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new CapabilityRemediationExecutionResult(
+                AppliedActions: [new CapabilityRemediationAction(CapabilityRemediationActionKind.CreateCustomTool, "synthesize_custom_tool", "mailbox_read", "Create inbox adapter", CustomToolName: "email_inbox_query", CustomToolRequirement: "read-only")],
+                FailedActions: Array.Empty<CapabilityRemediationAction>(),
+                NewlyAvailableTools: new[] { "email_inbox_query" },
+                Notes: new[] { "created" },
+                WorkflowState: "capability_gap_resolved_retrying_original_intent",
+                TerminalReasonCode: "none",
+                ReplayRequested: true));
+
+        var loopRunner = new Mock<IReActLoopRunner>();
+        loopRunner.Setup(x => x.RunAsync(It.IsAny<ReActLoopContext>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("still failing"));
+
+        var processor = new DefaultReActTaskProcessor(
+            new DefaultRagContextEnricher(),
+            new DefaultAgentEventAppender(),
+            analyzer.Object,
+            remediator.Object);
+
+        var context = BuildContext(
+            loopRunner: loopRunner.Object,
+            reActOptions: new ReActOptions { UseJsonResponse = true, ReplayMaxAttempts = 2, ReplayAttemptTimeoutMs = 5000, ReplayBackoffMs = 0 });
+
+        var response = await processor.ProcessAsync(context, new AgentMessage
+        {
+            Id = Guid.NewGuid().ToString("N"),
+            FromAgentId = "user",
+            ToAgentId = "lucifer",
+            Type = MessageType.Task,
+            Content = "Check inbox for alerts"
+        }, CancellationToken.None);
+
+        response.Content.Should().Contain("replay exhausted retry budget");
+        response.Payload["capability_gap_terminal_reason_code"].Should().Be("replay_budget_exhausted");
+    }
+
+    private static ReActTaskProcessorContext BuildContext(
+        ISharedMemory? sharedMemory = null,
+        IReActLoopRunner? loopRunner = null,
+        ReActOptions? reActOptions = null)
     {
         var effectiveLoopRunner = loopRunner ?? new Mock<IReActLoopRunner>().Object;
 
@@ -278,7 +396,7 @@ public sealed class CapabilityGapTaskProcessorTests
             ReportGenerator: Mock.Of<IReportGenerator>(),
             PromptBuilder: Mock.Of<IReActPromptBuilder>(),
             LoopRunner: effectiveLoopRunner,
-            ReActOptions: new ReActOptions { UseJsonResponse = true },
+            ReActOptions: reActOptions ?? new ReActOptions { UseJsonResponse = true },
             RagOptions: new RagOptions { Enabled = false },
             VectorMemory: null,
             CollaborationService: null,

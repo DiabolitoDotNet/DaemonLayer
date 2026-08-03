@@ -132,16 +132,30 @@ The repo includes an executable perf gate (`tools/InfernalHierarchy.PerfGate`) a
 
 ### Credentialed mailbox checks (scope boundary)
 
-Current default scope:
+Current runtime scope:
 
 1. Telegram can be used to request an email-related task.
 2. The platform can send outbound emails via `email_send`.
-3. The platform does not include a built-in inbox-reading tool by default.
+3. The platform includes `email_inbox_query` for read-only inbox querying.
 
 Implication:
 
-- A request like "check if I received mail from X" requires an explicit mailbox-reading adapter/tool (for example IMAP or provider API) plus permission configuration.
-- Without that adapter, the request cannot complete autonomously end-to-end.
+- A request like "check if I received mail from X" can complete autonomously only when inbox configuration is provisioned (`EmailInboxQueryOptions` enabled and credentials configured).
+- Startup autonomy readiness reports this capability as ready/not-ready via `GET /api/autonomy/readiness`.
+
+### Autonomy readiness and SLO evidence
+
+The host exposes operator endpoints dedicated to autonomy evidence:
+
+1. `GET /api/autonomy/readiness` for critical capability preflight status.
+2. `GET /api/autonomy/slo` for autonomy outcome KPIs.
+
+Current KPI set includes:
+
+- `autonomy_task_completion_ratio`
+- `autonomy_terminal_failure_ratio`
+- `autonomy_replay_success_ratio`
+- median (`p50`) and `p95` for autonomy time-to-terminal
 
 ### Deterministic tool execution
 

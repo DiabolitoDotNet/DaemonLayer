@@ -6,8 +6,8 @@
     <EnableNETAnalyzers>true</EnableNETAnalyzers>
     <AnalysisLevel>latest</AnalysisLevel>
 
-    <!-- Keep analyzers for IDE/live analysis, but don't emit analyzer warnings in builds -->
-    <RunAnalyzersDuringBuild>false</RunAnalyzersDuringBuild>
+    <!-- Enable analyzer execution by default in local and CI builds; opt-out remains possible via /p:RunAnalyzersDuringBuild=false -->
+    <RunAnalyzersDuringBuild Condition="'$(RunAnalyzersDuringBuild)' == ''">true</RunAnalyzersDuringBuild>
     
     <!-- Nullable reference types -->
     <Nullable>enable</Nullable>

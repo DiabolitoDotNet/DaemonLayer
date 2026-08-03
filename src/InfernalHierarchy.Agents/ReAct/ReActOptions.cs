@@ -49,4 +49,19 @@ public class ReActOptions
     /// Soft planning hint for collaboration fanout.
     /// </summary>
     public int MaxParallelBranches { get; set; } = 3;
+
+    /// <summary>
+    /// Maximum number of replay attempts after successful capability-gap remediation.
+    /// </summary>
+    public int ReplayMaxAttempts { get; set; } = 2;
+
+    /// <summary>
+    /// Timeout in milliseconds for each replay attempt.
+    /// </summary>
+    public int ReplayAttemptTimeoutMs { get; set; } = 15000;
+
+    /// <summary>
+    /// Backoff in milliseconds between replay attempts.
+    /// </summary>
+    public int ReplayBackoffMs { get; set; } = 500;
 }

@@ -15,6 +15,10 @@ These SLOs apply to the supported runtime surfaces: REST chat, WebSocket bridge,
 | Message bus rejected writes | 0 in normal operation; alert on any sustained non-zero window | `message_bus.messages.rejected` |
 | Supervisor intervention rate | < 5 interventions/hour sustained | `supervisor.interventions.*` |
 | Readiness success | `/health/ready` healthy or degraded with actionable dependency detail within 10s | health endpoints |
+| Autonomy task completion ratio | >= 95% once sample floor is reached | `/api/autonomy/slo`, `autonomy_task_completion_ratio` |
+| Autonomy terminal failure ratio | <= 5% once sample floor is reached | `/api/autonomy/slo`, `autonomy_terminal_failure_ratio` |
+| Autonomy replay success ratio | >= 90% once sample floor is reached | `/api/autonomy/slo`, `autonomy_replay_success_ratio` |
+| Autonomy median time to terminal | <= 60s once sample floor is reached | `/api/autonomy/slo`, `time_to_terminal_ms.median` |
 
 ## Error Budget Use
 

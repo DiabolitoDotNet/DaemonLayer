@@ -22,5 +22,9 @@
   "inboxQuery": {
     "maxLatencyPerOpMs": 15.0,
     "maxAllocatedBytesPerOp": 80000
+  },
+  "autonomySloIntegration": {
+    "maxLatencyPerOpMs": 25.0,
+    "maxAllocatedBytesPerOp": 120000
   }
 }

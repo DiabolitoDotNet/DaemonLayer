@@ -20,12 +20,14 @@
 | Dead-letter and replay | src/InfernalHierarchy.Host, src/InfernalHierarchy.Tools, src/InfernalHierarchy.Messaging | `/api/ops/deadletters` | tests/InfernalHierarchy.Host.Tests/DeadLetterReplayServiceTests.cs |
 | Health and readiness | src/InfernalHierarchy.Host | `/health`, `/health/ready`, `/health/live` | tests/InfernalHierarchy.Host.Tests/HealthChecksTests.cs |
 | Observability and metrics | src/InfernalHierarchy.Host | `/metrics`, `/api/perf/*` | tests/InfernalHierarchy.Host.Tests/MetricsServiceTests.cs |
-| Performance gate harness | tools/InfernalHierarchy.PerfGate | budgeted perf validation for authorization/federation hot paths | tools/InfernalHierarchy.PerfGate/perf-baseline.json |
+| Performance gate harness | tools/InfernalHierarchy.PerfGate | budgeted perf validation for authorization/federation + autonomy integration-light hot paths | tools/InfernalHierarchy.PerfGate/perf-baseline.json |
 | Telegram interface | src/InfernalHierarchy.Telegram, src/InfernalHierarchy.Host | Telegram bot polling + notifications | tests/InfernalHierarchy.Host.Tests/TelegramHealthCheckTests.cs |
 | Voice interface | src/InfernalHierarchy.Host, src/InfernalHierarchy.Tools | voice endpoints/tools when enabled (`audio_transcribe`, `tts_speak`) | tests/InfernalHierarchy.Host.Tests/StartupFeatureReportServiceTests.cs, tests/InfernalHierarchy.Tools.Tests/TextToSpeechLanguageRoutingTests.cs |
 | Voice sidecar mode | src/InfernalHierarchy.Tools, src/InfernalHierarchy.Host | STT/TTS delegation via sidecar HTTP endpoints + `voice_sidecar` health check | tests/InfernalHierarchy.Host.Tests/VoiceAndVisionOptionsValidatorTests.cs |
 | Agent playground | src/InfernalHierarchy.Host | `/api/playground/scenarios*`, `/api/playground/runs/*/replay`, `/ui/playground` | tests/InfernalHierarchy.Host.Tests/IntegrationTests.cs |
 | Autonomy scorecard release gate | src/InfernalHierarchy.Host | scorecard grading from real playground scenario runs | tests/InfernalHierarchy.Host.Tests/AutonomyScorecardGateTests.cs |
+| Autonomy readiness report | src/InfernalHierarchy.Host | `/api/autonomy/readiness` | tests/InfernalHierarchy.Host.Tests/AutonomyReadinessHostedServiceTests.cs |
+| Autonomy SLO metrics API | src/InfernalHierarchy.Host | `/api/autonomy/slo`, SLO gate evaluation inputs | tests/InfernalHierarchy.Host.Tests/E2E/PerfPersonaDocsE2ETests.cs, tests/InfernalHierarchy.Host.Tests/SloGateEvaluatorTests.cs |
 | Reasoning/tool timeline view | src/InfernalHierarchy.Host, src/InfernalHierarchy.Agents | `/api/perf/timeline`, `/ui/timeline` | tests/InfernalHierarchy.Host.Tests/IntegrationTests.cs |
 | Plugin SDK starter | templates/plugin-sdk, Documentation | starter scaffold + onboarding guide (`Documentation/Plugin-SDK.md`) | tests/InfernalHierarchy.Host.Tests/ToolMarketplaceHostedServiceTests.cs |
 | GraphQL surface | src/InfernalHierarchy.GraphQL | archived/experimental, not supported in P1/P2 runtime | Documentation/ADRs/0007-graphql-surface-status.md |

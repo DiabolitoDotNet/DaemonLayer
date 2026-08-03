@@ -94,7 +94,8 @@ public sealed class DefaultReActTaskProcessor : IReActTaskProcessor
                         gapAnalysis,
                         remediation: null,
                         remediationDurationMs: null,
-                        workflowState: "capability_gap_policy_blocked");
+                        workflowState: "capability_gap_policy_blocked",
+                        terminalReasonCode: gapAnalysis.Report.BlockReasonCode);
 
                     effectivePayload["capability_gap_state"] = "capability_gap_policy_blocked";
                     effectivePayload["capability_gap_report"] = JsonSerializer.Serialize(gapAnalysis.Report, JsonDefaults.Web);
@@ -123,7 +124,8 @@ public sealed class DefaultReActTaskProcessor : IReActTaskProcessor
                     gapAnalysis,
                     remediationResult,
                     remediationStopwatch.Elapsed.TotalMilliseconds,
-                    remediationResult.WorkflowState);
+                    remediationResult.WorkflowState,
+                    remediationResult.TerminalReasonCode);
 
                 if (remediationResult.NewlyAvailableTools.Count > 0)
                 {
@@ -313,7 +315,75 @@ public sealed class DefaultReActTaskProcessor : IReActTaskProcessor
 
             systemContext = AppendRuntimeConstraints(systemContext, effectiveContext.Persona, effectiveTask, planning);
 
-            var result = await RunLoopAsync(effectiveContext, systemContext, effectiveTaskContent, effectiveTask, ct).ConfigureAwait(false);
+            var replayActive = string.Equals(
+                effectivePayload.TryGetValue("capability_gap_state", out var gapStateObj) ? gapStateObj?.ToString() : null,
+                "capability_gap_replay_in_progress",
+                StringComparison.OrdinalIgnoreCase);
+
+            ReActResult result;
+            if (replayActive)
+            {
+                var replayOutcome = await TryRunLoopWithReplayBudgetAsync(
+                    effectiveContext,
+                    systemContext,
+                    effectiveTaskContent,
+                    effectiveTask,
+                    ct).ConfigureAwait(false);
+
+                if (!replayOutcome.Success)
+                {
+                    TryAppendReplayOutcomeEvent(
+                        effectiveContext,
+                        task,
+                        status: "failed",
+                        replayOutcome.AttemptsUsed,
+                        replayOutcome.ErrorMessage);
+
+                    effectiveContext.SetStatus(AgentStatus.Idle);
+
+                    effectivePayload["capability_gap_state"] = "capability_gap_unresolved_terminal";
+                    effectivePayload["capability_gap_terminal_reason_code"] = "replay_budget_exhausted";
+                    effectivePayload["capability_gap_replay_failure"] = replayOutcome.ErrorMessage ?? "unknown";
+
+                    _eventAppender.TryAppendTaskEvent(
+                        effectiveContext.EventSink,
+                        effectiveContext.AgentId,
+                        effectiveContext.AgentRank,
+                        effectiveTask,
+                        EventType.TaskFailed,
+                        "Task failed after replay budget exhaustion",
+                        new Dictionary<string, object>
+                        {
+                            ["error"] = replayOutcome.ErrorMessage ?? "unknown",
+                            ["exception_type"] = "ReplayBudgetExhausted",
+                            ["reason_code"] = "replay_budget_exhausted"
+                        });
+
+                    return new AgentMessage
+                    {
+                        FromAgentId = effectiveContext.AgentId,
+                        ToAgentId = task.FromAgentId,
+                        Type = MessageType.Report,
+                        Content = "Capability gap remediation succeeded but replay exhausted retry budget before completion.",
+                        Payload = effectivePayload,
+                        CorrelationId = effectiveTask.CorrelationId ?? effectiveTask.Id,
+                        CausationId = effectiveTask.Id
+                    };
+                }
+
+                TryAppendReplayOutcomeEvent(
+                    effectiveContext,
+                    task,
+                    status: "success",
+                    replayOutcome.AttemptsUsed,
+                    note: null);
+
+                result = replayOutcome.Result!;
+            }
+            else
+            {
+                result = await RunLoopAsync(effectiveContext, systemContext, effectiveTaskContent, effectiveTask, ct).ConfigureAwait(false);
+            }
 
             await effectiveContext.SharedMemory.AddDecisionAsync(new Decision
             {
@@ -599,7 +669,8 @@ public sealed class DefaultReActTaskProcessor : IReActTaskProcessor
         CapabilityGapAnalysisResult analysis,
         CapabilityRemediationExecutionResult? remediation,
         double? remediationDurationMs,
-        string workflowState)
+        string workflowState,
+        string? terminalReasonCode)
     {
         if (context.EventSink is null)
         {
@@ -624,6 +695,7 @@ public sealed class DefaultReActTaskProcessor : IReActTaskProcessor
                     ["reason_codes"] = string.Join(",", analysis.Gaps.Select(g => g.ReasonCode).Distinct(StringComparer.OrdinalIgnoreCase)),
                     ["remediation_notes"] = remediation is null ? string.Empty : string.Join(" | ", remediation.Notes),
                     ["workflow_state"] = workflowState,
+                    ["terminal_reason_code"] = terminalReasonCode ?? string.Empty,
                     ["remediation_attempted"] = remediation is not null,
                     ["autofix_success"] = string.Equals(workflowState, "capability_gap_resolved_retrying_original_intent", StringComparison.OrdinalIgnoreCase),
                     ["remediation_duration_ms"] = remediationDurationMs ?? 0d
@@ -914,6 +986,88 @@ public sealed class DefaultReActTaskProcessor : IReActTaskProcessor
             ToolCalls: result.ToolCalls.ToList());
     }
 
+    private async Task<ReplayAttemptOutcome> TryRunLoopWithReplayBudgetAsync(
+        ReActTaskProcessorContext context,
+        string systemContext,
+        string task,
+        AgentMessage sourceTask,
+        CancellationToken ct)
+    {
+        var maxAttempts = Math.Max(1, context.ReActOptions.ReplayMaxAttempts);
+        var timeoutMs = Math.Max(1000, context.ReActOptions.ReplayAttemptTimeoutMs);
+        var backoffMs = Math.Max(0, context.ReActOptions.ReplayBackoffMs);
+
+        Exception? lastError = null;
+
+        for (var attempt = 1; attempt <= maxAttempts; attempt++)
+        {
+            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            timeoutCts.CancelAfter(TimeSpan.FromMilliseconds(timeoutMs));
+
+            try
+            {
+                var result = await RunLoopAsync(context, systemContext, task, sourceTask, timeoutCts.Token).ConfigureAwait(false);
+                return new ReplayAttemptOutcome(true, result, null, attempt);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (OperationCanceledException ex)
+            {
+                lastError = new TimeoutException($"Replay attempt {attempt}/{maxAttempts} timed out after {timeoutMs}ms.", ex);
+            }
+            catch (Exception ex)
+            {
+                lastError = ex;
+            }
+
+            if (attempt < maxAttempts && backoffMs > 0)
+            {
+                await Task.Delay(backoffMs, ct).ConfigureAwait(false);
+            }
+        }
+
+        var error = $"Replay failed after {maxAttempts} attempt(s). Last error: {lastError?.Message ?? "unknown"}";
+        return new ReplayAttemptOutcome(false, null, error, maxAttempts);
+    }
+
+    private static void TryAppendReplayOutcomeEvent(
+        ReActTaskProcessorContext context,
+        AgentMessage task,
+        string status,
+        int attempts,
+        string? note)
+    {
+        if (context.EventSink is null)
+        {
+            return;
+        }
+
+        try
+        {
+            context.EventSink.AppendEvent(new AgentEvent
+            {
+                AgentId = context.AgentId,
+                Type = EventType.DecisionMade,
+                Description = "Capability replay outcome",
+                Metadata = new Dictionary<string, object>
+                {
+                    ["category"] = "capability.replay",
+                    ["task_id"] = task.Id,
+                    ["gap_workflow_id"] = task.CorrelationId ?? task.Id,
+                    ["status"] = status,
+                    ["attempts"] = attempts,
+                    ["note"] = note ?? string.Empty
+                }
+            });
+        }
+        catch
+        {
+            // best-effort eventing only
+        }
+    }
+
     private async Task<AgentMessage> HandleTelegramCommandAsync(ReActTaskProcessorContext context, string command, AgentMessage task, CancellationToken ct)
     {
         context.Logger.LogInformation("📊 {AgentName} handling command: {Command}", context.AgentName, command);
@@ -1173,4 +1327,6 @@ public sealed class DefaultReActTaskProcessor : IReActTaskProcessor
     }
 
     private sealed record ReActResult(string FinalAnswer, string Reasoning, int Iterations, List<string> ToolCalls);
+
+    private sealed record ReplayAttemptOutcome(bool Success, ReActResult? Result, string? ErrorMessage, int AttemptsUsed);
 }

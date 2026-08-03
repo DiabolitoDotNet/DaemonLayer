@@ -28,6 +28,7 @@ The repository root already contains detailed topic docs (security, observabilit
 - [Custom Tools Runbook](Runbooks/Custom-Tools.md)
 - [End-to-End Request Tracing](Runbooks/End-to-End-Request-Tracing.md)
 - [Tool Authorization Debugging](Runbooks/Tool-Authorization-Debugging.md)
+- [Analyzer Policy (Dev + CI)](Runbooks/Analyzer-Policy.md)
 - [Incident: Startup Failures](Runbooks/Incident-Startup-Failures.md)
 - [Incident: Stalled Agents](Runbooks/Incident-Stalled-Agents.md)
 - [Incident: Tool Outage](Runbooks/Incident-Tool-Outage.md)
