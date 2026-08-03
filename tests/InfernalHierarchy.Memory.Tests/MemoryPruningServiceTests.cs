@@ -395,7 +395,7 @@ public class MemoryPruningServiceTests
     }
 
     // Helper class to expose protected method for testing
-    private class TestableMemoryPruningService : MemoryPruningService
+    private sealed class TestableMemoryPruningService : MemoryPruningService
     {
         public TestableMemoryPruningService(
             ISharedMemory sharedMemory,

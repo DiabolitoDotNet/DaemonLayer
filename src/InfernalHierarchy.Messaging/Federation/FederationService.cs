@@ -735,7 +735,7 @@ public class FederationService : IFederationService
             return true;
         }
 
-        decision ??= responseField;
+        decision ??= responseField ?? string.Empty;
         if (string.IsNullOrWhiteSpace(decision))
         {
             return false;
@@ -746,7 +746,7 @@ public class FederationService : IFederationService
         response = new AgentResponse
         {
             AgentId = AddSourceToAgentId(rawAgentId ?? "remote-agent", sourceInstanceId),
-            Response = decision ?? string.Empty,
+            Response = decision,
             Confidence = confidence,
             Reasoning = AddSourceToReasoning(reasoning ?? "Cross-instance response", sourceInstanceId),
             Timestamp = DateTime.UtcNow

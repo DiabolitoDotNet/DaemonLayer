@@ -1,5 +1,7 @@
 namespace InfernalHierarchy.Core.Configuration;
 
+using System.Diagnostics.CodeAnalysis;
+
 public enum MessageQueueOverflowPolicy
 {
     Block = 0,
@@ -51,6 +53,7 @@ public sealed class MessageBusBackpressureOptions
     /// <summary>
     /// Tool names to defer while backpressure is active.
     /// </summary>
+    [SuppressMessage("Performance", "CA1819:Properties should not return arrays", Justification = "Configuration binding model; array values are static defaults and not hot-path mutable state.")]
     public string[] DeferredToolNames { get; set; } =
     [
         "request_collaboration",

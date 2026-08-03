@@ -15,11 +15,13 @@ public class AgentSkillTree
     /// </summary>
     public ToolSkill GetOrCreateSkill(string toolName)
     {
-        if (!Skills.ContainsKey(toolName))
+        if (!Skills.TryGetValue(toolName, out var skill))
         {
-            Skills[toolName] = new ToolSkill { ToolName = toolName };
+            skill = new ToolSkill { ToolName = toolName };
+            Skills[toolName] = skill;
         }
-        return Skills[toolName];
+
+        return skill;
     }
 
     /// <summary>

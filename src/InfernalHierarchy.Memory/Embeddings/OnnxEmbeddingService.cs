@@ -1,5 +1,6 @@
 using Microsoft.ML.OnnxRuntime;
 using Microsoft.ML.OnnxRuntime.Tensors;
+using System.Diagnostics.CodeAnalysis;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 
@@ -264,6 +265,7 @@ public sealed class OnnxEmbeddingService : IDisposable
     /// <summary>
     /// Fallback deterministic embedding based on text hash
     /// </summary>
+    [SuppressMessage("Security", "CA5394:Do not use insecure randomness", Justification = "Deterministic fallback embeddings are non-cryptographic and never used for security decisions.")]
     private float[] GenerateFallbackEmbedding(string text)
     {
         var random = new Random(text.GetHashCode());
@@ -277,22 +279,22 @@ public sealed class OnnxEmbeddingService : IDisposable
         return Normalize(embedding);
     }
 
-    public sealed record OnnxEmbeddingProbeResult(
-        bool Enabled,
-        string ModelPath,
-        string TokenizerPath,
-        bool ModelLoaded,
-        bool TokenizerLoaded,
-        bool UsingFallback,
-        int EmbeddingDimension,
-        int MaxSequenceLength);
-
     public void Dispose()
     {
         _session?.Dispose();
         _initLock?.Dispose();
     }
 }
+
+public sealed record OnnxEmbeddingProbeResult(
+    bool Enabled,
+    string ModelPath,
+    string TokenizerPath,
+    bool ModelLoaded,
+    bool TokenizerLoaded,
+    bool UsingFallback,
+    int EmbeddingDimension,
+    int MaxSequenceLength);
 
 internal interface ITokenizerAdapter
 {
@@ -398,7 +400,8 @@ internal sealed class DefaultOnnxRuntimeFactory : IOnnxRuntimeFactory
                 string.Equals(r.Name, "last_hidden_state", StringComparison.OrdinalIgnoreCase) ||
                 string.Equals(r.Name, "output_0", StringComparison.OrdinalIgnoreCase));
 
-            return (preferred ?? results.First()).AsEnumerable<float>().ToArray();
+            var output = preferred ?? results[0];
+            return output.AsEnumerable<float>().ToArray();
         }
 
         public void Dispose() => _inner.Dispose();

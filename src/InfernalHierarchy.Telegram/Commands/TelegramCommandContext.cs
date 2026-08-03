@@ -6,6 +6,6 @@ public sealed record TelegramCommandContext(
     ITelegramBotClient BotClient,
     long ChatId,
     string RawText,
-    string[] Parts,
+    IReadOnlyList<string> Parts,
     IMessageBus MessageBus,
     ILogger Logger);

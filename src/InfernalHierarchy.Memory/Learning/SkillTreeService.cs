@@ -286,18 +286,21 @@ public class SkillTreeService : ISkillTreeService
                 // Collect skills for analysis
                 foreach (var (toolName, skill) in skillTree.Skills)
                 {
-                    if (!allSkills.ContainsKey(toolName))
+                    if (!allSkills.TryGetValue(toolName, out var toolSkills))
                     {
-                        allSkills[toolName] = new List<ToolSkill>();
+                        toolSkills = new List<ToolSkill>();
+                        allSkills[toolName] = toolSkills;
                     }
-                    allSkills[toolName].Add(skill);
+
+                    toolSkills.Add(skill);
 
                     // Count mastery distribution
-                    if (!stats.MasteryDistribution.ContainsKey(skill.MasteryLevel))
+                    if (!stats.MasteryDistribution.TryGetValue(skill.MasteryLevel, out var currentMasteryCount))
                     {
-                        stats.MasteryDistribution[skill.MasteryLevel] = 0;
+                        currentMasteryCount = 0;
                     }
-                    stats.MasteryDistribution[skill.MasteryLevel]++;
+
+                    stats.MasteryDistribution[skill.MasteryLevel] = currentMasteryCount + 1;
                     stats.TotalSkillsTracked++;
                 }
 

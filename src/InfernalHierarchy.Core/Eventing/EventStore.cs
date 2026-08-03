@@ -157,11 +157,13 @@ public sealed class EventStore : IAgentEventSink, IDisposable
 
             while (_eventQueue.TryDequeue(out var evt))
             {
-                if (!eventsByAgent.ContainsKey(evt.AgentId))
+                if (!eventsByAgent.TryGetValue(evt.AgentId, out var bucket))
                 {
-                    eventsByAgent[evt.AgentId] = new List<AgentEvent>();
+                    bucket = new List<AgentEvent>();
+                    eventsByAgent[evt.AgentId] = bucket;
                 }
-                eventsByAgent[evt.AgentId].Add(evt);
+
+                bucket.Add(evt);
             }
 
             foreach (var (agentId, events) in eventsByAgent)

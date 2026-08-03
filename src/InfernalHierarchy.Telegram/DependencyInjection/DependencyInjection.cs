@@ -2,7 +2,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace InfernalHierarchy.Telegram.DependencyInjection;
 
-public static class DependencyInjection
+public static class TelegramServiceCollectionExtensions
 {
     public static IServiceCollection AddInfernalTelegramCommandHandlers(this IServiceCollection services)
     {

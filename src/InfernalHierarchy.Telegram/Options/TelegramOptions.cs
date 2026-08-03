@@ -1,9 +1,12 @@
 namespace InfernalHierarchy.Telegram.Options;
 
+using System.Diagnostics.CodeAnalysis;
+
 public sealed class TelegramOptions
 {
     public string BotToken { get; set; } = string.Empty;
 
+    [SuppressMessage("Performance", "CA1819:Properties should not return arrays", Justification = "Configuration binding model; list shape is intentional and static defaults are small.")]
     public long[] AllowedUserIds { get; set; } = Array.Empty<long>();
 
     /// <summary>

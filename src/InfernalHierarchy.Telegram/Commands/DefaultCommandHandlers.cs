@@ -100,7 +100,7 @@ internal static class DefaultCommandHandlers
 
         public async Task HandleAsync(TelegramCommandContext context, CancellationToken ct)
         {
-            if (context.Parts.Length < 3)
+            if (context.Parts.Count < 3)
             {
                 await context.BotClient.SendMessage(
                     context.ChatId,
@@ -151,7 +151,7 @@ internal static class DefaultCommandHandlers
 
         public async Task HandleAsync(TelegramCommandContext context, CancellationToken ct)
         {
-            if (context.Parts.Length < 2)
+            if (context.Parts.Count < 2)
             {
                 await context.BotClient.SendMessage(
                     context.ChatId,
@@ -188,7 +188,7 @@ internal static class DefaultCommandHandlers
 
         public async Task HandleAsync(TelegramCommandContext context, CancellationToken ct)
         {
-            var query = context.Parts.Length > 1 ? string.Join(" ", context.Parts.Skip(1)) : string.Empty;
+            var query = context.Parts.Count > 1 ? string.Join(" ", context.Parts.Skip(1)) : string.Empty;
 
             var memoryRequest = new AgentMessage
             {
@@ -242,7 +242,7 @@ internal static class DefaultCommandHandlers
 
         public async Task HandleAsync(TelegramCommandContext context, CancellationToken ct)
         {
-            var agentId = context.Parts.Length > 1 ? context.Parts[1] : string.Empty;
+            var agentId = context.Parts.Count > 1 ? context.Parts[1] : string.Empty;
 
             var learningRequest = new AgentMessage
             {
@@ -296,7 +296,7 @@ internal static class DefaultCommandHandlers
 
         public async Task HandleAsync(TelegramCommandContext context, CancellationToken ct)
         {
-            if (context.Parts.Length < 2)
+            if (context.Parts.Count < 2)
             {
                 await context.BotClient.SendMessage(
                     context.ChatId,
@@ -333,7 +333,7 @@ internal static class DefaultCommandHandlers
 
         public async Task HandleAsync(TelegramCommandContext context, CancellationToken ct)
         {
-            if (context.Parts.Length < 2)
+            if (context.Parts.Count < 2)
             {
                 await context.BotClient.SendMessage(
                     context.ChatId,

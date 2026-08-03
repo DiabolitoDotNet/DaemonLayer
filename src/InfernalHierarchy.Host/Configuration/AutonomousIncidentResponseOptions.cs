@@ -1,5 +1,7 @@
 namespace InfernalHierarchy.Host.Configuration;
 
+using System.Diagnostics.CodeAnalysis;
+
 /// <summary>
 /// Configures autonomous mitigation loops for common runtime incident patterns.
 /// </summary>
@@ -68,6 +70,7 @@ public sealed class AutonomousIncidentResponseOptions
     /// <summary>
     /// Tool names deferred while temporary rate reduction is active.
     /// </summary>
+    [SuppressMessage("Performance", "CA1819:Properties should not return arrays", Justification = "Configuration binding model; array shape keeps appsettings concise.")]
     public string[] DeferredToolNames { get; set; } =
     [
         "request_collaboration",

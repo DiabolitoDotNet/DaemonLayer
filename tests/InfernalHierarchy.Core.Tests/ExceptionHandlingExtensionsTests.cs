@@ -235,8 +235,20 @@ public sealed class ExceptionHandlingExtensionsTests
 
     private sealed class SharingViolationIOException : IOException
     {
+        public SharingViolationIOException()
+            : base("sharing violation")
+        {
+            HResult = 0x20; // ERROR_SHARING_VIOLATION
+        }
+
         public SharingViolationIOException(string message)
             : base(message)
+        {
+            HResult = 0x20; // ERROR_SHARING_VIOLATION
+        }
+
+        public SharingViolationIOException(string message, Exception innerException)
+            : base(message, innerException)
         {
             HResult = 0x20; // ERROR_SHARING_VIOLATION
         }
