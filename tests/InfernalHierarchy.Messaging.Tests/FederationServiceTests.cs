@@ -243,6 +243,35 @@ public sealed class FederationServiceTests
     }
 
     [Fact]
+    public async Task DelegateTaskAsync_WhenLowestLoadFails_FallsBackToNextHealthyInstance()
+    {
+        var handler = new StubHttpMessageHandler(request =>
+        {
+            var host = request.RequestUri?.Host ?? string.Empty;
+            if (host.Contains("r1", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new HttpRequestException("primary instance unavailable");
+            }
+
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = JsonContent.Create(new FederatedMessage { CorrelationId = "ok" })
+            };
+        });
+
+        var sut = CreateService(handler, localInstanceId: "local");
+
+        await sut.RegisterInstanceAsync(new FederatedInstance { InstanceId = "local", BaseUrl = "http://l", IsActive = true, LastHeartbeat = DateTime.UtcNow });
+        await sut.RegisterInstanceAsync(new FederatedInstance { InstanceId = "i1", BaseUrl = "http://r1", IsActive = true, LastHeartbeat = DateTime.UtcNow, CurrentLoad = 0.1, CurrentAgentCount = 1, MaxAgents = 10 });
+        await sut.RegisterInstanceAsync(new FederatedInstance { InstanceId = "i2", BaseUrl = "http://r2", IsActive = true, LastHeartbeat = DateTime.UtcNow, CurrentLoad = 0.4, CurrentAgentCount = 1, MaxAgents = 10 });
+
+        var selected = await sut.DelegateTaskAsync(new TaskEntry { Id = "t-fallback", Description = "t" });
+
+        selected.Should().Be("i2");
+        handler.Requests.Should().HaveCount(2);
+    }
+
+    [Fact]
     public async Task RequestCrossInstanceCollaborationAsync_ReturnsAggregatedResult()
     {
         var handler = new StubHttpMessageHandler(request =>
@@ -435,6 +464,111 @@ public sealed class FederationServiceTests
         result.ConflictReasonCode.Should().Be("cross_instance_no_responses");
         result.NextAction.Should().Be("fallback_to_local_collaboration");
         result.ParticipantCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task RequestCrossInstanceCollaborationAsync_WeightedVotingTie_ReturnsSupervisorEscalation()
+    {
+        var handler = new StubHttpMessageHandler(request =>
+        {
+            var host = request.RequestUri?.Host ?? string.Empty;
+            var response = host.Contains("r2", StringComparison.OrdinalIgnoreCase)
+                ? new AgentResponse
+                {
+                    AgentId = "orb-2",
+                    Response = "NO",
+                    Confidence = 0.8,
+                    Weight = 1.0,
+                    Reasoning = "reject"
+                }
+                : new AgentResponse
+                {
+                    AgentId = "orb-1",
+                    Response = "YES",
+                    Confidence = 0.8,
+                    Weight = 1.0,
+                    Reasoning = "approve"
+                };
+
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = JsonContent.Create(new FederatedMessage
+                {
+                    CorrelationId = "collab",
+                    Payload = new Dictionary<string, object>
+                    {
+                        ["AgentResponse"] = response
+                    }
+                })
+            };
+        });
+
+        var sut = CreateService(handler, localInstanceId: "local");
+        await sut.RegisterInstanceAsync(new FederatedInstance { InstanceId = "i1", BaseUrl = "http://r1", IsActive = true, LastHeartbeat = DateTime.UtcNow });
+        await sut.RegisterInstanceAsync(new FederatedInstance { InstanceId = "i2", BaseUrl = "http://r2", IsActive = true, LastHeartbeat = DateTime.UtcNow });
+
+        var request = new CollaborationRequest
+        {
+            Id = "weighted-tie",
+            InitiatorAgentId = "lucifer",
+            Task = "t",
+            Strategy = CollaborationStrategy.WeightedVoting,
+            ParticipantAgentIds = ["a", "b"],
+            MinimumParticipants = 2,
+            MinimumConfidence = 0.6,
+            Timeout = TimeSpan.FromSeconds(5)
+        };
+
+        var result = await sut.RequestCrossInstanceCollaborationAsync(request);
+
+        result.Decision.Should().Be("CONFLICT_UNRESOLVED");
+        result.ConflictReasonCode.Should().Be("cross_instance_weighted_tie");
+        result.NextAction.Should().Be("supervisor_adjudication_workflow");
+        result.NeedsSupervisorIntervention.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task RequestCrossInstanceCollaborationAsync_HighestConfidenceBelowThreshold_ReturnsSupervisorEscalation()
+    {
+        var handler = new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = JsonContent.Create(new FederatedMessage
+            {
+                CorrelationId = "collab",
+                Payload = new Dictionary<string, object>
+                {
+                    ["AgentResponse"] = new AgentResponse
+                    {
+                        AgentId = "orb-1",
+                        Response = "YES",
+                        Confidence = 0.42,
+                        Reasoning = "insufficient evidence"
+                    }
+                }
+            })
+        });
+
+        var sut = CreateService(handler, localInstanceId: "local");
+        await sut.RegisterInstanceAsync(new FederatedInstance { InstanceId = "i1", BaseUrl = "http://r1", IsActive = true, LastHeartbeat = DateTime.UtcNow });
+
+        var request = new CollaborationRequest
+        {
+            Id = "low-confidence",
+            InitiatorAgentId = "lucifer",
+            Task = "t",
+            Strategy = CollaborationStrategy.HighestConfidence,
+            ParticipantAgentIds = ["a"],
+            MinimumParticipants = 1,
+            MinimumConfidence = 0.9,
+            Timeout = TimeSpan.FromSeconds(5)
+        };
+
+        var result = await sut.RequestCrossInstanceCollaborationAsync(request);
+
+        result.Decision.Should().Be("CONFLICT_UNRESOLVED");
+        result.ConflictReasonCode.Should().Be("cross_instance_confidence_below_threshold");
+        result.NextAction.Should().Be("supervisor_adjudication_workflow");
+        result.NeedsSupervisorIntervention.Should().BeTrue();
     }
 
     [Fact]

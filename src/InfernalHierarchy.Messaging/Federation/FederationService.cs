@@ -102,37 +102,51 @@ public class FederationService : IFederationService
     {
         var instances = await GetActiveInstancesAsync(ct).ConfigureAwait(false);
 
-        // Select instance with lowest load
-        var targetInstance = instances
+        var candidateInstances = instances
             .Where(i => i.InstanceId != _localInstanceId)
             .Where(i => i.CurrentAgentCount < i.MaxAgents)
             .OrderBy(i => i.CurrentLoad)
-            .FirstOrDefault();
+            .ThenBy(i => i.CurrentAgentCount)
+            .ToList();
 
-        if (targetInstance == null)
+        if (candidateInstances.Count == 0)
         {
             _logger.LogWarning("No available instances for task delegation");
             return null;
         }
 
-        _logger.LogInformation("Delegating task {TaskId} to instance {InstanceId} (load: {Load:P0})",
-            task.Id, targetInstance.InstanceId, targetInstance.CurrentLoad);
-
-        var message = new FederatedMessage
+        foreach (var targetInstance in candidateInstances)
         {
-            SourceInstanceId = _localInstanceId,
-            TargetInstanceId = targetInstance.InstanceId,
-            MessageType = FederatedMessageType.DelegateTask,
-            Payload = new Dictionary<string, object>
-            {
-                ["TaskId"] = task.Id,
-                ["Task"] = JsonSerializer.Serialize(task)
-            },
-            RequiresResponse = true
-        };
+            _logger.LogInformation("Delegating task {TaskId} to instance {InstanceId} (load: {Load:P0})",
+                task.Id, targetInstance.InstanceId, targetInstance.CurrentLoad);
 
-        await SendMessageAsync(message, ct).ConfigureAwait(false);
-        return targetInstance.InstanceId;
+            var message = new FederatedMessage
+            {
+                SourceInstanceId = _localInstanceId,
+                TargetInstanceId = targetInstance.InstanceId,
+                MessageType = FederatedMessageType.DelegateTask,
+                Payload = new Dictionary<string, object>
+                {
+                    ["TaskId"] = task.Id,
+                    ["Task"] = JsonSerializer.Serialize(task)
+                },
+                RequiresResponse = true
+            };
+
+            var response = await SendMessageWithOptionalResponseAsync(message, ct).ConfigureAwait(false);
+            if (response != null)
+            {
+                return targetInstance.InstanceId;
+            }
+
+            _logger.LogWarning(
+                "Delegation attempt failed for task {TaskId} on instance {InstanceId}; trying next candidate",
+                task.Id,
+                targetInstance.InstanceId);
+        }
+
+        _logger.LogWarning("All delegation candidates failed for task {TaskId}", task.Id);
+        return null;
     }
 
     /// <inheritdoc/>

@@ -4,6 +4,7 @@ using System.Threading;
 using System.Threading.Channels;
 using InfernalHierarchy.Agents.Collaboration.Strategies;
 using InfernalHierarchy.Core.Serialization;
+using InfernalHierarchy.Tools.Learning;
 
 namespace InfernalHierarchy.Agents.Collaboration;
 
@@ -24,6 +25,7 @@ public class AgentCollaborationService : IAgentCollaborationService
     private readonly ConcurrentDictionary<string, Channel<AgentResponse>> _responseChannels;
     private readonly IReadOnlyDictionary<CollaborationStrategy, IAggregationStrategy> _aggregationStrategies;
     private readonly ISharedMemory? _sharedMemory;
+    private readonly AgentLearningService? _learningService;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="AgentCollaborationService"/> class.
@@ -35,7 +37,7 @@ public class AgentCollaborationService : IAgentCollaborationService
         ILogger<AgentCollaborationService> logger,
         IMessageBus messageBus,
         IAgentRegistry agentRegistry)
-        : this(logger, messageBus, agentRegistry, CreateDefaultStrategies(), sharedMemory: null)
+        : this(logger, messageBus, agentRegistry, CreateDefaultStrategies(), sharedMemory: null, learningService: null)
     {
     }
 
@@ -44,12 +46,14 @@ public class AgentCollaborationService : IAgentCollaborationService
         IMessageBus messageBus,
         IAgentRegistry agentRegistry,
         IEnumerable<IAggregationStrategy> aggregationStrategies,
-        ISharedMemory? sharedMemory = null)
+        ISharedMemory? sharedMemory = null,
+        AgentLearningService? learningService = null)
     {
         _logger = logger;
         _messageBus = messageBus;
         _agentRegistry = agentRegistry;
         _sharedMemory = sharedMemory;
+        _learningService = learningService;
         _activeCollaborations = new ConcurrentDictionary<string, CollaborationRequest>();
         _responses = new ConcurrentDictionary<string, List<AgentResponse>>();
         _collaborationRounds = new ConcurrentDictionary<string, int>();
@@ -843,6 +847,27 @@ Instruction: If you change your decision, explain why. If you keep it, explain w
     /// </summary>
     private CollaborationStrategy SelectOptimalStrategy(CollaborationRequest request)
     {
+        var initialCandidates = new[]
+        {
+            CollaborationStrategy.WeightedVoting,
+            CollaborationStrategy.Voting,
+            CollaborationStrategy.Consensus,
+            CollaborationStrategy.Hierarchical,
+            CollaborationStrategy.HighestConfidence
+        };
+
+        if (_learningService != null
+            && !string.IsNullOrWhiteSpace(request.InitiatorAgentId)
+            && _learningService.TryGetBestCollaborationStrategy(request.InitiatorAgentId, initialCandidates, out var learnedStrategy, out var learnedScore))
+        {
+            _logger.LogInformation(
+                "Selected strategy {Strategy} from learning profile for initiator {InitiatorId} (score={Score:F2})",
+                learnedStrategy,
+                request.InitiatorAgentId,
+                learnedScore);
+            return learnedStrategy;
+        }
+
         var participantRanks = request.ParticipantAgentIds
             .Select(id => _agentRegistry.GetAgent(id))
             .Where(a => a != null)
@@ -881,17 +906,39 @@ Instruction: If you change your decision, explain why. If you keep it, explain w
     /// </summary>
     private void AnalyzeCollaborationHistory(CollaborationRequest request, CollaborationResult result)
     {
-        var avgConfidence = result.Responses.Average(r => r.Confidence);
-        var avgLatency = result.Responses.Average(r => r.ProcessingTimeMs);
+        var avgConfidence = result.Responses.Count == 0
+            ? result.Confidence
+            : result.Responses.Average(r => r.Confidence);
+        var avgLatency = result.Responses.Count == 0
+            ? 0
+            : result.Responses.Average(r => r.ProcessingTimeMs);
         var roundCount = _collaborationRounds.GetOrAdd(request.Id, 0);
 
         _logger.LogInformation(
             "Collaboration {RequestId} completed: Strategy={Strategy}, Agreement={Agreement:P0}, " +
-            "Confidence={Confidence:F2}, Participants={Count}, Rounds={Rounds}, AvgLatency={Latency}ms",
+            "Confidence={Confidence:F2}, AvgResponseConfidence={AvgConfidence:F2}, Participants={Count}, Rounds={Rounds}, AvgLatency={Latency}ms",
             request.Id, request.Strategy, result.AgreementScore, result.Confidence,
-            result.ParticipantCount, roundCount, avgLatency);
+            avgConfidence, result.ParticipantCount, roundCount, avgLatency);
 
-        // Store metrics for future strategy optimization
-        // TODO: Integrate with AgentLearningService to track strategy effectiveness
+        if (_learningService is null)
+        {
+            return;
+        }
+
+        var initiatorRank = _agentRegistry.GetAgent(request.InitiatorAgentId)?.Rank.ToString() ?? "Unknown";
+        var succeeded = request.Status == CollaborationStatus.Completed
+            && result.Confidence >= request.MinimumConfidence
+            && !result.NeedsSupervisorIntervention;
+
+        _learningService.RecordCollaborationStrategyOutcome(
+            agentId: request.InitiatorAgentId,
+            agentRank: initiatorRank,
+            strategy: result.Strategy,
+            success: succeeded,
+            confidence: result.Confidence,
+            agreement: result.AgreementScore,
+            averageLatencyMs: avgLatency,
+            rounds: Math.Max(1, roundCount),
+            participants: Math.Max(1, result.ParticipantCount));
     }
 }

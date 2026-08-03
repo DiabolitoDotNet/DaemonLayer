@@ -4,6 +4,7 @@ using InfernalHierarchy.Agents.Collaboration.Strategies;
 using InfernalHierarchy.Agents.Registry;
 using InfernalHierarchy.Core.Entities;
 using InfernalHierarchy.Core.Interfaces;
+using InfernalHierarchy.Tools.Learning;
 using Microsoft.Extensions.Logging;
 using Moq;
 using Xunit;
@@ -508,5 +509,169 @@ public class AgentCollaborationServiceTests
                 It.Is<Decision>(d => d.Context.Contains(request.Id) && d.Action == "A"),
                 It.IsAny<CancellationToken>()),
             Times.Once);
+    }
+
+    [Fact]
+    public async Task RequestCollaborationAsync_WithLearningProfile_ShouldPreferLearnedStrategy()
+    {
+        var bus = new Mock<IMessageBus>();
+        bus.Setup(b => b.PublishAsync(It.IsAny<AgentMessage>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        var registry = new AgentRegistry(new Mock<ILogger<AgentRegistry>>().Object);
+        registry.Register(CreateAgent("a1", AgentRank.Worker).Object);
+        registry.Register(CreateAgent("a2", AgentRank.Worker).Object);
+
+        var learning = new AgentLearningService(new Mock<ILogger<AgentLearningService>>().Object);
+
+        // Seed learning profile: Consensus historically stronger than voting for this initiator.
+        for (var i = 0; i < 5; i++)
+        {
+            learning.RecordCollaborationStrategyOutcome(
+                agentId: "init",
+                agentRank: AgentRank.Worker.ToString(),
+                strategy: CollaborationStrategy.Consensus,
+                success: true,
+                confidence: 0.95,
+                agreement: 0.95,
+                averageLatencyMs: 80,
+                rounds: 1,
+                participants: 2);
+
+            learning.RecordCollaborationStrategyOutcome(
+                agentId: "init",
+                agentRank: AgentRank.Worker.ToString(),
+                strategy: CollaborationStrategy.Voting,
+                success: false,
+                confidence: 0.35,
+                agreement: 0.35,
+                averageLatencyMs: 120,
+                rounds: 2,
+                participants: 2);
+        }
+
+        var service = new AgentCollaborationService(
+            new Mock<ILogger<AgentCollaborationService>>().Object,
+            bus.Object,
+            registry,
+            new IAggregationStrategy[]
+            {
+                new VotingAggregationStrategy(),
+                new WeightedVotingAggregationStrategy(),
+                new ConsensusAggregationStrategy(),
+                new HighestConfidenceAggregationStrategy(),
+                new HierarchicalAggregationStrategy()
+            },
+            sharedMemory: null,
+            learningService: learning);
+
+        var request = new CollaborationRequest
+        {
+            Id = Guid.NewGuid().ToString(),
+            InitiatorAgentId = "init",
+            Task = "Choose between option A and option B",
+            Strategy = CollaborationStrategy.Voting,
+            MinimumParticipants = 2,
+            MinimumConfidence = 0.6,
+            Timeout = TimeSpan.FromSeconds(2),
+            ParticipantAgentIds = new List<string> { "a1", "a2" }
+        };
+
+        var collaborationTask = service.RequestCollaborationAsync(request, CancellationToken.None);
+
+        await service.SubmitResponseAsync(request.Id, new AgentResponse
+        {
+            AgentId = "a1",
+            AgentRank = AgentRank.Worker,
+            Response = "A",
+            Confidence = 0.9,
+            Reasoning = "stable"
+        });
+
+        await service.SubmitResponseAsync(request.Id, new AgentResponse
+        {
+            AgentId = "a2",
+            AgentRank = AgentRank.Worker,
+            Response = "A",
+            Confidence = 0.9,
+            Reasoning = "agree"
+        });
+
+        var result = await collaborationTask;
+
+        result.Strategy.Should().Be(CollaborationStrategy.Consensus);
+        result.Decision.Should().Be("A");
+    }
+
+    [Fact]
+    public async Task RequestCollaborationAsync_ShouldRecordStrategyOutcomeInLearningService()
+    {
+        var bus = new Mock<IMessageBus>();
+        bus.Setup(b => b.PublishAsync(It.IsAny<AgentMessage>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        var registry = new AgentRegistry(new Mock<ILogger<AgentRegistry>>().Object);
+        registry.Register(CreateAgent("a1", AgentRank.Worker).Object);
+        registry.Register(CreateAgent("a2", AgentRank.Worker).Object);
+
+        // Ensure initiator rank can be resolved by registry for learning metadata.
+        registry.Register(CreateAgent("init", AgentRank.Prince).Object);
+
+        var learning = new AgentLearningService(new Mock<ILogger<AgentLearningService>>().Object);
+
+        var service = new AgentCollaborationService(
+            new Mock<ILogger<AgentCollaborationService>>().Object,
+            bus.Object,
+            registry,
+            new IAggregationStrategy[]
+            {
+                new VotingAggregationStrategy(),
+                new WeightedVotingAggregationStrategy(),
+                new ConsensusAggregationStrategy(),
+                new HighestConfidenceAggregationStrategy(),
+                new HierarchicalAggregationStrategy()
+            },
+            sharedMemory: null,
+            learningService: learning);
+
+        var request = new CollaborationRequest
+        {
+            Id = Guid.NewGuid().ToString(),
+            InitiatorAgentId = "init",
+            Task = "Resolve final option",
+            Strategy = CollaborationStrategy.Consensus,
+            MinimumParticipants = 2,
+            MinimumConfidence = 0.6,
+            Timeout = TimeSpan.FromSeconds(2),
+            ParticipantAgentIds = new List<string> { "a1", "a2" }
+        };
+
+        var collaborationTask = service.RequestCollaborationAsync(request, CancellationToken.None);
+
+        await service.SubmitResponseAsync(request.Id, new AgentResponse
+        {
+            AgentId = "a1",
+            AgentRank = AgentRank.Worker,
+            Response = "APPROVE",
+            Confidence = 0.85,
+            Reasoning = "sufficient"
+        });
+
+        await service.SubmitResponseAsync(request.Id, new AgentResponse
+        {
+            AgentId = "a2",
+            AgentRank = AgentRank.Worker,
+            Response = "APPROVE",
+            Confidence = 0.9,
+            Reasoning = "validated"
+        });
+
+        var result = await collaborationTask;
+        result.Decision.Should().Be("APPROVE");
+
+        var stats = learning.GetAgentStats("init");
+        stats.Should().NotBeNull();
+        stats!.TopTools.Select(t => t.ToolName)
+            .Should().Contain("collaboration_strategy_consensus");
     }
 }

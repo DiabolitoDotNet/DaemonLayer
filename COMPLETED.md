@@ -252,6 +252,14 @@
 - **A100R.5 modern C# optimization pass**: reduced hot-path allocations by removing per-call allowlist set materialization in profile command checks while preserving policy behavior.
 - **Validation**: messaging tests pass after aggregation semantics update (30/30), authorization targeted tests pass (9/9), and full solution regression remains green (`EXIT:0`).
 
+## ✅ Autonomy Release-Gate Closure (A100F, Aug 2, 2026)
+
+- **A100F.1 closed-loop collaboration learning**: `AgentCollaborationService` now records strategy outcomes (success/confidence/agreement/latency/rounds/participants) in `AgentLearningService` and consults learned strategy scores before static heuristics.
+- **A100F.2 quantified performance gate**: added executable harness project `tools/InfernalHierarchy.PerfGate` with versioned budgets (`perf-baseline.json`) measuring latency/op and allocations/op for authorization and federation aggregation hot paths.
+- **A100F.3 autonomy scorecard release gate**: added `AutonomyScorecardGateTests` and CI full-lane gate step to enforce scorecard threshold behavior as an explicit merge/release control.
+- **A100F.4 federated chaos matrix + routing safety**: added deterministic federation tests for weighted-tie and low-confidence escalations, plus delegation fallback across ordered candidates when the lowest-load instance fails.
+- **Validation**: targeted host gate tests (2/2), targeted federation tests (20/20), full solution regression green (`EXIT:0`).
+
 ### Implemented Tests (existing)
 - Host: integration tests
 - Agents: unit tests

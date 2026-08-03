@@ -1,0 +1,10 @@
+{
+  "toolAuthorization": {
+    "maxLatencyPerOpMs": 2.0,
+    "maxAllocatedBytesPerOp": 5000
+  },
+  "federationAggregation": {
+    "maxLatencyPerOpMs": 25.0,
+    "maxAllocatedBytesPerOp": 35000
+  }
+}

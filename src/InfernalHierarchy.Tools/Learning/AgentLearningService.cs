@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using InfernalHierarchy.Core.Entities;
 
 namespace InfernalHierarchy.Tools.Learning;
 
@@ -11,6 +12,7 @@ public class AgentLearningService
     private readonly ISkillTreeService? _skillTreeService;
     private readonly ConcurrentDictionary<string, ToolLearningStats> _toolStats = new();
     private readonly ConcurrentDictionary<string, AgentLearningProfile> _agentProfiles = new();
+    private readonly ConcurrentDictionary<string, CollaborationStrategyLearningStats> _collaborationStrategyStats = new();
 
     public AgentLearningService(
         ILogger<AgentLearningService> logger,
@@ -192,6 +194,103 @@ public class AgentLearningService
                 .ToList()
         };
     }
+
+    /// <summary>
+    /// Record collaboration strategy outcome for adaptive strategy selection.
+    /// </summary>
+    public void RecordCollaborationStrategyOutcome(
+        string agentId,
+        string agentRank,
+        CollaborationStrategy strategy,
+        bool success,
+        double confidence,
+        double agreement,
+        double averageLatencyMs,
+        int rounds,
+        int participants)
+    {
+        var strategyName = strategy.ToString();
+
+        var globalKey = $"strategy:{strategyName}";
+        var globalStats = _collaborationStrategyStats.GetOrAdd(globalKey, _ =>
+            new CollaborationStrategyLearningStats(strategyName, agentId: null));
+
+        globalStats.RecordOutcome(success, confidence, agreement, averageLatencyMs, rounds, participants);
+
+        var agentKey = $"agent:{agentId}:strategy:{strategyName}";
+        var agentStats = _collaborationStrategyStats.GetOrAdd(agentKey, _ =>
+            new CollaborationStrategyLearningStats(strategyName, agentId));
+
+        agentStats.RecordOutcome(success, confidence, agreement, averageLatencyMs, rounds, participants);
+
+        // Keep compatibility with existing tool-centric telemetry and ranking surfaces.
+        RecordToolExecution(
+            agentId,
+            agentRank,
+            toolName: $"collaboration_strategy_{strategyName.ToLowerInvariant()}",
+            success,
+            duration: TimeSpan.FromMilliseconds(Math.Max(0, averageLatencyMs)));
+    }
+
+    /// <summary>
+    /// Try to select the historically strongest strategy among candidates for an agent.
+    /// </summary>
+    public bool TryGetBestCollaborationStrategy(
+        string agentId,
+        IReadOnlyCollection<CollaborationStrategy> candidates,
+        out CollaborationStrategy bestStrategy,
+        out double bestScore)
+    {
+        bestStrategy = default;
+        bestScore = 0;
+
+        if (candidates.Count == 0)
+        {
+            return false;
+        }
+
+        var hasData = false;
+
+        foreach (var candidate in candidates)
+        {
+            var candidateScore = GetCollaborationStrategyScore(agentId, candidate, out var sampleCount);
+            if (sampleCount <= 0)
+            {
+                continue;
+            }
+
+            hasData = true;
+            if (candidateScore > bestScore)
+            {
+                bestScore = candidateScore;
+                bestStrategy = candidate;
+            }
+        }
+
+        return hasData;
+    }
+
+    private double GetCollaborationStrategyScore(string agentId, CollaborationStrategy strategy, out int sampleCount)
+    {
+        var strategyName = strategy.ToString();
+        var agentKey = $"agent:{agentId}:strategy:{strategyName}";
+        var globalKey = $"strategy:{strategyName}";
+
+        _collaborationStrategyStats.TryGetValue(agentKey, out var agentStats);
+        _collaborationStrategyStats.TryGetValue(globalKey, out var globalStats);
+
+        sampleCount = (agentStats?.TotalExecutions ?? 0) + (globalStats?.TotalExecutions ?? 0);
+        if (sampleCount <= 0)
+        {
+            return 0;
+        }
+
+        var agentScore = agentStats?.CompositeScore ?? 0;
+        var globalScore = globalStats?.CompositeScore ?? 0;
+
+        // Prioritize agent-local behavior, with global signal as fallback guidance.
+        return (agentScore * 0.7) + (globalScore * 0.3);
+    }
 }
 
 /// <summary>
@@ -290,4 +389,70 @@ public class ToolStatsInfo
     public double SuccessRate { get; set; }
     public int TotalExecutions { get; set; }
     public TimeSpan AverageDuration { get; set; }
+}
+
+public sealed class CollaborationStrategyLearningStats
+{
+    private readonly object _sync = new();
+    private double _totalConfidence;
+    private double _totalAgreement;
+    private double _totalLatencyMs;
+    private double _totalRounds;
+    private double _totalParticipants;
+
+    public CollaborationStrategyLearningStats(string strategyName, string? agentId)
+    {
+        StrategyName = strategyName;
+        AgentId = agentId;
+    }
+
+    public string StrategyName { get; }
+    public string? AgentId { get; }
+    public int TotalExecutions { get; private set; }
+    public int SuccessfulExecutions { get; private set; }
+    public double SuccessRate => TotalExecutions > 0 ? (double)SuccessfulExecutions / TotalExecutions : 0;
+    public double AverageConfidence => TotalExecutions > 0 ? _totalConfidence / TotalExecutions : 0;
+    public double AverageAgreement => TotalExecutions > 0 ? _totalAgreement / TotalExecutions : 0;
+    public double AverageLatencyMs => TotalExecutions > 0 ? _totalLatencyMs / TotalExecutions : 0;
+    public double AverageRounds => TotalExecutions > 0 ? _totalRounds / TotalExecutions : 0;
+    public double AverageParticipants => TotalExecutions > 0 ? _totalParticipants / TotalExecutions : 0;
+
+    public double CompositeScore
+    {
+        get
+        {
+            var latencyPenalty = AverageLatencyMs <= 0
+                ? 1.0
+                : Math.Max(0.1, 1.0 - (AverageLatencyMs / 10_000.0));
+
+            return (SuccessRate * 0.5)
+                + (AverageConfidence * 0.2)
+                + (AverageAgreement * 0.2)
+                + (latencyPenalty * 0.1);
+        }
+    }
+
+    public void RecordOutcome(
+        bool success,
+        double confidence,
+        double agreement,
+        double averageLatencyMs,
+        int rounds,
+        int participants)
+    {
+        lock (_sync)
+        {
+            TotalExecutions++;
+            if (success)
+            {
+                SuccessfulExecutions++;
+            }
+
+            _totalConfidence += Math.Max(0.0, Math.Min(1.0, confidence));
+            _totalAgreement += Math.Max(0.0, Math.Min(1.0, agreement));
+            _totalLatencyMs += Math.Max(0.0, averageLatencyMs);
+            _totalRounds += Math.Max(1, rounds);
+            _totalParticipants += Math.Max(1, participants);
+        }
+    }
 }
