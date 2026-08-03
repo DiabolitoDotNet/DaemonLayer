@@ -45,6 +45,8 @@ internal static class AutonomyApi
             var completionRatio = collector.GetGauge("autonomy_task_completion_ratio");
             var terminalFailureRatio = collector.GetGauge("autonomy_terminal_failure_ratio");
             var outOfScopeRatio = collector.GetGauge("autonomy_out_of_scope_ratio");
+            var inScopeCompletionRatio = collector.GetGauge("autonomy_in_scope_task_completion_ratio");
+            var inScopeTerminalFailureRatio = collector.GetGauge("autonomy_in_scope_terminal_failure_ratio");
             var replaySuccessRatio = collector.GetGauge("autonomy_replay_success_ratio");
 
             var terminalTime = collector.GetHistogramStats("autonomy.time_to_terminal_ms");
@@ -56,6 +58,8 @@ internal static class AutonomyApi
                     autonomy_task_completion_ratio = completionRatio,
                     autonomy_terminal_failure_ratio = terminalFailureRatio,
                     autonomy_out_of_scope_ratio = outOfScopeRatio,
+                    autonomy_in_scope_task_completion_ratio = inScopeCompletionRatio,
+                    autonomy_in_scope_terminal_failure_ratio = inScopeTerminalFailureRatio,
                     autonomy_replay_success_ratio = replaySuccessRatio
                 },
                 counters = new
@@ -64,6 +68,9 @@ internal static class AutonomyApi
                     autonomy_task_completed = collector.GetCounter("autonomy.task.completed"),
                     autonomy_terminal_failure = collector.GetCounter("autonomy.task.terminal_failure"),
                     autonomy_task_out_of_scope = collector.GetCounter("autonomy.task.out_of_scope"),
+                    autonomy_task_in_scope_total = collector.GetCounter("autonomy.task.in_scope_total"),
+                    autonomy_task_in_scope_completed = collector.GetCounter("autonomy.task.in_scope_completed"),
+                    autonomy_task_in_scope_terminal_failure = collector.GetCounter("autonomy.task.in_scope_terminal_failure"),
                     autonomy_replay_total = collector.GetCounter("autonomy.replay.total"),
                     autonomy_replay_success = collector.GetCounter("autonomy.replay.success")
                 },

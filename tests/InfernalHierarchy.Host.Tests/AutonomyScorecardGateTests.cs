@@ -66,6 +66,34 @@ public sealed class AutonomyScorecardGateTests
         passed.Should().BeTrue(FormatReport(report));
     }
 
+    [Fact]
+    public async Task EvaluateCertificationMode_ShouldPass_WhenRealAgentRunsMeetStrictContractAndCoverage()
+    {
+        using var factory = new InfernalHierarchyTestWebAppFactory();
+        var client = factory.CreateClient();
+        ConfigureOperatorHeader(factory, client);
+
+        var runCount = 3;
+        await SeedScenarioRunsAsync(client, "simple_search", prompt: "Say hello", timeoutMs: 12000, runCount, CancellationToken.None);
+        await SeedScenarioRunsAsync(client, "missing_tool_task", prompt: "Say hello", timeoutMs: 12000, runCount, CancellationToken.None);
+        await SeedScenarioRunsAsync(client, "multi_step_build", prompt: "Say hello", timeoutMs: 15000, runCount, CancellationToken.None);
+        await SeedScenarioRunsAsync(client, "partial_failure_recovery", prompt: "Say hello", timeoutMs: 12000, runCount, CancellationToken.None);
+
+        var sut = factory.Services.GetRequiredService<AutonomyScorecardService>();
+        var report = sut.GenerateReport(new AutonomyScorecardOptions
+        {
+            RunsPerScenario = runCount,
+            CertificationMode = true,
+            FailOnInsufficientData = true,
+            RequireStructuredOutcomeContract = true,
+            MinCoverage = 1.0,
+            MinGrade = "B",
+            MinSuccessRatePerScenario = 0.80,
+        });
+
+        report.CertificationPassed.Should().BeTrue(FormatReport(report));
+    }
+
     private static void ConfigureOperatorHeader(InfernalHierarchyTestWebAppFactory factory, HttpClient client)
     {
         var options = factory.Services.GetRequiredService<IOptions<OperatorApiOptions>>().Value;

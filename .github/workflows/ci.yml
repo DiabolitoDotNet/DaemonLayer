@@ -89,6 +89,9 @@ jobs:
       - name: Autonomy Scorecard Gate
         run: dotnet test tests/InfernalHierarchy.Host.Tests/InfernalHierarchy.Host.Tests.csproj -c Release --no-build --filter "FullyQualifiedName~AutonomyScorecardGateTests" --logger "trx;LogFileName=autonomy-gate.trx"
 
+      - name: Autonomy Certification Strict Gate
+        run: dotnet test tests/InfernalHierarchy.Host.Tests/InfernalHierarchy.Host.Tests.csproj -c Release --no-build --filter "FullyQualifiedName~AutonomyScorecardGateTests.EvaluateCertificationMode_ShouldPass_WhenRealAgentRunsMeetStrictContractAndCoverage" --logger "trx;LogFileName=autonomy-certification-strict-gate.trx"
+
       - name: Upload Full Lane Artifacts On Failure
         if: failure()
         uses: actions/upload-artifact@v4

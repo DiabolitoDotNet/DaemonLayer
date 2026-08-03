@@ -133,9 +133,9 @@ internal sealed class SloGateEvaluator
                 Message: $"count={taskLatencyStats.Count}, p95={taskLatencyStats.P95:F2}"));
         }
 
-        var autonomyTaskTotal = _metrics.GetCounter("autonomy.task.total");
-        var autonomyTaskCompletionRatio = _metrics.GetGauge("autonomy_task_completion_ratio");
-        var autonomyTerminalFailureRatio = _metrics.GetGauge("autonomy_terminal_failure_ratio");
+        var autonomyTaskTotal = _metrics.GetCounter("autonomy.task.in_scope_total");
+        var autonomyTaskCompletionRatio = _metrics.GetGauge("autonomy_in_scope_task_completion_ratio");
+        var autonomyTerminalFailureRatio = _metrics.GetGauge("autonomy_in_scope_terminal_failure_ratio");
 
         if (autonomyTaskTotal < options.MinAutonomyTaskSamples)
         {
@@ -146,7 +146,7 @@ internal sealed class SloGateEvaluator
                 Value: autonomyTaskTotal,
                 Threshold: options.MinAutonomyTaskSamples,
                 Unit: "samples",
-                Message: "Not enough autonomy task samples to enforce completion ratio gate yet."));
+                Message: "Not enough in-scope autonomy task samples to enforce completion ratio gate yet."));
 
             checks.Add(new SloGateCheckResult(
                 Gate: "autonomy.terminal_failure_ratio",
@@ -155,7 +155,7 @@ internal sealed class SloGateEvaluator
                 Value: autonomyTaskTotal,
                 Threshold: options.MinAutonomyTaskSamples,
                 Unit: "samples",
-                Message: "Not enough autonomy task samples to enforce terminal failure ratio gate yet."));
+                Message: "Not enough in-scope autonomy task samples to enforce terminal failure ratio gate yet."));
         }
         else
         {
@@ -166,7 +166,7 @@ internal sealed class SloGateEvaluator
                 Value: autonomyTaskCompletionRatio,
                 Threshold: options.MinAutonomyTaskCompletionRatio,
                 Unit: "ratio",
-                Message: $"task_total={autonomyTaskTotal}"));
+                Message: $"in_scope_task_total={autonomyTaskTotal}"));
 
             checks.Add(new SloGateCheckResult(
                 Gate: "autonomy.terminal_failure_ratio",
@@ -175,7 +175,7 @@ internal sealed class SloGateEvaluator
                 Value: autonomyTerminalFailureRatio,
                 Threshold: options.MaxAutonomyTerminalFailureRatio,
                 Unit: "ratio",
-                Message: $"task_total={autonomyTaskTotal}"));
+                Message: $"in_scope_task_total={autonomyTaskTotal}"));
         }
 
         var autonomyReplayTotal = _metrics.GetCounter("autonomy.replay.total");

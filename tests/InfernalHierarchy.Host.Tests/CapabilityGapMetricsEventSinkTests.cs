@@ -64,12 +64,17 @@ public sealed class CapabilityGapMetricsEventSinkTests
         metrics.GetCounter("autonomy.task.completed").Should().Be(1);
         metrics.GetCounter("autonomy.task.terminal_failure").Should().Be(1);
         metrics.GetCounter("autonomy.task.out_of_scope").Should().Be(1);
+        metrics.GetCounter("autonomy.task.in_scope_total").Should().Be(1);
+        metrics.GetCounter("autonomy.task.in_scope_completed").Should().Be(1);
+        metrics.GetCounter("autonomy.task.in_scope_terminal_failure").Should().Be(0);
         metrics.GetCounter("autonomy.replay.total").Should().Be(1);
         metrics.GetCounter("autonomy.replay.success").Should().Be(1);
 
         metrics.GetGauge("autonomy_task_completion_ratio").Should().BeApproximately(0.5, 0.0001);
         metrics.GetGauge("autonomy_terminal_failure_ratio").Should().BeApproximately(0.5, 0.0001);
         metrics.GetGauge("autonomy_out_of_scope_ratio").Should().BeApproximately(0.5, 0.0001);
+        metrics.GetGauge("autonomy_in_scope_task_completion_ratio").Should().BeApproximately(1.0, 0.0001);
+        metrics.GetGauge("autonomy_in_scope_terminal_failure_ratio").Should().BeApproximately(0.0, 0.0001);
         metrics.GetGauge("autonomy_replay_success_ratio").Should().BeApproximately(1.0, 0.0001);
 
         var terminalStats = metrics.GetHistogramStats("autonomy.time_to_terminal_ms");

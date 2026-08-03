@@ -77,6 +77,8 @@ internal sealed class CapabilityGapMetricsEventSink : IAgentEventSink
         _metrics.IncrementCounter("capability_gap_detected_total");
         _metrics.IncrementCounter("autonomy.task.total");
 
+        var isOutOfScope = false;
+
         if (TryGetBool(evt.Metadata, "remediation_attempted", out var attempted) && attempted)
         {
             _metrics.IncrementCounter("capability_gap_autofix_attempt_total");
@@ -98,6 +100,8 @@ internal sealed class CapabilityGapMetricsEventSink : IAgentEventSink
             if (string.Equals(workflowState, "capability_gap_resolved_retrying_original_intent", StringComparison.OrdinalIgnoreCase))
             {
                 _metrics.IncrementCounter("autonomy.task.completed");
+                _metrics.IncrementCounter("autonomy.task.in_scope_total");
+                _metrics.IncrementCounter("autonomy.task.in_scope_completed");
             }
             else if (string.Equals(workflowState, "capability_gap_unresolved_terminal", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(workflowState, "capability_gap_policy_blocked", StringComparison.OrdinalIgnoreCase))
@@ -106,8 +110,20 @@ internal sealed class CapabilityGapMetricsEventSink : IAgentEventSink
                 if (string.Equals(workflowState, "capability_gap_policy_blocked", StringComparison.OrdinalIgnoreCase))
                 {
                     _metrics.IncrementCounter("autonomy.task.out_of_scope");
+                    isOutOfScope = true;
+                }
+                else
+                {
+                    _metrics.IncrementCounter("autonomy.task.in_scope_total");
+                    _metrics.IncrementCounter("autonomy.task.in_scope_terminal_failure");
                 }
             }
+        }
+
+        if (!isOutOfScope
+            && !evt.Metadata.TryGetValue("workflow_state", out _))
+        {
+            _metrics.IncrementCounter("autonomy.task.in_scope_total");
         }
 
         if (TryGetDouble(evt.Metadata, "remediation_duration_ms", out var terminalMs) && terminalMs >= 0)
@@ -124,6 +140,9 @@ internal sealed class CapabilityGapMetricsEventSink : IAgentEventSink
         var completed = _metrics.GetCounter("autonomy.task.completed");
         var failed = _metrics.GetCounter("autonomy.task.terminal_failure");
         var outOfScope = _metrics.GetCounter("autonomy.task.out_of_scope");
+        var inScopeTotal = _metrics.GetCounter("autonomy.task.in_scope_total");
+        var inScopeCompleted = _metrics.GetCounter("autonomy.task.in_scope_completed");
+        var inScopeFailed = _metrics.GetCounter("autonomy.task.in_scope_terminal_failure");
 
         var replayTotal = _metrics.GetCounter("autonomy.replay.total");
         var replaySuccess = _metrics.GetCounter("autonomy.replay.success");
@@ -131,6 +150,8 @@ internal sealed class CapabilityGapMetricsEventSink : IAgentEventSink
         _metrics.SetGauge("autonomy_task_completion_ratio", total == 0 ? 0 : (double)completed / total);
         _metrics.SetGauge("autonomy_terminal_failure_ratio", total == 0 ? 0 : (double)failed / total);
         _metrics.SetGauge("autonomy_out_of_scope_ratio", total == 0 ? 0 : (double)outOfScope / total);
+        _metrics.SetGauge("autonomy_in_scope_task_completion_ratio", inScopeTotal == 0 ? 0 : (double)inScopeCompleted / inScopeTotal);
+        _metrics.SetGauge("autonomy_in_scope_terminal_failure_ratio", inScopeTotal == 0 ? 0 : (double)inScopeFailed / inScopeTotal);
         _metrics.SetGauge("autonomy_replay_success_ratio", replayTotal == 0 ? 0 : (double)replaySuccess / replayTotal);
     }
 
