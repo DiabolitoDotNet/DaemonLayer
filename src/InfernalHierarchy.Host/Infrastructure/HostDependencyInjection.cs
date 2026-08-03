@@ -60,6 +60,7 @@ internal static class HostDependencyInjection
         builder.Services.AddSingleton<IPostConfigureOptions<BraveSearchOptions>, BraveSearchDockerSecretsPostConfigureOptions>();
         builder.Services.AddSingleton<IValidateOptions<MemoryOptions>, MemoryOptionsValidator>();
         builder.Services.AddSingleton<IValidateOptions<MemoryBackupOptions>, MemoryBackupOptionsValidator>();
+        builder.Services.AddSingleton<IValidateOptions<MemoryCompactionOptions>, MemoryCompactionOptionsValidator>();
         builder.Services.AddSingleton<IValidateOptions<HierarchyOptions>, HierarchyOptionsValidator>();
         builder.Services.AddSingleton<IValidateOptions<SearXNGOptions>, SearXngOptionsValidator>();
         builder.Services.AddSingleton<IValidateOptions<BraveSearchOptions>, BraveSearchOptionsValidator>();
@@ -177,6 +178,7 @@ internal static class HostDependencyInjection
         var voiceCopilotOptions = HostConfigurationBinding.Read<VoiceCopilotOptions>(builder.Configuration, "VoiceCopilot");
         var vectorMemoryOptions = HostConfigurationBinding.Read<VectorMemoryOptions>(builder.Configuration, "VectorMemoryOptions");
         var memoryPruningOptions = HostConfigurationBinding.Read<MemoryPruningOptions>(builder.Configuration, "MemoryPruningOptions");
+        var memoryCompactionOptions = HostConfigurationBinding.Read<MemoryCompactionOptions>(builder.Configuration, "MemoryCompactionOptions");
         var memoryLearningOptions = HostConfigurationBinding.Read<MemoryLearningOptions>(builder.Configuration, "MemoryLearningOptions");
 
         AddMessagingAndMemory(builder);
@@ -190,7 +192,7 @@ internal static class HostDependencyInjection
         }
 
         AddNotifications(builder);
-        AddAdvancedMemory(builder, vectorMemoryOptions, memoryPruningOptions, memoryLearningOptions);
+        AddAdvancedMemory(builder, vectorMemoryOptions, memoryPruningOptions, memoryCompactionOptions, memoryLearningOptions);
         AddCollaboration(builder);
         AddFederation(builder);
         AddTemplates(builder);
@@ -335,6 +337,7 @@ internal static class HostDependencyInjection
         WebApplicationBuilder builder,
         VectorMemoryOptions vectorMemoryOptions,
         MemoryPruningOptions memoryPruningOptions,
+        MemoryCompactionOptions memoryCompactionOptions,
         MemoryLearningOptions memoryLearningOptions)
     {
         builder.Services.AddSingleton<OnnxEmbeddingService>();
@@ -351,6 +354,11 @@ internal static class HostDependencyInjection
         if (memoryPruningOptions.Enabled)
         {
             builder.Services.AddHostedService<MemoryPruningService>();
+        }
+
+        if (memoryCompactionOptions.Enabled)
+        {
+            builder.Services.AddHostedService<MemoryCompactionService>();
         }
 
         if (memoryLearningOptions.Enabled)

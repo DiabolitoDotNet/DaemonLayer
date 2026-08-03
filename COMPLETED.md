@@ -2,7 +2,7 @@
 
 > **Last Updated:** August 3, 2026
 >
-> This file contains items/features that are **implemented / completed** and were moved out of `TODO.md` to keep the TODO list focused on remaining work.
+> This file contains items/features that are **implemented / completed** and serves as the canonical closure log.
 >
 > For deeper technical details, see:
 > - `IMPLEMENTATION_SUMMARY.md`
@@ -179,7 +179,7 @@
 
 ---
 
-## ✅ Completed Limitations / TODOs
+## ✅ Completed Limitations / Backlog Items
 - VectorMemoryService mock embeddings → **completed** (ONNX embedding service integrated)
 - Missing delete methods in `ISharedMemory` → **completed**
 - Dedicated Qdrant/vector-memory health check → **completed**
@@ -235,7 +235,7 @@
 
 ---
 
-## ✅ Test Coverage (Moved from TODO.md)
+## ✅ Test Coverage (Consolidated)
 
 ## ✅ Autonomy 100% Closure (Aug 2, 2026)
 
@@ -380,7 +380,7 @@
 
 ## ✅ Roadmap Sync (Aug 1, 2026)
 
-The roadmap in `TODO.md` was synchronized so completed work is now tracked here.
+The roadmap was synchronized so completed work is tracked here.
 
 ### P0-P2 Delivery Blocks Completed ✅
 - P0 correctness/safety: broadcast fan-out, queue/backpressure policy, non-local endpoint auth guard, runtime execution limits.
@@ -403,7 +403,7 @@ The roadmap in `TODO.md` was synchronized so completed work is now tracked here.
 - French TTS quality improvements with language-specific voice selection:
   - Added optional routing by language for `tts_speak` (`language` parameter + lightweight auto-detection for French text).
 
-## ✅ Remaining TODO Closure (Aug 2, 2026)
+## ✅ Remaining Closure Items (Aug 2, 2026)
 
 ### P0.3 Autonomous incident response baseline ✅
 - Added `AutonomousIncidentResponseService` to monitor critical degradation signals:

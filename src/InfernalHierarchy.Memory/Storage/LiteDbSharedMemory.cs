@@ -84,6 +84,31 @@ public sealed class LiteDbSharedMemory : ISharedMemory, IToolResultCacheStore, I
         return Task.FromResult(fullBackupPath);
     }
 
+    public Task<LiteDbRebuildResult> RebuildAsync(bool includeErrorReport = false, CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+
+        lock (_maintenanceLock)
+        {
+            _db.Checkpoint();
+
+            var beforeBytes = File.Exists(_dbPath)
+                ? new FileInfo(_dbPath).Length
+                : 0L;
+
+            _db.Rebuild(new LiteDB.Engine.RebuildOptions
+            {
+                IncludeErrorReport = includeErrorReport
+            });
+
+            var afterBytes = File.Exists(_dbPath)
+                ? new FileInfo(_dbPath).Length
+                : 0L;
+
+            return Task.FromResult(new LiteDbRebuildResult(beforeBytes, afterBytes));
+        }
+    }
+
     #region Custom Tools
 
     public Task UpsertAsync(CustomToolDefinition tool, CancellationToken ct = default)

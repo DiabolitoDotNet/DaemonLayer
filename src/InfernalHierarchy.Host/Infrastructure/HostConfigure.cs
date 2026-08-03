@@ -33,6 +33,7 @@ internal static class HostConfigure
     private static void ConfigureMemoryMaintenanceOptions(WebApplicationBuilder builder)
     {
         builder.Services.Configure<MemoryPruningOptions>(builder.Configuration.GetSection("MemoryPruningOptions"));
+        builder.Services.Configure<MemoryCompactionOptions>(builder.Configuration.GetSection("MemoryCompactionOptions"));
         builder.Services.Configure<MemoryLearningOptions>(builder.Configuration.GetSection("MemoryLearningOptions"));
     }
 

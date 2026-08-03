@@ -50,7 +50,7 @@ Your job is to make the system understandable, navigable, and maintainable witho
   - Common failure modes and where to look (logs/traces/metrics)
 
 ### 5) Backlog hygiene
-- Any future docs work (docs hardening, missing ADRs, runbooks) must be tracked in `TODO.md`.
+- Any future docs work (docs hardening, missing ADRs, runbooks) must be tracked in `NEXT_STEPS.md`, then moved to `COMPLETED.md` when delivered.
 
 ## Working Agreements (Binding Pacts)
 
@@ -82,7 +82,7 @@ Typical outputs include:
 - New ADR files under `Documentation/ADRs/`
 - Mermaid diagrams embedded in Markdown
 - Runbook documents
-- New `TODO.md` backlog items for future doc work
+- New `NEXT_STEPS.md` backlog items for future doc work
 
 ## Tools I Use
 

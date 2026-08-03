@@ -243,11 +243,19 @@ public class LiteDbHealthCheck : IHealthCheck
 {
     private readonly ISharedMemory _sharedMemory;
     private readonly MemoryOptions _options;
+    private readonly ResourceLimits _resourceLimits;
+    private readonly MetricsCollector _metrics;
 
-    public LiteDbHealthCheck(ISharedMemory sharedMemory, IOptions<MemoryOptions> options)
+    public LiteDbHealthCheck(
+        ISharedMemory sharedMemory,
+        IOptions<MemoryOptions> options,
+        ResourceLimits resourceLimits,
+        MetricsCollector metrics)
     {
         _sharedMemory = sharedMemory;
         _options = options.Value;
+        _resourceLimits = resourceLimits;
+        _metrics = metrics;
     }
 
     public async Task<HealthCheckResult> CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken = default)
@@ -260,15 +268,45 @@ public class LiteDbHealthCheck : IHealthCheck
             var dbPath = _options.DatabasePath;
             var fileInfo = new FileInfo(dbPath);
             var exists = fileInfo.Exists;
+            var sizeBytes = exists ? fileInfo.Length : 0L;
             var sizeKb = exists ? fileInfo.Length / 1024 : 0;
+            var maxBytes = Math.Max(1L, _resourceLimits.MaxDatabaseSizeBytes);
+            var usageRatio = exists ? (double)sizeBytes / maxBytes : 0d;
+            var sizeStatus = !exists
+                ? "missing"
+                : usageRatio >= 1d
+                    ? "critical"
+                    : usageRatio >= 0.85d
+                        ? "warning"
+                        : "normal";
+
+            _metrics.SetGauge("memory.database.size.bytes", sizeBytes);
 
             var data = new Dictionary<string, object>
             {
                 ["database_path"] = dbPath,
                 ["database_exists"] = exists,
+                ["database_size_bytes"] = sizeBytes,
                 ["database_size_kb"] = sizeKb,
+                ["max_database_size_bytes"] = maxBytes,
+                ["database_usage_ratio"] = usageRatio,
+                ["database_size_status"] = sizeStatus,
                 ["status"] = "operational"
             };
+
+            if (exists && usageRatio >= 1d)
+            {
+                return HealthCheckResult.Unhealthy(
+                    "LiteDB size exceeded configured limit",
+                    data: data);
+            }
+
+            if (exists && usageRatio >= 0.85d)
+            {
+                return HealthCheckResult.Degraded(
+                    "LiteDB size approaching configured limit",
+                    data: data);
+            }
 
             return HealthCheckResult.Healthy("LiteDB is accessible", data);
         }

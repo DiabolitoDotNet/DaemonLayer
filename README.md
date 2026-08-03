@@ -1,6 +1,4 @@
 # 🔥 InfernalHierarchy
-cd src/InfernalHierarchy.Host
-dotnet user-secrets list
 
 **Système d'agents autonomes hiérarchisés inspiré de l'Ars Goetia**
 
@@ -10,7 +8,7 @@ Un système distribué d'agents LLM locaux fonctionnant avec Ollama, organisés 
 
 - ✅ **Architecture hiérarchique** : Supreme → Prince → Duke → Worker
 - ✅ **ReAct Loop** : Pattern Thought → Action → Observation pour chaque agent
-- ✅ **Mémoire partagée** : LiteDB embedded avec Decisions, Facts, Tasks
+- ✅ **Mémoire hybride** : LiteDB (état agent) + Qdrant (recherche vectorielle)
 - ✅ **Communication** : Channel-based MessageBus (System.Threading.Channels)
 - ✅ **LLM local** : Ollama via Azure.AI.OpenAI SDK compatible
 - ✅ **Web Search** : SearXNG local ou Brave API
@@ -48,7 +46,7 @@ InfernalHierarchy/
 │   ├── InfernalHierarchy.Core/          # Entités, interfaces, abstractions
 │   ├── InfernalHierarchy.Agents/        # BaseAgent + implémentations ReAct
 │   ├── InfernalHierarchy.Tools/         # Outils (web search, etc.)
-│   ├── InfernalHierarchy.Memory/        # Wrapper LiteDB
+│   ├── InfernalHierarchy.Memory/        # Mémoire partagée + vector store bridge
 │   ├── InfernalHierarchy.Messaging/     # MessageBus (Channels)
 │   ├── InfernalHierarchy.Personas/      # Chargement des âmes (JSON)
 │   └── InfernalHierarchy.Telegram/      # Service Telegram Bot
@@ -90,9 +88,9 @@ InfernalHierarchy/
 
 ### Installation
 
-1. **Cloner et restaurer les dépendances**
+1. **Cloner et restaurer les dependances**
    ```bash
-   cd InfernalHierarchy
+  cd DaemonLayer
    dotnet restore
    ```
 
@@ -483,11 +481,11 @@ Les composants principaux sont déjà implémentés et validés par les tests:
 - `InfernalHierarchy.Telegram` : interface Telegram
 - `InfernalHierarchy.Host` : composition root, observabilité, endpoints HTTP/UI/voice
 
-Pour le backlog réel et les écarts encore ouverts:
+Références de pilotage et d'exploitation:
 
-- Voir [TODO.md](TODO.md)
-- Voir [NEXT_STEPS.md](NEXT_STEPS.md)
-- Voir [Documentation/README.md](Documentation/README.md)
+- Voir [COMPLETED.md](COMPLETED.md) pour l'historique de livraison
+- Voir [NEXT_STEPS.md](NEXT_STEPS.md) pour le runbook d'activation avancée
+- Voir [Documentation/README.md](Documentation/README.md) pour l'index documentaire technique
 
 ### Build et Tests
 
@@ -527,12 +525,39 @@ dotnet tool run reportgenerator -reports:"tests/**/coverage.cobertura.xml" -targ
 - [Ollama Documentation](https://github.com/ollama/ollama)
 - [Telegram Bot API](https://core.telegram.org/bots/api)
 - [LiteDB Documentation](https://www.litedb.org/)
+- [Qdrant Documentation](https://qdrant.tech/documentation/)
 - [SearXNG](https://docs.searxng.org/)
 - [Ars Goetia Reference](https://en.wikipedia.org/wiki/Ars_Goetia)
 
 ## 📄 Licence
 
 Ce projet est un POC éducatif. Utilisez à vos propres risques.
+
+## TLDR - Checklist Prerequis
+
+### Materiel
+
+- [ ] CPU x64 recent (8 threads recommandes minimum)
+- [ ] RAM 16 Go minimum (32 Go recommandes pour voice + ONNX + parallelisme)
+- [ ] SSD avec 20+ Go libres (images Docker, logs, modeles)
+
+### Software
+
+- [ ] Windows + Docker Desktop fonctionnel (`docker info` OK)
+- [ ] .NET 10 SDK installe (`dotnet --version`)
+- [ ] Ollama installe en local et actif (`curl.exe -s http://localhost:11434/api/tags`)
+- [ ] Services Docker actifs: `infernal-hierarchy`, `searxng`, `qdrant`
+- [ ] (Optionnel) Overrides selon besoin: `docker-compose.voice.yml`, `docker-compose.onnx.yml`, `docker-compose.automation.yml`
+
+### Config
+
+- [ ] Endpoint Ollama correct:
+  - Host Windows: `http://localhost:11434/v1`
+  - Depuis conteneur: `http://host.docker.internal:11434/v1`
+- [ ] Secrets Docker presents sous `secrets/` (Telegram, Email, GitHub, Brave)
+- [ ] `Memory__DatabasePath` pointe vers un chemin persistant
+- [ ] `VectorMemoryOptions__QdrantUrl` pointe vers `http://qdrant:6333` (Docker) ou `http://localhost:6333` (host)
+- [ ] Au moins un provider de web search actif (`SearXNG` ou `BraveSearch`)
 
 ---
 

@@ -19,6 +19,26 @@ services:
       - SearXNG__Enabled=true
 
       - Memory__DatabasePath=/app/data/infernal.db
+      - MemoryBackup__Enabled=true
+      - MemoryBackup__BackupOnStartup=true
+      - MemoryBackup__IntervalHours=12
+      - MemoryBackup__DirectoryPath=/app/data/backups
+      - MemoryBackup__MaxBackupFiles=14
+      - MemoryBackup__MaxBackupAgeDays=14
+
+      - MemoryPruningOptions__Enabled=true
+      - MemoryPruningOptions__DryRun=false
+      - MemoryPruningOptions__PruningIntervalHours=6
+      - MemoryPruningOptions__MaxDeletesPerRun=1000
+      - MemoryPruningOptions__RetentionDays=21
+      - MemoryPruningOptions__MinConfidenceThreshold=0.25
+      - MemoryPruningOptions__EnableArchival=false
+
+      - MemoryCompactionOptions__Enabled=true
+      - MemoryCompactionOptions__RunOnStartup=false
+      - MemoryCompactionOptions__IntervalHours=24
+      - MemoryCompactionOptions__MinDatabaseSizeBytes=134217728
+      - MemoryCompactionOptions__IncludeErrorReport=false
       - Http__Enabled=true
       - Http__Urls=http://0.0.0.0:5080
       - Ui__LocalOnly=false

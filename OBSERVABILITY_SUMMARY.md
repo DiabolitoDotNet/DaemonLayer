@@ -221,4 +221,4 @@ See [OBSERVABILITY.md](OBSERVABILITY.md) for detailed usage guide.
 
 ## ✅ Status: COMPLETE
 
-All Observability & Monitoring features from TODO.md are now fully implemented and tested.
+All Observability & Monitoring roadmap features are fully implemented and tested.

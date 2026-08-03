@@ -77,6 +77,27 @@ public sealed class LiteDbSharedMemoryTests : IDisposable
     }
 
     [Fact]
+    public async Task RebuildAsync_ShouldReturnDatabaseSizeSnapshot()
+    {
+        // Arrange
+        await _memory.AddDecisionAsync(new Decision
+        {
+            CreatedBy = "lucifer",
+            Context = "rebuild",
+            Action = "compact",
+            Reasoning = "verify"
+        });
+
+        // Act
+        var result = await _memory.RebuildAsync();
+
+        // Assert
+        result.BeforeBytes.Should().BeGreaterThan(0);
+        result.AfterBytes.Should().BeGreaterThan(0);
+        File.Exists(_testDbPath).Should().BeTrue();
+    }
+
+    [Fact]
     public async Task SearchDecisionsAsync_ShouldSearchAcrossContextActionReasoning()
     {
         // Arrange

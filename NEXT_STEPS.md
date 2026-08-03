@@ -11,7 +11,7 @@
 ### Current focus after closure
 
 - Keep perf gate and regression gate green in CI.
-- Treat this document as operational bring-up guidance; roadmap closure/progress lives in `TODO.md` and `COMPLETED.md`.
+- Treat this document as operational bring-up guidance; roadmap closure/progress is tracked in `COMPLETED.md`.
 
 **Last Updated**: August 3, 2026  
 **Status**: Solution builds in strict Release; advanced features are integrated and ready to run (some require local dependencies)
@@ -451,7 +451,7 @@ If you want fewer IDE warnings while iterating, prefer suppressing specific rule
 ## 📚 Additional Documentation
 
 - **ADVANCED_FEATURES.md** - Comprehensive guide to all new features
-- **TODO.md** - Complete project status and roadmap
+- **COMPLETED.md** - Complete project delivery log and closure state
 - **README.md** - Project overview and architecture
 - **docker-compose.yml** - Service configuration (InfernalHierarchy, Qdrant, SearXNG)
 

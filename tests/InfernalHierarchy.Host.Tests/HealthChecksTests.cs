@@ -414,6 +414,8 @@ public class LiteDbHealthCheckTests
 {
     private readonly Mock<ISharedMemory> _mockSharedMemory;
     private readonly MemoryOptions _options;
+    private readonly ResourceLimits _resourceLimits;
+    private readonly MetricsCollector _metrics;
 
     public LiteDbHealthCheckTests()
     {
@@ -422,6 +424,11 @@ public class LiteDbHealthCheckTests
         {
             DatabasePath = "./test_memory.db"
         };
+        _resourceLimits = new ResourceLimits
+        {
+            MaxDatabaseSizeBytes = 1024 * 1024
+        };
+        _metrics = new MetricsCollector();
     }
 
     [Fact]
@@ -434,7 +441,9 @@ public class LiteDbHealthCheckTests
 
         var healthCheck = new LiteDbHealthCheck(
             _mockSharedMemory.Object,
-            Options.Create(_options));
+            Options.Create(_options),
+            _resourceLimits,
+            _metrics);
 
         // Act
         var result = await healthCheck.CheckHealthAsync(new HealthCheckContext());
@@ -444,6 +453,11 @@ public class LiteDbHealthCheckTests
         result.Description.Should().Contain("LiteDB is accessible");
         result.Data.Should().ContainKey("database_path");
         result.Data.Should().ContainKey("database_exists");
+        result.Data.Should().ContainKey("database_size_bytes");
+        result.Data.Should().ContainKey("max_database_size_bytes");
+        result.Data.Should().ContainKey("database_usage_ratio");
+
+        _metrics.GetGauge("memory.database.size.bytes").Should().BeGreaterThanOrEqualTo(0);
     }
 
     [Fact]
@@ -456,7 +470,9 @@ public class LiteDbHealthCheckTests
 
         var healthCheck = new LiteDbHealthCheck(
             _mockSharedMemory.Object,
-            Options.Create(_options));
+            Options.Create(_options),
+            _resourceLimits,
+            _metrics);
 
         // Act
         var result = await healthCheck.CheckHealthAsync(new HealthCheckContext());
@@ -465,6 +481,84 @@ public class LiteDbHealthCheckTests
         result.Status.Should().Be(HealthStatus.Unhealthy);
         result.Description.Should().Contain("health check failed");
         result.Exception.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task CheckHealthAsync_WhenDatabaseSizeApproachesLimit_ShouldReturnDegraded()
+    {
+        // Arrange
+        var tempFile = Path.GetTempFileName();
+        try
+        {
+            var bytes = new byte[(int)(_resourceLimits.MaxDatabaseSizeBytes * 0.9)];
+            await System.IO.File.WriteAllBytesAsync(tempFile, bytes);
+
+            _mockSharedMemory
+                .Setup(x => x.GetRecentDecisionsAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new List<InfernalHierarchy.Core.Entities.Decision>());
+
+            var options = new MemoryOptions { DatabasePath = tempFile };
+
+            var healthCheck = new LiteDbHealthCheck(
+                _mockSharedMemory.Object,
+                Options.Create(options),
+                _resourceLimits,
+                _metrics);
+
+            // Act
+            var result = await healthCheck.CheckHealthAsync(new HealthCheckContext());
+
+            // Assert
+            result.Status.Should().Be(HealthStatus.Degraded);
+            result.Description.Should().Contain("approaching configured limit");
+            result.Data["database_size_status"].Should().Be("warning");
+        }
+        finally
+        {
+            if (System.IO.File.Exists(tempFile))
+            {
+                System.IO.File.Delete(tempFile);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task CheckHealthAsync_WhenDatabaseSizeExceedsLimit_ShouldReturnUnhealthy()
+    {
+        // Arrange
+        var tempFile = Path.GetTempFileName();
+        try
+        {
+            var bytes = new byte[(int)(_resourceLimits.MaxDatabaseSizeBytes + 1024)];
+            await System.IO.File.WriteAllBytesAsync(tempFile, bytes);
+
+            _mockSharedMemory
+                .Setup(x => x.GetRecentDecisionsAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new List<InfernalHierarchy.Core.Entities.Decision>());
+
+            var options = new MemoryOptions { DatabasePath = tempFile };
+
+            var healthCheck = new LiteDbHealthCheck(
+                _mockSharedMemory.Object,
+                Options.Create(options),
+                _resourceLimits,
+                _metrics);
+
+            // Act
+            var result = await healthCheck.CheckHealthAsync(new HealthCheckContext());
+
+            // Assert
+            result.Status.Should().Be(HealthStatus.Unhealthy);
+            result.Description.Should().Contain("exceeded configured limit");
+            result.Data["database_size_status"].Should().Be("critical");
+        }
+        finally
+        {
+            if (System.IO.File.Exists(tempFile))
+            {
+                System.IO.File.Delete(tempFile);
+            }
+        }
     }
 }
 

@@ -39,6 +39,9 @@ internal static class HostAddOptions
         builder.Services.AddOptions<MemoryBackupOptions>()
             .Bind(builder.Configuration.GetSection("MemoryBackup"))
             .ValidateOnStart();
+        builder.Services.AddOptions<MemoryCompactionOptions>()
+            .Bind(builder.Configuration.GetSection("MemoryCompactionOptions"))
+            .ValidateOnStart();
         builder.Services.AddOptions<HierarchyOptions>()
             .Bind(builder.Configuration.GetSection("Hierarchy"))
             .ValidateOnStart();

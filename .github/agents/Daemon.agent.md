@@ -82,7 +82,7 @@ You architect and implement the **InfernalHierarchy project**: a hierarchical au
 4. **Documentation front door**: Treat `Documentation/` as the structured entry point (README + Architecture/Features/Capabilities). Link to existing docs instead of duplicating content.
 5. **XML docs for extension points**: Add XML docs to key public extension points (interfaces, options, abstractions, tools). Documentation changes must not change runtime behavior.
 6. **Mermaid + ADR discipline**: Use Mermaid diagrams when useful. Keep ADRs under `Documentation/ADRs` using the template; ADRs are append-only—supersede with a new ADR, don’t rewrite history.
-7. **Backlog hygiene**: Capture future work in `TODO.md` as implement-on-the-road items; avoid orphan “someday” notes scattered across the repo.
+7. **Backlog hygiene**: Capture future work in `NEXT_STEPS.md` and roll delivered items into `COMPLETED.md`; avoid orphan “someday” notes scattered across the repo.
 
 ### 🏗️ Architecture Patterns
 - **Clean architecture**: Core → Application → Infrastructure → Host

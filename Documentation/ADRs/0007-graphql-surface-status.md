@@ -5,7 +5,7 @@
 
 ## Context
 
-The repository contains a GraphQL project source tree, but the current host composition root and solution workflow focus on HTTP, WebSocket, Telegram, and tool-based surfaces. The active TODO requires deciding GraphQL status and aligning supported surface documentation.
+The repository contains a GraphQL project source tree, but the current host composition root and solution workflow focus on HTTP, WebSocket, Telegram, and tool-based surfaces. A status decision was required to align supported runtime-surface documentation.
 
 ## Decision
 
