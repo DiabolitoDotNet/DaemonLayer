@@ -13,7 +13,7 @@ internal static class AutonomyOutcomeContractEvaluator
 
     public static Dictionary<string, object> BuildTimeoutOutcomePayload()
     {
-        return new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase)
+        return new Dictionary<string, object>(capacity: 8, comparer: StringComparer.OrdinalIgnoreCase)
         {
             ["autonomy_outcome_status"] = "timeout",
             ["autonomy_outcome_reason_code"] = "playground_timeout",
@@ -28,7 +28,15 @@ internal static class AutonomyOutcomeContractEvaluator
 
     public static Dictionary<string, object> EnrichAutonomyOutcomePayload(string content, Dictionary<string, object>? payload)
     {
-        var enriched = new Dictionary<string, object>(payload ?? new Dictionary<string, object>(), StringComparer.OrdinalIgnoreCase);
+        var seedCapacity = (payload?.Count ?? 0) + 10;
+        var enriched = new Dictionary<string, object>(seedCapacity, StringComparer.OrdinalIgnoreCase);
+        if (payload is not null)
+        {
+            foreach (var entry in payload)
+            {
+                enriched[entry.Key] = entry.Value;
+            }
+        }
 
         var isTimeout = content.StartsWith("Timeout:", StringComparison.OrdinalIgnoreCase);
         var capabilityGapState = TryGetString(enriched, "capability_gap_state");

@@ -40,6 +40,14 @@
     "maxLatencyPerOpMs": 5.0,
     "maxAllocatedBytesPerOp": 100000
   },
+  "autonomyChatRoundTripPath": {
+    "maxLatencyPerOpMs": 15.0,
+    "maxAllocatedBytesPerOp": 120000
+  },
+  "autonomyChatRoundTripDegradedPath": {
+    "maxLatencyPerOpMs": 15.0,
+    "maxAllocatedBytesPerOp": 120000
+  },
   "readinessScale": {
     "maxLatencyPerOpMs": 2.5,
     "maxAllocatedBytesPerOp": 35000
@@ -69,6 +77,8 @@
       "autonomySloIntegration",
       "autonomyInScopeCompliance",
       "autonomyDependencyDegradedModes",
+      "autonomyChatRoundTripPath",
+      "autonomyChatRoundTripDegradedPath",
       "autonomySoakStability",
       "autonomyCertificationTailLatency"
     ]

@@ -36,8 +36,22 @@ jobs:
       - name: Analyzer Ratchet Build
         run: dotnet build InfernalHierarchy.sln -c Release --no-restore -p:RunAnalyzersDuringBuild=true -p:EnforceCriticalWarningsAsErrors=true -p:EnforceNonCriticalWarningsAsErrors=true
 
+      - name: Analyzer Ratchet Build Phase 2 (Advisory)
+        continue-on-error: true
+        run: dotnet build InfernalHierarchy.sln -c Release --no-restore -p:RunAnalyzersDuringBuild=true -p:EnforceCriticalWarningsAsErrors=true -p:EnforceNonCriticalWarningsAsErrors=true -p:EnforceNonCriticalWarningsAsErrorsPhase2=true
+
       - name: Performance Gate
         run: dotnet run --project tools/InfernalHierarchy.PerfGate/InfernalHierarchy.PerfGate.csproj -c Release -- --evidence-out artifacts/perf/perf-evidence.json --compare-evidence tools/InfernalHierarchy.PerfGate/perf-certified-reference.json
+
+      - name: Validate Perf Evidence Contract
+        run: |
+          test -f artifacts/perf/perf-evidence.json
+          grep -q '"passed": true' artifacts/perf/perf-evidence.json
+          grep -q '"name": "autonomySloIntegration"' artifacts/perf/perf-evidence.json
+          grep -q '"name": "autonomyInScopeCompliance"' artifacts/perf/perf-evidence.json
+          grep -q '"name": "autonomyChatRoundTripPath"' artifacts/perf/perf-evidence.json
+          grep -q '"name": "autonomyChatRoundTripDegradedPath"' artifacts/perf/perf-evidence.json
+          grep -q '"name": "autonomyCertificationTailLatency"' artifacts/perf/perf-evidence.json
 
       - name: Upload Perf Evidence Artifact
         if: always()
@@ -54,6 +68,9 @@ jobs:
 
       - name: Fast Tests Tools
         run: dotnet test tests/InfernalHierarchy.Tools.Tests/InfernalHierarchy.Tools.Tests.csproj -c Release --no-build --logger "trx;LogFileName=tools-fast.trx"
+
+      - name: Suppression Inventory Gate
+        run: dotnet test tests/InfernalHierarchy.Host.Tests/InfernalHierarchy.Host.Tests.csproj -c Release --no-build --filter "FullyQualifiedName~AnalyzerSuppressionsInventoryTests" --logger "trx;LogFileName=suppressions-inventory-gate.trx"
 
       - name: Upload Fast Lane Artifacts On Failure
         if: failure()

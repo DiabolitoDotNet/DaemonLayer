@@ -165,6 +165,58 @@ public sealed class ChatApiE2ETests
         response.StatusCode.Should().Be(System.Net.HttpStatusCode.Unauthorized);
     }
 
+    [Fact]
+    public async Task ApiChat_Success_ShouldIncludeStructuredAutonomyOutcomeContract()
+    {
+        using var factory = new InfernalHierarchyTestWebAppFactory();
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add(OperationalAuthGuard.HeaderName, "test-operator-key");
+
+        var llm = factory.Services.GetRequiredService<ScriptedLlmClient>();
+        llm.Enqueue("Lucifer",
+            "{\"thought\":\"Respond directly\",\"action\":\"FINAL_ANSWER\",\"actionInput\":\"Hello from contract test\"}");
+
+        await WaitForAgentAsync(factory.Services, "lucifer");
+
+        var response = await client.PostAsJsonAsync("/api/chat", new ChatRequest(
+            Message: "Return a quick answer",
+            ToAgentId: "lucifer",
+            TimeoutMs: 10_000));
+
+        response.EnsureSuccessStatusCode();
+
+        var body = await response.Content.ReadFromJsonAsync<ChatResponse>();
+        body.Should().NotBeNull();
+        body!.payload.Should().ContainKey("autonomy_outcome_status");
+        body.payload.Should().ContainKey("autonomy_outcome_reason_code");
+        body.payload.Should().ContainKey("autonomy_outcome_autonomous_success");
+        body.payload.Should().ContainKey("autonomy_outcome_needs_supervisor_intervention");
+        body.payload.Should().ContainKey("autonomy_outcome_next_action");
+    }
+
+    [Fact]
+    public async Task ApiChat_Timeout_ShouldReturnStructuredAutonomyOutcomeContract()
+    {
+        using var factory = new InfernalHierarchyTestWebAppFactory();
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add(OperationalAuthGuard.HeaderName, "test-operator-key");
+
+        var response = await client.PostAsJsonAsync("/api/chat", new ChatRequest(
+            Message: "This should timeout because the target agent is not active",
+            ToAgentId: "ghost-agent",
+            TimeoutMs: 200));
+
+        response.StatusCode.Should().Be(System.Net.HttpStatusCode.GatewayTimeout);
+
+        var body = await response.Content.ReadFromJsonAsync<ChatResponse>();
+        body.Should().NotBeNull();
+        body!.content.Should().Contain("Timeout:");
+        body.payload["autonomy_outcome_status"].ToString().Should().Be("timeout");
+        body.payload["autonomy_outcome_reason_code"].ToString().Should().Be("playground_timeout");
+        body.payload["autonomy_outcome_next_action"].ToString().Should().Be("none");
+        bool.Parse(body.payload["autonomy_outcome_needs_supervisor_intervention"].ToString()!).Should().BeFalse();
+    }
+
     private static async Task WaitForAgentAsync(IServiceProvider services, string agentId)
     {
         var registry = services.GetRequiredService<IAgentRegistry>();

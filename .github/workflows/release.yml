@@ -10,6 +10,10 @@ on:
         description: Optional image tag override
         required: false
         default: ""
+      simulate_autonomy_gate_failure:
+        description: Force an intentional autonomy gate failure (dry-run validation)
+        required: false
+        default: "false"
 
 permissions:
   contents: read
@@ -27,6 +31,17 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore
+        run: dotnet restore InfernalHierarchy.sln
+
+      - name: Build
+        run: dotnet build InfernalHierarchy.sln -c Release --no-restore
 
       - name: Setup Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -58,6 +73,18 @@ jobs:
             -e WebSockets__LocalOnly=false \
             -e OperatorApi__ApiKey="${OPERATOR_API_KEY}" \
             -e OpenTelemetry__Exporters__Console__Enabled=false \
+            -e Email__Enabled=true \
+            -e Email__Host=smtp.example.com \
+            -e Email__Port=25 \
+            -e Email__Username=sender@example.com \
+            -e Email__Password=secret \
+            -e Email__FromAddress=sender@example.com \
+            -e EmailInbox__Enabled=true \
+            -e EmailInbox__Host=imap.example.com \
+            -e EmailInbox__Port=993 \
+            -e EmailInbox__UseSsl=true \
+            -e EmailInbox__Username=reader@example.com \
+            -e EmailInbox__Password=secret \
             -e Telegram__BotToken=dummy \
             -e Telegram__AllowedUserIds=1 \
             -e Telegram__StartupNotificationChatId=1 \
@@ -97,6 +124,61 @@ jobs:
             exit 1
           fi
 
+          grep -q '"autonomy_outcome_status"' /tmp/chat.json
+          grep -q '"autonomy_outcome_reason_code"' /tmp/chat.json
+          grep -q '"autonomy_outcome_autonomous_success"' /tmp/chat.json
+          grep -q '"autonomy_outcome_needs_supervisor_intervention"' /tmp/chat.json
+          grep -q '"autonomy_outcome_next_action"' /tmp/chat.json
+
+      - name: Autonomy Certification Strict Gate
+        run: dotnet test tests/InfernalHierarchy.Host.Tests/InfernalHierarchy.Host.Tests.csproj -c Release --no-build --filter "FullyQualifiedName~AutonomyScorecardGateTests.EvaluateCertificationMode_ShouldPass_WhenRealAgentRunsMeetStrictContractAndCoverage" --logger "trx;LogFileName=release-autonomy-certification-strict-gate.trx"
+
+      - name: Simulate Autonomy Gate Failure (Dry-Run)
+        if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.simulate_autonomy_gate_failure == 'true' }}
+        run: |
+          echo "Dry-run simulation enabled: forcing autonomy gate failure to validate fail-closed behavior."
+          exit 1
+
+      - name: Autonomy Endpoints Smoke
+        run: |
+          readiness_code=$(curl -sS -o /tmp/autonomy-readiness.json -w "%{http_code}" \
+            http://localhost:5080/api/autonomy/readiness \
+            -H "X-Infernal-Operator-Key: ${OPERATOR_API_KEY}" || true)
+
+          manifest_code=$(curl -sS -o /tmp/autonomy-manifest.json -w "%{http_code}" \
+            http://localhost:5080/api/autonomy/certification-manifest \
+            -H "X-Infernal-Operator-Key: ${OPERATOR_API_KEY}" || true)
+
+          slo_code=$(curl -sS -o /tmp/autonomy-slo.json -w "%{http_code}" \
+            http://localhost:5080/api/autonomy/slo \
+            -H "X-Infernal-Operator-Key: ${OPERATOR_API_KEY}" || true)
+
+          echo "Readiness status: $readiness_code"
+          cat /tmp/autonomy-readiness.json || true
+          echo "Manifest status: $manifest_code"
+          cat /tmp/autonomy-manifest.json || true
+          echo "SLO status: $slo_code"
+          cat /tmp/autonomy-slo.json || true
+
+          test "$readiness_code" = "200"
+          test "$manifest_code" = "200"
+          test "$slo_code" = "200"
+
+          grep -q '"allCriticalReady"' /tmp/autonomy-readiness.json
+          grep -q '"requirements"' /tmp/autonomy-manifest.json
+          grep -q '"ratios"' /tmp/autonomy-slo.json
+
+      - name: Upload Autonomy Smoke Evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-autonomy-smoke-evidence
+          path: |
+            /tmp/chat.json
+            /tmp/autonomy-readiness.json
+            /tmp/autonomy-manifest.json
+            /tmp/autonomy-slo.json
+
       - name: Upload Smoke Artifacts On Failure
         if: failure()
         uses: actions/upload-artifact@v4
@@ -105,6 +187,9 @@ jobs:
           path: |
             /tmp/health.json
             /tmp/chat.json
+            /tmp/autonomy-readiness.json
+            /tmp/autonomy-manifest.json
+            /tmp/autonomy-slo.json
 
       - name: Print Container Logs
         if: always()

@@ -25,6 +25,20 @@
       }
     },
     {
+      "name": "autonomyChatRoundTripPath",
+      "result": {
+        "latencyPerOpMs": 0.013,
+        "allocatedBytesPerOp": 5496
+      }
+    },
+    {
+      "name": "autonomyChatRoundTripDegradedPath",
+      "result": {
+        "latencyPerOpMs": 0.011,
+        "allocatedBytesPerOp": 5666
+      }
+    },
+    {
       "name": "autonomySoakStability",
       "result": {
         "latencyPerOpMs": 0.004,

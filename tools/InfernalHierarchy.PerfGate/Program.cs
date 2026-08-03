@@ -8,8 +8,10 @@ using InfernalHierarchy.Agents.Registry;
 using InfernalHierarchy.Core.Entities;
 using InfernalHierarchy.Core.Eventing;
 using InfernalHierarchy.Core.Interfaces;
+using InfernalHierarchy.Host.Api;
 using InfernalHierarchy.Host.Security;
 using InfernalHierarchy.Messaging.Federation;
+using InfernalHierarchy.Messaging.Bus;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -60,6 +62,8 @@ var inboxQuery = await RunInboxQueryToolScenarioAsync().ConfigureAwait(false);
 var autonomySloIntegration = await RunAutonomySloIntegrationScenarioAsync().ConfigureAwait(false);
 var autonomyInScopeCompliance = await RunAutonomyInScopeComplianceScenarioAsync().ConfigureAwait(false);
 var autonomyDependencyDegradedModes = RunAutonomyDependencyDegradedModesScenario();
+var autonomyChatRoundTripPath = await RunAutonomyChatRoundTripPathScenarioAsync().ConfigureAwait(false);
+var autonomyChatRoundTripDegradedPath = await RunAutonomyChatRoundTripDegradedPathScenarioAsync().ConfigureAwait(false);
 var readinessScale = await RunReadinessScaleScenarioAsync().ConfigureAwait(false);
 var autonomyScorecardReport = RunAutonomyScorecardReportScenario();
 var autonomySoakStability = await RunAutonomySoakStabilityScenarioAsync().ConfigureAwait(false);
@@ -75,6 +79,8 @@ PrintResult("inboxQuery", inboxQuery, baseline.InboxQuery);
 PrintResult("autonomySloIntegration", autonomySloIntegration, baseline.AutonomySloIntegration);
 PrintResult("autonomyInScopeCompliance", autonomyInScopeCompliance, baseline.AutonomyInScopeCompliance);
 PrintResult("autonomyDependencyDegradedModes", autonomyDependencyDegradedModes, baseline.AutonomyDependencyDegradedModes);
+PrintResult("autonomyChatRoundTripPath", autonomyChatRoundTripPath, baseline.AutonomyChatRoundTripPath);
+PrintResult("autonomyChatRoundTripDegradedPath", autonomyChatRoundTripDegradedPath, baseline.AutonomyChatRoundTripDegradedPath);
 PrintResult("readinessScale", readinessScale, baseline.ReadinessScale);
 PrintResult("autonomyScorecardReport", autonomyScorecardReport, baseline.AutonomyScorecardReport);
 PrintResult("autonomySoakStability", autonomySoakStability, baseline.AutonomySoakStability);
@@ -91,6 +97,8 @@ Evaluate("inboxQuery", inboxQuery, baseline.InboxQuery, failures);
 Evaluate("autonomySloIntegration", autonomySloIntegration, baseline.AutonomySloIntegration, failures);
 Evaluate("autonomyInScopeCompliance", autonomyInScopeCompliance, baseline.AutonomyInScopeCompliance, failures);
 Evaluate("autonomyDependencyDegradedModes", autonomyDependencyDegradedModes, baseline.AutonomyDependencyDegradedModes, failures);
+Evaluate("autonomyChatRoundTripPath", autonomyChatRoundTripPath, baseline.AutonomyChatRoundTripPath, failures);
+Evaluate("autonomyChatRoundTripDegradedPath", autonomyChatRoundTripDegradedPath, baseline.AutonomyChatRoundTripDegradedPath, failures);
 Evaluate("readinessScale", readinessScale, baseline.ReadinessScale, failures);
 Evaluate("autonomyScorecardReport", autonomyScorecardReport, baseline.AutonomyScorecardReport, failures);
 Evaluate("autonomySoakStability", autonomySoakStability, baseline.AutonomySoakStability, failures);
@@ -108,6 +116,8 @@ var evaluations = new List<PerfEvaluation>
     new("autonomySloIntegration", autonomySloIntegration, baseline.AutonomySloIntegration),
     new("autonomyInScopeCompliance", autonomyInScopeCompliance, baseline.AutonomyInScopeCompliance),
     new("autonomyDependencyDegradedModes", autonomyDependencyDegradedModes, baseline.AutonomyDependencyDegradedModes),
+    new("autonomyChatRoundTripPath", autonomyChatRoundTripPath, baseline.AutonomyChatRoundTripPath),
+    new("autonomyChatRoundTripDegradedPath", autonomyChatRoundTripDegradedPath, baseline.AutonomyChatRoundTripDegradedPath),
     new("readinessScale", readinessScale, baseline.ReadinessScale),
     new("autonomyScorecardReport", autonomyScorecardReport, baseline.AutonomyScorecardReport),
     new("autonomySoakStability", autonomySoakStability, baseline.AutonomySoakStability),
@@ -1377,6 +1387,265 @@ static PerfResult RunAutonomyDependencyDegradedModesScenario()
     }
 }
 
+static async Task<PerfResult> RunAutonomyChatRoundTripPathScenarioAsync()
+{
+    using var bus = new ChannelMessageBus(NullLogger<ChannelMessageBus>.Instance);
+    using var workerCts = new CancellationTokenSource();
+
+    var worker = Task.Run(async () =>
+    {
+        try
+        {
+            await foreach (var incoming in bus.SubscribeAsync("lucifer", workerCts.Token).ConfigureAwait(false))
+            {
+                if (incoming.Type != MessageType.Task)
+                {
+                    continue;
+                }
+
+                var report = new AgentMessage
+                {
+                    Id = $"report-{Guid.NewGuid():N}",
+                    FromAgentId = "lucifer",
+                    ToAgentId = incoming.FromAgentId,
+                    Type = MessageType.Report,
+                    Content = "perf-real-path-ok",
+                    CorrelationId = incoming.CorrelationId,
+                    CausationId = incoming.Id,
+                    Payload = new Dictionary<string, object>
+                    {
+                        ["next_action"] = "none",
+                        ["needs_supervisor_intervention"] = false,
+                        ["terminal_reason_code"] = "success"
+                    }
+                };
+
+                await bus.PublishAsync(report, workerCts.Token).ConfigureAwait(false);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // expected on shutdown
+        }
+    });
+
+    const int warmup = 20;
+    const int iterations = 200;
+
+    for (var i = 0; i < warmup; i++)
+    {
+        _ = await ExecuteChatRoundTripAsync(bus, i, CancellationToken.None).ConfigureAwait(false);
+    }
+
+    GC.Collect();
+    GC.WaitForPendingFinalizers();
+    GC.Collect();
+
+    var beforeAlloc = GC.GetTotalAllocatedBytes(true);
+    var sw = Stopwatch.StartNew();
+
+    for (var i = 0; i < iterations; i++)
+    {
+        var payload = await ExecuteChatRoundTripAsync(bus, warmup + i, CancellationToken.None).ConfigureAwait(false);
+        if (!AutonomyOutcomeContractEvaluator.HasRequiredOutcomeContract(payload, out var missingKeys))
+        {
+            throw new InvalidOperationException($"Autonomy chat round-trip scenario missing required contract keys: {string.Join(",", missingKeys)}");
+        }
+    }
+
+    sw.Stop();
+    var afterAlloc = GC.GetTotalAllocatedBytes(true);
+
+    workerCts.Cancel();
+    bus.CleanupAgent("lucifer");
+    await worker.ConfigureAwait(false);
+
+    return new PerfResult(
+        LatencyPerOpMs: sw.Elapsed.TotalMilliseconds / iterations,
+        AllocatedBytesPerOp: (afterAlloc - beforeAlloc) / (double)iterations);
+
+    static async Task<Dictionary<string, object>> ExecuteChatRoundTripAsync(ChannelMessageBus bus, int op, CancellationToken ct)
+    {
+        var replyToId = $"perf-http-{op}-{Guid.NewGuid():N}";
+        var correlationId = $"corr-{op}-{Guid.NewGuid():N}";
+
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        timeoutCts.CancelAfter(TimeSpan.FromSeconds(2));
+
+        var enumerator = bus.SubscribeAsync(replyToId, timeoutCts.Token).GetAsyncEnumerator(timeoutCts.Token);
+        try
+        {
+            await bus.PublishAsync(new AgentMessage
+            {
+                Id = replyToId,
+                FromAgentId = replyToId,
+                ToAgentId = "lucifer",
+                Type = MessageType.Task,
+                Content = "perf task",
+                CorrelationId = correlationId,
+                Payload = new Dictionary<string, object>
+                {
+                    ["transport"] = "http",
+                    ["execution_profile"] = "Research"
+                }
+            }, timeoutCts.Token).ConfigureAwait(false);
+
+            while (await enumerator.MoveNextAsync().ConfigureAwait(false))
+            {
+                var response = enumerator.Current;
+                if (response.Type != MessageType.Report)
+                {
+                    continue;
+                }
+
+                return AutonomyOutcomeContractEvaluator.EnrichAutonomyOutcomePayload(response.Content, response.Payload);
+            }
+
+            throw new InvalidOperationException("Autonomy chat round-trip scenario did not receive a report before timeout.");
+        }
+        finally
+        {
+            await enumerator.DisposeAsync().ConfigureAwait(false);
+            bus.CleanupAgent(replyToId);
+        }
+    }
+}
+
+static async Task<PerfResult> RunAutonomyChatRoundTripDegradedPathScenarioAsync()
+{
+    using var bus = new ChannelMessageBus(NullLogger<ChannelMessageBus>.Instance);
+    using var workerCts = new CancellationTokenSource();
+
+    var worker = Task.Run(async () =>
+    {
+        try
+        {
+            await foreach (var incoming in bus.SubscribeAsync("lucifer", workerCts.Token).ConfigureAwait(false))
+            {
+                if (incoming.Type != MessageType.Task)
+                {
+                    continue;
+                }
+
+                var report = new AgentMessage
+                {
+                    Id = $"report-degraded-{Guid.NewGuid():N}",
+                    FromAgentId = "lucifer",
+                    ToAgentId = incoming.FromAgentId,
+                    Type = MessageType.Report,
+                    Content = "dependency degraded bounded refusal",
+                    CorrelationId = incoming.CorrelationId,
+                    CausationId = incoming.Id,
+                    Payload = new Dictionary<string, object>
+                    {
+                        ["capability_gap_state"] = "capability_gap_unresolved_terminal",
+                        ["terminal_reason_code"] = "integration_endpoint_unavailable",
+                        ["next_action"] = "none",
+                        ["needs_supervisor_intervention"] = false
+                    }
+                };
+
+                await bus.PublishAsync(report, workerCts.Token).ConfigureAwait(false);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // expected on shutdown
+        }
+    });
+
+    const int warmup = 20;
+    const int iterations = 200;
+
+    for (var i = 0; i < warmup; i++)
+    {
+        _ = await ExecuteDegradedChatRoundTripAsync(bus, i, CancellationToken.None).ConfigureAwait(false);
+    }
+
+    GC.Collect();
+    GC.WaitForPendingFinalizers();
+    GC.Collect();
+
+    var beforeAlloc = GC.GetTotalAllocatedBytes(true);
+    var sw = Stopwatch.StartNew();
+
+    for (var i = 0; i < iterations; i++)
+    {
+        var payload = await ExecuteDegradedChatRoundTripAsync(bus, warmup + i, CancellationToken.None).ConfigureAwait(false);
+        if (!AutonomyOutcomeContractEvaluator.HasRequiredOutcomeContract(payload, out var missingKeys))
+        {
+            throw new InvalidOperationException($"Autonomy degraded chat round-trip scenario missing required contract keys: {string.Join(",", missingKeys)}");
+        }
+
+        if (!string.Equals(payload["autonomy_outcome_next_action"]?.ToString(), "none", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("Autonomy degraded chat round-trip scenario must keep next_action=none.");
+        }
+
+        if (!string.Equals(payload["autonomy_scope_classification"]?.ToString(), "in_scope_autonomous", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("Autonomy degraded chat round-trip scenario must remain in-scope.");
+        }
+    }
+
+    sw.Stop();
+    var afterAlloc = GC.GetTotalAllocatedBytes(true);
+
+    workerCts.Cancel();
+    bus.CleanupAgent("lucifer");
+    await worker.ConfigureAwait(false);
+
+    return new PerfResult(
+        LatencyPerOpMs: sw.Elapsed.TotalMilliseconds / iterations,
+        AllocatedBytesPerOp: (afterAlloc - beforeAlloc) / (double)iterations);
+
+    static async Task<Dictionary<string, object>> ExecuteDegradedChatRoundTripAsync(ChannelMessageBus bus, int op, CancellationToken ct)
+    {
+        var replyToId = $"perf-http-degraded-{op}-{Guid.NewGuid():N}";
+        var correlationId = $"corr-degraded-{op}-{Guid.NewGuid():N}";
+
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        timeoutCts.CancelAfter(TimeSpan.FromSeconds(2));
+
+        var enumerator = bus.SubscribeAsync(replyToId, timeoutCts.Token).GetAsyncEnumerator(timeoutCts.Token);
+        try
+        {
+            await bus.PublishAsync(new AgentMessage
+            {
+                Id = replyToId,
+                FromAgentId = replyToId,
+                ToAgentId = "lucifer",
+                Type = MessageType.Task,
+                Content = "perf degraded task",
+                CorrelationId = correlationId,
+                Payload = new Dictionary<string, object>
+                {
+                    ["transport"] = "http",
+                    ["execution_profile"] = "Research"
+                }
+            }, timeoutCts.Token).ConfigureAwait(false);
+
+            while (await enumerator.MoveNextAsync().ConfigureAwait(false))
+            {
+                var response = enumerator.Current;
+                if (response.Type != MessageType.Report)
+                {
+                    continue;
+                }
+
+                return AutonomyOutcomeContractEvaluator.EnrichAutonomyOutcomePayload(response.Content, response.Payload);
+            }
+
+            throw new InvalidOperationException("Autonomy degraded chat round-trip scenario did not receive a report before timeout.");
+        }
+        finally
+        {
+            await enumerator.DisposeAsync().ConfigureAwait(false);
+            bus.CleanupAgent(replyToId);
+        }
+    }
+}
+
 static void EvaluateTrendComparison(
     string? compareEvidencePath,
     PerfTrendComparison trend,
@@ -1630,6 +1899,8 @@ internal sealed class PerfBaseline
     public PerfBudget AutonomySloIntegration { get; set; } = new();
     public PerfBudget AutonomyInScopeCompliance { get; set; } = new();
     public PerfBudget AutonomyDependencyDegradedModes { get; set; } = new();
+    public PerfBudget AutonomyChatRoundTripPath { get; set; } = new();
+    public PerfBudget AutonomyChatRoundTripDegradedPath { get; set; } = new();
     public PerfBudget ReadinessScale { get; set; } = new();
     public PerfBudget AutonomyScorecardReport { get; set; } = new();
     public PerfBudget AutonomySoakStability { get; set; } = new();

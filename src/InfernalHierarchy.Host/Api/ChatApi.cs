@@ -91,23 +91,37 @@ internal static class ChatApi
                         fromAgentId: response.FromAgentId,
                         toAgentId: response.ToAgentId,
                         content: response.Content,
-                        payload: response.Payload,
+                        payload: AutonomyOutcomeContractEvaluator.EnrichAutonomyOutcomePayload(response.Content, response.Payload),
                         correlationId: response.CorrelationId ?? correlationId,
                         causationId: response.CausationId,
                         receivedUtc: DateTime.UtcNow,
                         durationMs: (DateTime.UtcNow - startedUtc).TotalMilliseconds));
                 }
 
-                return Results.Problem(
-                    title: "Timeout",
-                    detail: $"No report received within {timeoutMs}ms",
+                return Results.Json(
+                    new ChatResponse(
+                        fromAgentId: "system",
+                        toAgentId: toAgentId,
+                        content: $"Timeout: no report received within {timeoutMs}ms",
+                        payload: AutonomyOutcomeContractEvaluator.BuildTimeoutOutcomePayload(),
+                        correlationId: correlationId,
+                        causationId: null,
+                        receivedUtc: DateTime.UtcNow,
+                        durationMs: (DateTime.UtcNow - startedUtc).TotalMilliseconds),
                     statusCode: StatusCodes.Status504GatewayTimeout);
             }
             catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested)
             {
-                return Results.Problem(
-                    title: "Timeout",
-                    detail: $"No report received within {timeoutMs}ms",
+                return Results.Json(
+                    new ChatResponse(
+                        fromAgentId: "system",
+                        toAgentId: toAgentId,
+                        content: $"Timeout: no report received within {timeoutMs}ms",
+                        payload: AutonomyOutcomeContractEvaluator.BuildTimeoutOutcomePayload(),
+                        correlationId: correlationId,
+                        causationId: null,
+                        receivedUtc: DateTime.UtcNow,
+                        durationMs: (DateTime.UtcNow - startedUtc).TotalMilliseconds),
                     statusCode: StatusCodes.Status504GatewayTimeout);
             }
             finally
