@@ -1,5 +1,10 @@
 # Test Coverage Summary
 
+## Update (Aug 2, 2026)
+
+- Latest regression validation baseline is **904/904 passing tests**.
+- Coverage percentages below are from the last full coverage collection run and remain the reference until the next explicit coverage capture.
+
 Coverage was collected and aggregated locally on **2026-02-05** using the built-in collector (`XPlat Code Coverage`) and ReportGenerator.
 
 ## Overall

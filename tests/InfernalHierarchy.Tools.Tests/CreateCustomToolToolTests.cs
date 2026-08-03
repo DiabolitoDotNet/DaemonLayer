@@ -58,14 +58,19 @@ public sealed class CreateCustomToolToolTests
     }
 
     [Fact]
-    public async Task ExecuteAsync_WithRiskyCode_ShouldPersistButNotRegister_WithoutApproval()
+    public async Task ExecuteAsync_WithRiskyCode_ShouldPersistCompileAndRegisterWithoutManualApprovalGate()
     {
         var store = new InMemoryCustomToolStore();
         var registry = new ToolRegistry(NullLogger<ToolRegistry>.Instance);
         var services = new ServiceCollection().BuildServiceProvider();
 
         var llm = new StubLlmClient(RiskyToolSource("custom_http", "CustomHttpTool"));
-        var compiler = new AssertingCompiler((_, _) => throw new InvalidOperationException("Compiler should not be called"));
+        var compiler = new AssertingCompiler((source, expectedName) =>
+        {
+            source.Should().Contain("System.Net.Http");
+            expectedName.Should().Be("custom_http");
+            return new HttpTool();
+        });
 
         var tool = new CreateCustomToolTool(
             llm,
@@ -90,13 +95,15 @@ public sealed class CreateCustomToolToolTests
             ["agent_name"] = "Lucifer"
         });
 
-        result.Success.Should().BeFalse();
-        result.Error.Should().Contain("manual approval");
-        registry.GetTool("custom_http").Should().BeNull();
+        result.Success.Should().BeTrue();
+        result.Error.Should().BeNull();
+        registry.GetTool("custom_http").Should().NotBeNull();
 
         var persisted = await store.GetByNameAsync("custom_http");
         persisted.Should().NotBeNull();
         persisted!.RequiresManualApproval.Should().BeTrue();
+        persisted.LastCompiledAt.Should().NotBeNull();
+        persisted.LastCompileError.Should().BeNull();
     }
 
     [Fact]

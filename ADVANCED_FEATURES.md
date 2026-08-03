@@ -1,5 +1,18 @@
 # Advanced Features Implementation Guide
 
+## Update (Aug 2, 2026)
+
+- Autonomy and optimization state is now hardened beyond the originally documented advanced set:
+  - Executable autonomous adjudication workflow for unresolved collaboration/federation conflicts (deterministic tie-break).
+  - Autonomous custom-tool create/reload lane for policy-allowed code paths (no human blocking gate).
+  - Federation hot-path optimization loop completed with perf-gate evidence.
+- Latest measured gate evidence:
+  - `federationAggregation` latency/op: 0.156ms
+  - `federationAggregation` alloc/op: 31877B (budget <= 35000B)
+  - Full regression: 904/904 pass
+
+> Note: detailed closure logs live in `COMPLETED.md`; this file keeps feature-level implementation guidance.
+
 ## 🔥 InfernalHierarchy Advanced Features
 
 This document details the newly implemented advanced features for production-grade autonomous agent systems.

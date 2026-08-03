@@ -2,6 +2,14 @@
 
 This folder is the "structured documentation set" for InfernalHierarchy / DaemonLayer.
 
+## Current status snapshot (Aug 2026)
+
+- Strict autonomy runtime blockers are closed.
+- Unresolved collaboration/federation paths execute autonomous adjudication workflows.
+- Custom tool create/reload paths run autonomously for policy-allowed sources (risk still auditable).
+- Latest validated performance gate: `federationAggregation` 0.156ms/op, 31877B/op (budget 35000B).
+- Full regression baseline: 904/904 passing tests.
+
 The repository root already contains detailed topic docs (security, observability, advanced features, etc.). This folder provides a cohesive, top-down view and points you to the right deeper document.
 
 ## Start here

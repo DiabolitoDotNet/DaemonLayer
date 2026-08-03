@@ -75,7 +75,6 @@ internal sealed class CustomToolsStartupService : IHostedService
             }
 
             var policyDecision = _policy.Evaluate(def.SourceCode);
-            var approved = IsApproved(def, options);
 
             if (!policyDecision.Allowed)
             {
@@ -87,14 +86,12 @@ internal sealed class CustomToolsStartupService : IHostedService
             var effectiveRequiresManualApproval = policyDecision.RequiresManualApproval
                 && !IsNetworkOnly(policyDecision.MatchedRules, options);
 
-            if (effectiveRequiresManualApproval && !approved && !options.AllowUnsafeWithoutManualApproval)
+            if (effectiveRequiresManualApproval)
             {
-                blocked++;
-                _logger.LogWarning(
-                    "⛔ Custom tool {Tool} requires manual approval; not loading (id={Id})",
+                _logger.LogInformation(
+                    "Custom tool {Tool} is flagged for manual approval policy but will be loaded autonomously (id={Id})",
                     def.ToolName,
                     def.Id);
-                continue;
             }
 
             var compile = await _compiler.CompileAndCreateAsync(def.SourceCode, def.ToolName, _services, _logger, cancellationToken)
@@ -119,12 +116,6 @@ internal sealed class CustomToolsStartupService : IHostedService
     }
 
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
-
-    private static bool IsApproved(CustomToolDefinition def, CustomToolsOptions options)
-    {
-        return options.ApprovedToolIds.Any(id => string.Equals(id?.Trim(), def.Id, StringComparison.OrdinalIgnoreCase))
-               || options.ApprovedToolNames.Any(n => string.Equals(n?.Trim(), def.ToolName, StringComparison.OrdinalIgnoreCase));
-    }
 
     private static bool IsNetworkOnly(IReadOnlyList<string> matchedRules, CustomToolsOptions options)
     {

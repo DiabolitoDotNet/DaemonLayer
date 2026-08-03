@@ -335,7 +335,7 @@ public sealed class FederationServiceTests
     }
 
     [Fact]
-    public async Task RequestCrossInstanceCollaborationAsync_ConsensusWithoutAgreement_ReturnsUnresolvedSupervisorEscalation()
+    public async Task RequestCrossInstanceCollaborationAsync_ConsensusWithoutAgreement_UsesAutonomousAdjudicationWorkflow()
     {
         var handler = new StubHttpMessageHandler(request =>
         {
@@ -386,10 +386,11 @@ public sealed class FederationServiceTests
 
         var result = await sut.RequestCrossInstanceCollaborationAsync(request);
 
-        result.Decision.Should().Be("CONFLICT_UNRESOLVED");
-        result.ConflictReasonCode.Should().Be("cross_instance_consensus_not_reached");
-        result.NextAction.Should().Be("supervisor_adjudication_workflow");
-        result.NeedsSupervisorIntervention.Should().BeTrue();
+        result.Decision.Should().Be("YES");
+        result.ConflictReasonCode.Should().Be("resolved_by_supervisor_adjudication_workflow");
+        result.NextAction.Should().Be("none");
+        result.NeedsSupervisorIntervention.Should().BeFalse();
+        result.Strategy.Should().Be(CollaborationStrategy.Hierarchical);
     }
 
     [Fact]
@@ -467,7 +468,7 @@ public sealed class FederationServiceTests
     }
 
     [Fact]
-    public async Task RequestCrossInstanceCollaborationAsync_WeightedVotingTie_ReturnsSupervisorEscalation()
+    public async Task RequestCrossInstanceCollaborationAsync_WeightedVotingTie_UsesAutonomousAdjudicationWorkflow()
     {
         var handler = new StubHttpMessageHandler(request =>
         {
@@ -521,14 +522,15 @@ public sealed class FederationServiceTests
 
         var result = await sut.RequestCrossInstanceCollaborationAsync(request);
 
-        result.Decision.Should().Be("CONFLICT_UNRESOLVED");
-        result.ConflictReasonCode.Should().Be("cross_instance_weighted_tie");
-        result.NextAction.Should().Be("supervisor_adjudication_workflow");
-        result.NeedsSupervisorIntervention.Should().BeTrue();
+        result.Decision.Should().Be("YES");
+        result.ConflictReasonCode.Should().Be("resolved_by_supervisor_adjudication_workflow");
+        result.NextAction.Should().Be("none");
+        result.NeedsSupervisorIntervention.Should().BeFalse();
+        result.Strategy.Should().Be(CollaborationStrategy.Hierarchical);
     }
 
     [Fact]
-    public async Task RequestCrossInstanceCollaborationAsync_HighestConfidenceBelowThreshold_ReturnsSupervisorEscalation()
+    public async Task RequestCrossInstanceCollaborationAsync_HighestConfidenceBelowThreshold_UsesAutonomousAdjudicationWorkflow()
     {
         var handler = new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
         {
@@ -565,10 +567,11 @@ public sealed class FederationServiceTests
 
         var result = await sut.RequestCrossInstanceCollaborationAsync(request);
 
-        result.Decision.Should().Be("CONFLICT_UNRESOLVED");
-        result.ConflictReasonCode.Should().Be("cross_instance_confidence_below_threshold");
-        result.NextAction.Should().Be("supervisor_adjudication_workflow");
-        result.NeedsSupervisorIntervention.Should().BeTrue();
+        result.Decision.Should().Be("YES");
+        result.ConflictReasonCode.Should().Be("resolved_by_supervisor_adjudication_workflow");
+        result.NextAction.Should().Be("none");
+        result.NeedsSupervisorIntervention.Should().BeFalse();
+        result.Strategy.Should().Be(CollaborationStrategy.Hierarchical);
     }
 
     [Fact]

@@ -212,28 +212,6 @@ public sealed class CreateCustomToolTool : ITool
 
         await _store.UpsertAsync(definition, ct).ConfigureAwait(false);
 
-        var approved = IsApproved(definition, _options.CurrentValue);
-        var allowUnsafe = _options.CurrentValue.AllowUnsafeWithoutManualApproval;
-
-        if (definition.RequiresManualApproval && !approved && !allowUnsafe)
-        {
-            return new ToolResult
-            {
-                Success = false,
-                Error = "Custom tool created but blocked by policy (manual approval required)",
-                Output = BuildManualApprovalMessage(definition, policyDecision),
-                Metadata = new Dictionary<string, object>
-                {
-                    ["tool_id"] = definition.Id,
-                    ["tool_name"] = definition.ToolName,
-                    ["source_hash"] = definition.SourceHash,
-                    ["requires_manual_approval"] = true,
-                    ["policy_rules"] = policyDecision.MatchedRules.ToArray(),
-                    ["used_template"] = usedTemplate
-                }
-            };
-        }
-
         var compile = await _compiler.CompileAndCreateAsync(source, toolName, _services, _logger, ct).ConfigureAwait(false);
         definition.LastCompiledAt = DateTimeOffset.UtcNow;
         definition.LastCompileError = compile.Success ? null : compile.Error;

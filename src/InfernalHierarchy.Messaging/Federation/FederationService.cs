@@ -156,46 +156,20 @@ public class FederationService : IFederationService
     {
         _logger.LogInformation("Requesting cross-instance collaboration for task: {Task}", request.Task);
 
-        var instances = await GetActiveInstancesAsync(ct).ConfigureAwait(false);
-        var responses = new ConcurrentBag<AgentResponse>();
+        var remoteInstances = GetActiveRemoteInstancesSnapshot();
 
-        var tasks = instances
-            .Where(i => i.InstanceId != _localInstanceId)
-            .Select(async instance =>
-            {
-                var message = new FederatedMessage
-                {
-                    SourceInstanceId = _localInstanceId,
-                    TargetInstanceId = instance.InstanceId,
-                    MessageType = FederatedMessageType.CollaborationRequest,
-                    Payload = new Dictionary<string, object>
-                    {
-                        ["RequestId"] = request.Id,
-                        ["Task"] = request.Task,
-                        ["Strategy"] = request.Strategy.ToString()
-                    },
-                    RequiresResponse = true,
-                    TtlSeconds = (int)request.Timeout.TotalSeconds
-                };
+        var responses = new List<AgentResponse>(remoteInstances.Count);
+        var responseLock = new object();
+        var tasks = new List<Task>(remoteInstances.Count);
 
-                try
-                {
-                    var responseMessage = await SendMessageWithOptionalResponseAsync(message, ct).ConfigureAwait(false);
-                    if (TryExtractAgentResponse(responseMessage, instance.InstanceId, out var response))
-                    {
-                        responses.Add(response);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Failed to get collaboration response from {InstanceId}",
-                        instance.InstanceId);
-                }
-            });
+        foreach (var instance in remoteInstances)
+        {
+            tasks.Add(CollectRemoteResponseAsync(instance));
+        }
 
         await Task.WhenAll(tasks).ConfigureAwait(false);
 
-        if (responses.IsEmpty)
+        if (responses.Count == 0)
         {
             return new CollaborationResult
             {
@@ -213,7 +187,7 @@ public class FederationService : IFederationService
             };
         }
 
-        var collectedResponses = responses.ToList();
+        var collectedResponses = responses;
         if (collectedResponses.Count < request.MinimumParticipants)
         {
             return new CollaborationResult
@@ -235,28 +209,18 @@ public class FederationService : IFederationService
         var strategyOutcome = AggregateByStrategy(request.Strategy, collectedResponses, request.MinimumConfidence);
         if (!strategyOutcome.IsResolved)
         {
-            return new CollaborationResult
-            {
-                Decision = "CONFLICT_UNRESOLVED",
-                Confidence = strategyOutcome.Confidence,
-                Responses = collectedResponses,
-                ParticipantCount = collectedResponses.Count,
-                AgreementScore = strategyOutcome.AgreementScore,
-                AggregatedReasoning = strategyOutcome.Reasoning,
-                Strategy = request.Strategy,
-                ConflictClass = "unresolved",
-                ConflictReasonCode = strategyOutcome.ReasonCode,
-                NextAction = "supervisor_adjudication_workflow",
-                NeedsSupervisorIntervention = true
-            };
+            return ExecuteSupervisorAdjudicationWorkflow(request, collectedResponses, strategyOutcome);
         }
 
-        var sourceInstances = collectedResponses
-            .Select(r => TryReadSourceInstanceFromReasoning(r.Reasoning))
-            .Where(s => !string.IsNullOrWhiteSpace(s))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .Cast<string>()
-            .ToList();
+        var sourceInstances = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var response in collectedResponses)
+        {
+            var source = TryReadSourceInstanceFromReasoning(response.Reasoning);
+            if (!string.IsNullOrWhiteSpace(source))
+            {
+                sourceInstances.Add(source);
+            }
+        }
 
         var sourceSummary = sourceInstances.Count == 0
             ? "unknown"
@@ -273,6 +237,41 @@ public class FederationService : IFederationService
             AggregatedReasoning = $"Aggregated {collectedResponses.Count} cross-instance responses from [{sourceSummary}] using {request.Strategy}: {strategyOutcome.Reasoning}",
             Strategy = request.Strategy
         };
+
+        async Task CollectRemoteResponseAsync(FederatedInstance instance)
+        {
+            var message = new FederatedMessage
+            {
+                SourceInstanceId = _localInstanceId,
+                TargetInstanceId = instance.InstanceId,
+                MessageType = FederatedMessageType.CollaborationRequest,
+                Payload = new Dictionary<string, object>
+                {
+                    ["RequestId"] = request.Id,
+                    ["Task"] = request.Task,
+                    ["Strategy"] = request.Strategy.ToString()
+                },
+                RequiresResponse = true,
+                TtlSeconds = (int)request.Timeout.TotalSeconds
+            };
+
+            try
+            {
+                var responseMessage = await SendMessageWithOptionalResponseAsync(message, ct).ConfigureAwait(false);
+                if (TryExtractAgentResponse(responseMessage, instance.InstanceId, out var response))
+                {
+                    lock (responseLock)
+                    {
+                        responses.Add(response);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to get collaboration response from {InstanceId}",
+                    instance.InstanceId);
+            }
+        }
     }
 
     private static StrategyAggregationOutcome AggregateByStrategy(
@@ -293,26 +292,43 @@ public class FederationService : IFederationService
     private static StrategyAggregationOutcome AggregateVoting(List<AgentResponse> responses, double minimumConfidence)
     {
         var groups = GroupByResponse(responses);
-        var ordered = groups
-            .OrderByDescending(g => g.Count)
-            .ThenByDescending(g => g.AverageConfidence)
-            .ToList();
-
-        if (ordered.Count == 0)
+        if (groups.Count == 0)
         {
             return StrategyAggregationOutcome.Unresolved("cross_instance_empty_responses", "No responses to aggregate.");
         }
 
-        if (ordered.Count > 1
-            && ordered[0].Count == ordered[1].Count
-            && Math.Abs(ordered[0].AverageConfidence - ordered[1].AverageConfidence) < 0.0001)
+        ResponseGroup? winner = null;
+        ResponseGroup? runnerUp = null;
+
+        foreach (var group in groups)
+        {
+            if (winner is null || IsVotingBetter(group, winner))
+            {
+                runnerUp = winner;
+                winner = group;
+                continue;
+            }
+
+            if (runnerUp is null || IsVotingBetter(group, runnerUp))
+            {
+                runnerUp = group;
+            }
+        }
+
+        if (winner is null)
+        {
+            return StrategyAggregationOutcome.Unresolved("cross_instance_empty_responses", "No responses to aggregate.");
+        }
+
+        if (runnerUp is not null
+            && winner.Count == runnerUp.Count
+            && Math.Abs(winner.AverageConfidence - runnerUp.AverageConfidence) < 0.0001)
         {
             return StrategyAggregationOutcome.Unresolved(
                 "cross_instance_voting_tie",
                 "Voting resulted in a tie across candidate decisions.");
         }
 
-        var winner = ordered[0];
         var confidence = winner.AverageConfidence;
         var agreement = (double)winner.Count / responses.Count;
 
@@ -336,32 +352,52 @@ public class FederationService : IFederationService
     private static StrategyAggregationOutcome AggregateWeightedVoting(List<AgentResponse> responses, double minimumConfidence)
     {
         var groups = GroupByResponse(responses);
-        var weighted = groups
-            .Select(g => new
-            {
-                Group = g,
-                Weight = g.Items.Sum(r => r.Weight > 0 ? r.Weight : Math.Max(r.Confidence, 0.1)),
-            })
-            .OrderByDescending(x => x.Weight)
-            .ThenByDescending(x => x.Group.AverageConfidence)
-            .ToList();
-
-        if (weighted.Count == 0)
+        if (groups.Count == 0)
         {
             return StrategyAggregationOutcome.Unresolved("cross_instance_empty_responses", "No responses to aggregate.");
         }
 
-        if (weighted.Count > 1 && Math.Abs(weighted[0].Weight - weighted[1].Weight) < 0.0001)
+        ResponseGroup? winner = null;
+        double winnerWeight = 0;
+        double secondWeight = 0;
+        double totalWeight = 0;
+
+        foreach (var group in groups)
+        {
+            var groupWeight = group.WeightSum;
+
+            totalWeight += groupWeight;
+
+            if (winner is null
+                || groupWeight > winnerWeight
+                || (Math.Abs(groupWeight - winnerWeight) < 0.0001 && group.AverageConfidence > winner.AverageConfidence))
+            {
+                secondWeight = winnerWeight;
+                winnerWeight = groupWeight;
+                winner = group;
+                continue;
+            }
+
+            if (groupWeight > secondWeight)
+            {
+                secondWeight = groupWeight;
+            }
+        }
+
+        if (winner is null)
+        {
+            return StrategyAggregationOutcome.Unresolved("cross_instance_empty_responses", "No responses to aggregate.");
+        }
+
+        if (Math.Abs(winnerWeight - secondWeight) < 0.0001)
         {
             return StrategyAggregationOutcome.Unresolved(
                 "cross_instance_weighted_tie",
                 "Weighted voting resulted in equal scores.");
         }
 
-        var winner = weighted[0].Group;
         var confidence = winner.AverageConfidence;
-        var totalWeight = weighted.Sum(x => x.Weight);
-        var agreement = totalWeight <= 0 ? 0 : weighted[0].Weight / totalWeight;
+        var agreement = totalWeight <= 0 ? 0 : winnerWeight / totalWeight;
 
         if (confidence < minimumConfidence)
         {
@@ -382,10 +418,7 @@ public class FederationService : IFederationService
 
     private static StrategyAggregationOutcome AggregateConsensus(List<AgentResponse> responses, double minimumConfidence)
     {
-        var groups = GroupByResponse(responses)
-            .OrderByDescending(g => g.Count)
-            .ThenByDescending(g => g.AverageConfidence)
-            .ToList();
+        var groups = GroupByResponse(responses);
 
         if (groups.Count != 1)
         {
@@ -414,9 +447,14 @@ public class FederationService : IFederationService
 
     private static StrategyAggregationOutcome AggregateHighestConfidence(List<AgentResponse> responses, double minimumConfidence)
     {
-        var winner = responses
-            .OrderByDescending(r => r.Confidence)
-            .FirstOrDefault();
+        AgentResponse? winner = null;
+        foreach (var response in responses)
+        {
+            if (winner is null || response.Confidence > winner.Confidence)
+            {
+                winner = response;
+            }
+        }
 
         if (winner is null)
         {
@@ -442,10 +480,18 @@ public class FederationService : IFederationService
 
     private static StrategyAggregationOutcome AggregateHierarchical(List<AgentResponse> responses, double minimumConfidence)
     {
-        var winner = responses
-            .OrderBy(r => RankPriority(r.AgentRank))
-            .ThenByDescending(r => r.Confidence)
-            .FirstOrDefault();
+        AgentResponse? winner = null;
+        var winnerRank = int.MaxValue;
+
+        foreach (var response in responses)
+        {
+            var rank = RankPriority(response.AgentRank);
+            if (winner is null || rank < winnerRank || (rank == winnerRank && response.Confidence > winner.Confidence))
+            {
+                winner = response;
+                winnerRank = rank;
+            }
+        }
 
         if (winner is null)
         {
@@ -480,18 +526,111 @@ public class FederationService : IFederationService
         };
     }
 
+    private static CollaborationResult ExecuteSupervisorAdjudicationWorkflow(
+        CollaborationRequest request,
+        List<AgentResponse> responses,
+        StrategyAggregationOutcome unresolved)
+    {
+        AgentResponse? supervisorDecision = null;
+        var supervisorPriority = int.MaxValue;
+
+        foreach (var response in responses)
+        {
+            if (string.IsNullOrWhiteSpace(response.Response))
+            {
+                continue;
+            }
+
+            var priority = RankPriority(response.AgentRank);
+            if (supervisorDecision is null
+                || priority < supervisorPriority
+                || (priority == supervisorPriority && response.Confidence > supervisorDecision.Confidence)
+                || (priority == supervisorPriority
+                    && Math.Abs(response.Confidence - supervisorDecision.Confidence) < 0.0001
+                    && string.CompareOrdinal(response.AgentId, supervisorDecision.AgentId) < 0))
+            {
+                supervisorDecision = response;
+                supervisorPriority = priority;
+            }
+        }
+
+        if (supervisorDecision is null)
+        {
+            return new CollaborationResult
+            {
+                Decision = "AUTONOMOUS_ADJUDICATION_FAILED",
+                Confidence = unresolved.Confidence,
+                Responses = responses,
+                ParticipantCount = responses.Count,
+                AgreementScore = unresolved.AgreementScore,
+                AggregatedReasoning =
+                    $"Autonomous supervisor adjudication workflow executed but no usable response was available ({unresolved.ReasonCode}).",
+                Strategy = request.Strategy,
+                ConflictClass = "unresolved",
+                ConflictReasonCode = "autonomous_supervisor_adjudication_failed",
+                NextAction = "none",
+                NeedsSupervisorIntervention = false
+            };
+        }
+
+        var agreementCount = responses.Count(r =>
+            !string.IsNullOrWhiteSpace(r.Response)
+            && string.Equals(r.Response.Trim(), supervisorDecision.Response.Trim(), StringComparison.OrdinalIgnoreCase));
+
+        var agreementScore = responses.Count == 0 ? 0 : agreementCount / (double)responses.Count;
+
+        return new CollaborationResult
+        {
+            Decision = supervisorDecision.Response,
+            Confidence = Math.Max(supervisorDecision.Confidence, unresolved.Confidence),
+            Responses = responses,
+            ParticipantCount = responses.Count,
+            AgreementScore = agreementScore,
+            WinningResponse = supervisorDecision,
+            AggregatedReasoning =
+                $"Autonomous supervisor adjudication workflow resolved conflict ({unresolved.ReasonCode}) by selecting '{supervisorDecision.Response}' from {supervisorDecision.AgentId} ({supervisorDecision.AgentRank}, confidence={supervisorDecision.Confidence:F2}).",
+            Strategy = CollaborationStrategy.Hierarchical,
+            ConflictClass = "resolved",
+            ConflictReasonCode = "resolved_by_supervisor_adjudication_workflow",
+            NextAction = "none",
+            NeedsSupervisorIntervention = false
+        };
+    }
+
     private static List<ResponseGroup> GroupByResponse(List<AgentResponse> responses)
     {
-        return responses
-            .Where(r => !string.IsNullOrWhiteSpace(r.Response))
-            .GroupBy(r => r.Response.Trim(), StringComparer.OrdinalIgnoreCase)
-            .Select(g => new ResponseGroup(
-                Response: g.Key,
-                Count: g.Count(),
-                AverageConfidence: g.Average(x => x.Confidence),
-                BestResponse: g.OrderByDescending(x => x.Confidence).First(),
-                Items: g.ToList()))
-            .ToList();
+        var groups = new Dictionary<string, ResponseAccumulator>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var response in responses)
+        {
+            if (string.IsNullOrWhiteSpace(response.Response))
+            {
+                continue;
+            }
+
+            var key = response.Response.Trim();
+            if (!groups.TryGetValue(key, out var acc))
+            {
+                acc = new ResponseAccumulator(key);
+                groups[key] = acc;
+            }
+
+            acc.Add(response);
+        }
+
+        var result = new List<ResponseGroup>(groups.Count);
+        foreach (var pair in groups)
+        {
+            result.Add(pair.Value.ToGroup());
+        }
+
+        return result;
+    }
+
+    private static bool IsVotingBetter(ResponseGroup candidate, ResponseGroup current)
+    {
+        return candidate.Count > current.Count
+            || (candidate.Count == current.Count && candidate.AverageConfidence > current.AverageConfidence);
     }
 
     private async Task<FederatedMessage?> SendMessageWithOptionalResponseAsync(
@@ -545,7 +684,53 @@ public class FederationService : IFederationService
             return false;
         }
 
-        if (TryGetPayloadValue(responseMessage.Payload, "AgentResponse", out var rawAgentResponse)
+        var payload = responseMessage.Payload;
+        object? rawAgentResponse = null;
+        string? decision = null;
+        string? responseField = null;
+        string? rawAgentId = null;
+        string? reasoning = null;
+        object? rawConfidence = null;
+
+        foreach (var kvp in payload)
+        {
+            if (string.Equals(kvp.Key, "AgentResponse", StringComparison.OrdinalIgnoreCase))
+            {
+                rawAgentResponse = kvp.Value;
+                continue;
+            }
+
+            if (string.Equals(kvp.Key, "Decision", StringComparison.OrdinalIgnoreCase))
+            {
+                decision = ConvertPayloadToString(kvp.Value);
+                continue;
+            }
+
+            if (string.Equals(kvp.Key, "Response", StringComparison.OrdinalIgnoreCase))
+            {
+                responseField = ConvertPayloadToString(kvp.Value);
+                continue;
+            }
+
+            if (string.Equals(kvp.Key, "AgentId", StringComparison.OrdinalIgnoreCase))
+            {
+                rawAgentId = ConvertPayloadToString(kvp.Value);
+                continue;
+            }
+
+            if (string.Equals(kvp.Key, "Reasoning", StringComparison.OrdinalIgnoreCase))
+            {
+                reasoning = ConvertPayloadToString(kvp.Value);
+                continue;
+            }
+
+            if (string.Equals(kvp.Key, "Confidence", StringComparison.OrdinalIgnoreCase))
+            {
+                rawConfidence = kvp.Value;
+            }
+        }
+
+        if (rawAgentResponse != null
             && TryDeserializePayloadValue(rawAgentResponse, out AgentResponse? serializedAgentResponse)
             && serializedAgentResponse != null)
         {
@@ -555,15 +740,13 @@ public class FederationService : IFederationService
             return true;
         }
 
-        if (!TryGetPayloadString(responseMessage.Payload, "Decision", out var decision)
-            && !TryGetPayloadString(responseMessage.Payload, "Response", out decision))
+        decision ??= responseField;
+        if (string.IsNullOrWhiteSpace(decision))
         {
             return false;
         }
 
-        TryGetPayloadString(responseMessage.Payload, "AgentId", out var rawAgentId);
-        TryGetPayloadDouble(responseMessage.Payload, "Confidence", out var confidence);
-        TryGetPayloadString(responseMessage.Payload, "Reasoning", out var reasoning);
+        _ = TryConvertPayloadToDouble(rawConfidence, out var confidence);
 
         response = new AgentResponse
         {
@@ -577,19 +760,81 @@ public class FederationService : IFederationService
         return true;
     }
 
-    private static bool TryGetPayloadValue(Dictionary<string, object> payload, string key, out object? value)
+    private List<FederatedInstance> GetActiveRemoteInstancesSnapshot()
     {
-        foreach (var kvp in payload)
+        var now = DateTime.UtcNow;
+        var instances = new List<FederatedInstance>(_instances.Count);
+
+        foreach (var instance in _instances.Values)
         {
-            if (string.Equals(kvp.Key, key, StringComparison.OrdinalIgnoreCase))
+            if (!instance.IsActive)
             {
-                value = kvp.Value;
-                return true;
+                continue;
             }
+
+            if ((now - instance.LastHeartbeat).TotalSeconds >= 60)
+            {
+                continue;
+            }
+
+            if (string.Equals(instance.InstanceId, _localInstanceId, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            instances.Add(instance);
         }
 
-        value = null;
-        return false;
+        return instances;
+    }
+
+    private static string? ConvertPayloadToString(object? raw)
+    {
+        if (raw is null)
+        {
+            return null;
+        }
+
+        return raw switch
+        {
+            string str => str,
+            JsonElement json when json.ValueKind == JsonValueKind.String => json.GetString(),
+            _ => raw.ToString(),
+        };
+    }
+
+    private static bool TryConvertPayloadToDouble(object? raw, out double value)
+    {
+        value = 0;
+        if (raw is null)
+        {
+            return false;
+        }
+
+        switch (raw)
+        {
+            case double d:
+                value = d;
+                return true;
+            case float f:
+                value = f;
+                return true;
+            case decimal m:
+                value = (double)m;
+                return true;
+            case int i:
+                value = i;
+                return true;
+            case long l:
+                value = l;
+                return true;
+            case JsonElement json when json.ValueKind == JsonValueKind.Number:
+                return json.TryGetDouble(out value);
+            case JsonElement json when json.ValueKind == JsonValueKind.String:
+                return double.TryParse(json.GetString(), out value);
+            default:
+                return double.TryParse(raw.ToString(), out value);
+        }
     }
 
     private static bool TryDeserializePayloadValue<T>(object? raw, out T? value)
@@ -622,62 +867,6 @@ public class FederationService : IFederationService
         catch
         {
             return false;
-        }
-    }
-
-    private static bool TryGetPayloadString(Dictionary<string, object> payload, string key, out string? value)
-    {
-        value = null;
-        if (!TryGetPayloadValue(payload, key, out var raw) || raw is null)
-        {
-            return false;
-        }
-
-        switch (raw)
-        {
-            case string str:
-                value = str;
-                return true;
-            case JsonElement json when json.ValueKind == JsonValueKind.String:
-                value = json.GetString();
-                return !string.IsNullOrWhiteSpace(value);
-            default:
-                value = raw.ToString();
-                return !string.IsNullOrWhiteSpace(value);
-        }
-    }
-
-    private static bool TryGetPayloadDouble(Dictionary<string, object> payload, string key, out double value)
-    {
-        value = 0;
-        if (!TryGetPayloadValue(payload, key, out var raw) || raw is null)
-        {
-            return false;
-        }
-
-        switch (raw)
-        {
-            case double d:
-                value = d;
-                return true;
-            case float f:
-                value = f;
-                return true;
-            case decimal m:
-                value = (double)m;
-                return true;
-            case int i:
-                value = i;
-                return true;
-            case long l:
-                value = l;
-                return true;
-            case JsonElement json when json.ValueKind == JsonValueKind.Number:
-                return json.TryGetDouble(out value);
-            case JsonElement json when json.ValueKind == JsonValueKind.String:
-                return double.TryParse(json.GetString(), out value);
-            default:
-                return double.TryParse(raw.ToString(), out value);
         }
     }
 
@@ -831,7 +1020,45 @@ public class FederationService : IFederationService
         int Count,
         double AverageConfidence,
         AgentResponse BestResponse,
-        List<AgentResponse> Items);
+        double WeightSum);
+
+    private sealed class ResponseAccumulator
+    {
+        private readonly string _response;
+        private int _count;
+        private double _confidenceSum;
+        private double _weightSum;
+        private AgentResponse? _best;
+
+        public ResponseAccumulator(string response)
+        {
+            _response = response;
+        }
+
+        public void Add(AgentResponse response)
+        {
+            _count++;
+            _confidenceSum += response.Confidence;
+            _weightSum += response.Weight > 0 ? response.Weight : Math.Max(response.Confidence, 0.1);
+
+            if (_best is null || response.Confidence > _best.Confidence)
+            {
+                _best = response;
+            }
+        }
+
+        public ResponseGroup ToGroup()
+        {
+            var average = _count == 0 ? 0 : _confidenceSum / _count;
+
+            return new ResponseGroup(
+                Response: _response,
+                Count: _count,
+                AverageConfidence: average,
+                BestResponse: _best ?? new AgentResponse(),
+                WeightSum: _weightSum);
+        }
+    }
 
     private sealed record StrategyAggregationOutcome(
         bool IsResolved,

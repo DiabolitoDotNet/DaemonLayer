@@ -16,4 +16,7 @@ This folder captures key architectural decisions in a short, durable format.
 - [0004 - Critique loop (self-reflection) via dedicated Critic persona](0004-critique-loop-self-reflection.md)
 - [0005 - Tool execution pipeline as the security boundary](0005-tool-execution-pipeline-security-boundary.md)
 - [0006 - Personas and templates as JSON assets](0006-personas-and-templates-as-json-assets.md)
+- [0007 - GraphQL surface status](0007-graphql-surface-status.md)
+- [0008 - Autonomous supervisor adjudication workflow for unresolved collaboration](0008-autonomous-supervisor-adjudication-workflow.md)
+- [0009 - Autonomous custom-tool execution lane without manual approval gate](0009-autonomous-custom-tool-no-manual-gate.md)
 - [TEMPLATE](TEMPLATE.md)

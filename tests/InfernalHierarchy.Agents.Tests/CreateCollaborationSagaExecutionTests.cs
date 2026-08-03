@@ -32,11 +32,26 @@ public sealed class CreateCollaborationSagaExecutionTests
             Strategy = CollaborationStrategy.Voting
         };
 
+        var collaborationResult = new CollaborationResult
+        {
+            Decision = "A",
+            Confidence = 0.91,
+            ParticipantCount = 3,
+            AgreementScore = 0.67,
+            AggregatedReasoning = "majority reached",
+            Strategy = CollaborationStrategy.Voting
+        };
+
+        var collaborationService = new Mock<IAgentCollaborationService>();
+        collaborationService
+            .Setup(s => s.RequestCollaborationAsync(It.IsAny<CollaborationRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(collaborationResult);
+
         var saga = new CreateCollaborationSaga(
             NullLogger<CreateCollaborationSaga>.Instance,
             Mock.Of<IAgentFactory>(),
             memory.Object,
-            Mock.Of<IAgentCollaborationService>(),
+            collaborationService.Object,
             request);
 
         var result = await saga.ExecuteAsync(CancellationToken.None);
@@ -48,6 +63,11 @@ public sealed class CreateCollaborationSagaExecutionTests
         memory.Verify(m => m.AddFactAsync(It.IsAny<Fact>(), It.IsAny<CancellationToken>()), Times.Once);
         memory.Verify(m => m.DeleteDecisionAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
         memory.Verify(m => m.DeleteFactAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+        collaborationService.Verify(
+            s => s.RequestCollaborationAsync(
+                It.Is<CollaborationRequest>(r => r.Id == request.Id),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
     }
 
     [Fact]
@@ -75,11 +95,27 @@ public sealed class CreateCollaborationSagaExecutionTests
             Strategy = CollaborationStrategy.Voting
         };
 
+        var collaborationService = new Mock<IAgentCollaborationService>();
+        collaborationService
+            .Setup(s => s.RequestCollaborationAsync(It.IsAny<CollaborationRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new CollaborationResult
+            {
+                Decision = "B",
+                Confidence = 0.88,
+                ParticipantCount = 3,
+                AgreementScore = 0.66,
+                AggregatedReasoning = "weighted consensus",
+                Strategy = CollaborationStrategy.WeightedVoting
+            });
+        collaborationService
+            .Setup(s => s.CancelCollaborationAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
         var saga = new CreateCollaborationSaga(
             NullLogger<CreateCollaborationSaga>.Instance,
             Mock.Of<IAgentFactory>(),
             memory.Object,
-            Mock.Of<IAgentCollaborationService>(),
+            collaborationService.Object,
             request);
 
         var result = await saga.ExecuteAsync(CancellationToken.None);
@@ -91,12 +127,14 @@ public sealed class CreateCollaborationSagaExecutionTests
 
         memory.Verify(m => m.AddDecisionAsync(It.IsAny<Decision>(), It.IsAny<CancellationToken>()), Times.Once);
         memory.Verify(m => m.DeleteDecisionAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Once);
+        collaborationService.Verify(s => s.CancelCollaborationAsync(request.Id, It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
     public async Task ExecuteAsync_WhenParticipantValidationFails_DoesNotPerformMemorySideEffects()
     {
         var memory = new Mock<ISharedMemory>(MockBehavior.Strict);
+        var collaborationService = new Mock<IAgentCollaborationService>(MockBehavior.Strict);
 
         var request = new CollaborationRequest
         {
@@ -113,7 +151,7 @@ public sealed class CreateCollaborationSagaExecutionTests
             NullLogger<CreateCollaborationSaga>.Instance,
             Mock.Of<IAgentFactory>(),
             memory.Object,
-            Mock.Of<IAgentCollaborationService>(),
+            collaborationService.Object,
             request);
 
         var result = await saga.ExecuteAsync(CancellationToken.None);
@@ -125,5 +163,6 @@ public sealed class CreateCollaborationSagaExecutionTests
         memory.Verify(m => m.AddFactAsync(It.IsAny<Fact>(), It.IsAny<CancellationToken>()), Times.Never);
         memory.Verify(m => m.DeleteDecisionAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
         memory.Verify(m => m.DeleteFactAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+        collaborationService.Verify(s => s.RequestCollaborationAsync(It.IsAny<CollaborationRequest>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 }

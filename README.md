@@ -25,7 +25,17 @@ Un système distribué d'agents LLM locaux fonctionnant avec Ollama, organisés 
 - ✅ **Saga compensation autonome** : retries bornés de compensation + escalade superviseur structurée si épuisement
 - ✅ **Profils d'exécution alignés runtime** : outils Build/Deploy critiques activés par défaut + diagnostic de dérive profil/permissions au démarrage/reload
 - ✅ **Santé fédération fiable** : un heartbeat échoué ne maintient plus une instance en état healthy
+- ✅ **Adjudication autonome exécutable** : les conflits collaboration/fédération non résolus sont tranchés automatiquement (plus de fin action-token-only)
+- ✅ **Custom tools sans gate humain bloquant** : création/chargement ne s'arrête plus sur une approbation manuelle requise
+- ✅ **Perf gate avec headroom mesuré** : `federationAggregation` 0.156ms/op, 31877B/op (budget 35000B)
 - ✅ **.NET 10** : Dernière version avec performance optimisée
+
+## ✅ Delivery Snapshot (Aug 2026)
+
+- Strict autonomy runtime blockers closed (A102.1/A102.2).
+- Federation optimization passes completed (A103.1/A103.2) with measurable allocation reduction.
+- Perf gate: PASS (`federationAggregation` latency/op 0.156ms, alloc/op 31877B; budget 35000B).
+- Full regression: 904/904 tests passing.
 
 ## 📋 Architecture
 

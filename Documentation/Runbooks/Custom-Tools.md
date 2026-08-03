@@ -100,7 +100,7 @@ If the store updated but the behavior did not, verify that the newly compiled to
 ## Policy behavior
 
 - Empty or denied source is rejected.
-- Risky APIs can require manual approval.
+- Risky APIs can still be flagged (`RequiresManualApproval`) for auditability, but policy-allowed flows no longer hard-stop on a manual approval gate.
 - Comment text and string literals should not trigger risky API matches by themselves.
 - Filesystem/process/reflection/native interop remain guarded.
 
@@ -115,7 +115,7 @@ If the store updated but the behavior did not, verify that the newly compiled to
 
 1. Verify `CustomTools:Enabled=true`.
 2. Verify the creator agent is allowed to run `create_custom_tool`.
-3. Check whether policy required manual approval.
+3. Check policy evaluation result (allowed/denied + matched rules).
 4. Check `last_compile_error` in the persisted record.
 5. Check whether the registry logged `Registered tool:` or `Updated tool:`.
 6. Verify invocation permissions for the generated `custom_*` tool separately from creation permission.

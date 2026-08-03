@@ -21,6 +21,7 @@ This is the consolidated feature list of the InfernalHierarchy solution. It inte
 - Tool authorization policies (deny-by-default possible)
 - Tool rate limiting / throttling
 - Tool telemetry (timings, outcomes, correlation)
+- Dynamic custom tool lifecycle supports autonomous create/compile/register and autonomous startup reload for policy-allowed tools (risk metadata remains auditable)
 
 ## Memory & knowledge
 
@@ -34,6 +35,8 @@ This is the consolidated feature list of the InfernalHierarchy solution. It inte
 
 - Channel-based internal message bus (`IMessageBus`)
 - Collaboration requests and agent-to-agent coordination primitives
+- Autonomous supervisor adjudication workflow for unresolved collaboration/federation outcomes (terminal decision, deterministic tie-break)
+- Strategy-consistent federated aggregation optimized for lower allocation overhead in hot paths
 - Tenant isolation primitives (`ITenantIsolationService`, `TenantContext`)
 
 ## Telegram interface
@@ -48,6 +51,8 @@ This is the consolidated feature list of the InfernalHierarchy solution. It inte
 - OpenTelemetry tracing across agent runs and tool invocations
 - Prometheus metrics endpoint + health checks
 - Performance monitoring services
+- Autonomy scorecard quality gate driven by real playground scenario runs
+- Executable perf gate harness with versioned latency/allocation budgets for hot paths
 
 See: [OBSERVABILITY](../OBSERVABILITY.md)
 

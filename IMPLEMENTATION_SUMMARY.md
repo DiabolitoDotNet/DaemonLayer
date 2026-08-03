@@ -1,5 +1,18 @@
 # Critical Missing Features - Implementation Summary
 
+## Update (Aug 2, 2026)
+
+- Strict autonomy runtime blockers closed.
+   - A102.1: unresolved local and federated collaboration now execute an autonomous supervisor adjudication workflow and return terminal decisions.
+   - A102.2: custom tool create/reload paths no longer hard-stop on manual approval branches for policy-allowed sources.
+- Optimization passes completed with measured evidence.
+   - A103.1/A103.2: federation collaboration aggregation/refinement paths reduced allocations while preserving semantics.
+- Validation snapshot:
+   - Perf gate PASS (`federationAggregation` latency/op 0.156ms; alloc/op 31877B; budget 35000B).
+   - Full regression PASS (904/904).
+
+> Note: the remainder of this document is retained as historical implementation context from earlier phases.
+
 ## ✅ All 6 Critical Features Implemented
 
 ## Update (Feb 13, 2026)

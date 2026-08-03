@@ -65,6 +65,7 @@ For a complete, safe-by-default template (including `fs_*` and `http_request`, d
 - **Partial configuration overlays defaults**: If you configure only a subset of tools under `ToolPermissions`, those entries override the defaults, and the rest of the default map remains in effect.
 - **Unknown tools**: If a tool name is not present in the effective permission map, it is **denied by default** (fail-closed). Add an explicit `ToolPermissions` entry before delegating it.
 - **Custom tools (`custom_*`)**: Dynamically generated tools remain **Supreme-only by default** until you explicitly configure their permission entry.
+  - Policy risk flags (`RequiresManualApproval`) are still recorded for auditability, but policy-allowed create/reload paths do not require a human approval gate to proceed.
 
 ### High-Risk Tools (Filesystem / HTTP / Code Execution)
 

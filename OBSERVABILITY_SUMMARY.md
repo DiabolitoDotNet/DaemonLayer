@@ -1,5 +1,13 @@
 # Observability & Monitoring - Implementation Summary
 
+## Update (Aug 2, 2026)
+
+- Observability gates now include autonomy/performance closure evidence from the latest optimization cycle.
+- Current validated gate snapshot:
+  - Perf gate PASS (`federationAggregation` latency/op 0.156ms; alloc/op 31877B).
+  - Full regression PASS (904/904).
+- This summary remains implementation-focused; closure chronology and optimization deltas are tracked in `COMPLETED.md`.
+
 ## ✅ Completed Features
 
 ### 1. Distributed Tracing with OpenTelemetry

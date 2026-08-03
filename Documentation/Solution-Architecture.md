@@ -158,6 +158,12 @@ When `ToolCache` is enabled, the pipeline checks cache **after authorization** a
 
 Examples: memory read/write, web search, Telegram send, sub-agent creation.
 
+Dynamic custom tools are part of this same execution boundary:
+
+- source generation/evaluation/compilation/registration is runtime-managed,
+- policy risk markers are persisted for audit,
+- policy-allowed flows execute autonomously (no manual-approval blocking gate).
+
 ### Memory layer
 
 Shared memory provides durable context across agent runs.
@@ -275,6 +281,8 @@ Key aims:
 - decouple producers/consumers,
 - enable backpressure,
 - keep the host responsive under load.
+
+For collaboration/federation conflict outcomes, the runtime now executes an autonomous supervisor adjudication workflow to produce terminal decisions when strategy resolution remains inconclusive.
 
 ### Telegram interface
 

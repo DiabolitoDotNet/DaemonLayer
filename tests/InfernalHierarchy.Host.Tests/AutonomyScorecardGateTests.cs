@@ -1,29 +1,36 @@
 using FluentAssertions;
-using InfernalHierarchy.Core.Entities;
-using InfernalHierarchy.Messaging.Bus;
 using InfernalHierarchy.Host.Api;
+using InfernalHierarchy.Host.Configuration;
 using InfernalHierarchy.Host.Observability;
-using InfernalHierarchy.Host.Tools;
-using Microsoft.Extensions.Logging.Abstractions;
+using InfernalHierarchy.Host.Tests.E2E;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
+using System.Net.Http.Json;
+using System.Text.Json;
 using Xunit;
 
 namespace InfernalHierarchy.Host.Tests;
 
+[Collection("Host E2E")]
 public sealed class AutonomyScorecardGateTests
 {
     [Fact]
-    public async Task Evaluate_ShouldFail_WhenRealBenchmarkRunsUnderperform()
+    public async Task Evaluate_ShouldFail_WhenRealAgentRunsUnderperform()
     {
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-        var bus = new ChannelMessageBus(NullLogger<ChannelMessageBus>.Instance);
-        var playground = new AgentPlaygroundService();
-        var sut = new AutonomyScorecardService(playground);
+        using var factory = new InfernalHierarchyTestWebAppFactory();
+        var client = factory.CreateClient();
+        ConfigureOperatorHeader(factory, client);
 
-        // Real run path: scenarios are executed over message bus, then scored.
-        using var responder = StartBenchmarkResponder(bus, benchmarkId => benchmarkId == "partial_failure_recovery" ? "❌ regression" : "Execution succeeded", cts.Token);
-        await ExecuteBenchmarksAsync(playground, bus, runsPerScenario: 10, cts.Token);
+        var runCount = 3;
+        await SeedScenarioRunsAsync(client, "simple_search", prompt: "Say hello", timeoutMs: 12000, runCount, CancellationToken.None);
+        await SeedScenarioRunsAsync(client, "missing_tool_task", prompt: "Say hello", timeoutMs: 12000, runCount, CancellationToken.None);
+        await SeedScenarioRunsAsync(client, "multi_step_build", prompt: "Say hello", timeoutMs: 15000, runCount, CancellationToken.None);
 
-        var report = sut.GenerateReport(runsPerScenario: 10);
+        // Force underperformance with impossible timeout.
+        await SeedScenarioRunsAsync(client, "partial_failure_recovery", prompt: "Say hello", timeoutMs: 1, runCount, CancellationToken.None);
+
+        var sut = factory.Services.GetRequiredService<AutonomyScorecardService>();
+        var report = sut.GenerateReport(runsPerScenario: runCount);
 
         var passed = MeetsThresholds(
             report,
@@ -35,17 +42,20 @@ public sealed class AutonomyScorecardGateTests
     }
 
     [Fact]
-    public async Task Evaluate_ShouldPass_WhenRealBenchmarkRunsMeetReleaseThresholds()
+    public async Task Evaluate_ShouldPass_WhenRealAgentRunsMeetReleaseThresholds()
     {
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-        var bus = new ChannelMessageBus(NullLogger<ChannelMessageBus>.Instance);
-        var playground = new AgentPlaygroundService();
-        var sut = new AutonomyScorecardService(playground);
+        using var factory = new InfernalHierarchyTestWebAppFactory();
+        var client = factory.CreateClient();
+        ConfigureOperatorHeader(factory, client);
 
-        using var responder = StartBenchmarkResponder(bus, _ => "Execution succeeded", cts.Token);
-        await ExecuteBenchmarksAsync(playground, bus, runsPerScenario: 10, cts.Token);
+        var runCount = 3;
+        await SeedScenarioRunsAsync(client, "simple_search", prompt: "Say hello", timeoutMs: 12000, runCount, CancellationToken.None);
+        await SeedScenarioRunsAsync(client, "missing_tool_task", prompt: "Say hello", timeoutMs: 12000, runCount, CancellationToken.None);
+        await SeedScenarioRunsAsync(client, "multi_step_build", prompt: "Say hello", timeoutMs: 15000, runCount, CancellationToken.None);
+        await SeedScenarioRunsAsync(client, "partial_failure_recovery", prompt: "Say hello", timeoutMs: 12000, runCount, CancellationToken.None);
 
-        var report = sut.GenerateReport(runsPerScenario: 10);
+        var sut = factory.Services.GetRequiredService<AutonomyScorecardService>();
+        var report = sut.GenerateReport(runsPerScenario: runCount);
 
         var passed = MeetsThresholds(
             report,
@@ -53,182 +63,66 @@ public sealed class AutonomyScorecardGateTests
             minGrade: "B",
             minSuccessRatePerScenario: 0.80);
 
-        passed.Should().BeTrue();
+        passed.Should().BeTrue(FormatReport(report));
     }
 
-    private static async Task ExecuteBenchmarksAsync(
-        AgentPlaygroundService playground,
-        ChannelMessageBus bus,
-        int runsPerScenario,
+    private static void ConfigureOperatorHeader(InfernalHierarchyTestWebAppFactory factory, HttpClient client)
+    {
+        var options = factory.Services.GetRequiredService<IOptions<OperatorApiOptions>>().Value;
+        if (!string.IsNullOrWhiteSpace(options.ApiKey))
+        {
+            client.DefaultRequestHeaders.Remove("X-Infernal-Operator-Key");
+            client.DefaultRequestHeaders.Add("X-Infernal-Operator-Key", options.ApiKey);
+        }
+    }
+
+    private static async Task SeedScenarioRunsAsync(
+        HttpClient client,
+        string benchmarkId,
+        string prompt,
+        int timeoutMs,
+        int runCount,
         CancellationToken ct)
     {
-        var benchmarks = new[]
-        {
-            "simple_search",
-            "missing_tool_task",
-            "multi_step_build",
-            "partial_failure_recovery"
-        };
-
-        foreach (var benchmarkId in benchmarks)
-        {
-            var scenarioId = playground.CreateScenario(
-                name: $"{benchmarkId} benchmark",
-                prompt: $"benchmark:{benchmarkId}",
-                toAgentId: "lucifer",
-                timeoutMs: 2000,
-                tags: new Dictionary<string, object>
-                {
-                    ["benchmark_id"] = benchmarkId,
-                });
-
-            var scenario = playground.GetScenario(scenarioId)!;
-            for (var i = 0; i < runsPerScenario; i++)
+        var create = new PlaygroundScenarioCreateRequest(
+            Name: $"bench-{benchmarkId}-{Guid.NewGuid():N}",
+            Prompt: prompt,
+            ToAgentId: "lucifer",
+            TimeoutMs: timeoutMs,
+            ExecutionProfile: "Research",
+            Tags: new Dictionary<string, object>
             {
-                var response = await ExecuteScenarioRunAsync(bus, scenario, ct).ConfigureAwait(false);
-                playground.AddRun(scenario.ScenarioId, scenario.Prompt, scenario.ToAgentId, scenario.TimeoutMs, response);
-            }
+                ["benchmark_id"] = benchmarkId,
+            });
+
+        var createResponse = await client.PostAsJsonAsync("/api/playground/scenarios", create, cancellationToken: ct).ConfigureAwait(false);
+        createResponse.EnsureSuccessStatusCode();
+
+        var createPayload = await createResponse.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+        using var createDoc = JsonDocument.Parse(createPayload);
+        var scenarioId = createDoc.RootElement
+            .GetProperty("scenario")
+            .GetProperty("scenarioId")
+            .GetString();
+
+        scenarioId.Should().NotBeNullOrWhiteSpace();
+
+        for (var i = 0; i < runCount; i++)
+        {
+            var runResponse = await client.PostAsJsonAsync(
+                $"/api/playground/scenarios/{scenarioId}/run",
+                new PlaygroundScenarioRunRequest(Prompt: prompt, TimeoutMs: timeoutMs),
+                ct).ConfigureAwait(false);
+            runResponse.EnsureSuccessStatusCode();
         }
     }
 
-    private static async Task<ChatResponse> ExecuteScenarioRunAsync(ChannelMessageBus bus, PlaygroundScenario scenario, CancellationToken ct)
+    private static string FormatReport(AutonomyScorecardReport report)
     {
-        var correlationId = Guid.NewGuid().ToString("N");
-        var replyToId = $"bench-{Guid.NewGuid():N}";
-        var startedUtc = DateTime.UtcNow;
+        var scenarios = string.Join(", ", report.Scenarios.Select(s =>
+            $"{s.ScenarioId}:status={s.Status},success={s.SuccessRate:P0},p95={s.P95DurationMs:F0},score={s.Score:F1}"));
 
-        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        timeoutCts.CancelAfter(TimeSpan.FromMilliseconds(scenario.TimeoutMs));
-        var enumerator = bus.SubscribeAsync(replyToId, timeoutCts.Token).GetAsyncEnumerator(timeoutCts.Token);
-
-        try
-        {
-            await bus.PublishAsync(new AgentMessage
-            {
-                Id = replyToId,
-                FromAgentId = replyToId,
-                ToAgentId = scenario.ToAgentId,
-                Type = MessageType.Task,
-                Content = scenario.Prompt,
-                CorrelationId = correlationId,
-                Payload = new Dictionary<string, object>
-                {
-                    ["transport"] = "benchmark",
-                    ["execution_profile"] = "Research"
-                }
-            }, ct).ConfigureAwait(false);
-
-            while (await enumerator.MoveNextAsync().ConfigureAwait(false))
-            {
-                var response = enumerator.Current;
-                if (response.Type != MessageType.Report)
-                {
-                    continue;
-                }
-
-                return new ChatResponse(
-                    fromAgentId: response.FromAgentId,
-                    toAgentId: response.ToAgentId,
-                    content: response.Content,
-                    payload: response.Payload,
-                    correlationId: response.CorrelationId ?? correlationId,
-                    causationId: response.CausationId,
-                    receivedUtc: DateTime.UtcNow,
-                    durationMs: (DateTime.UtcNow - startedUtc).TotalMilliseconds);
-            }
-
-            return BuildTimeoutResponse(scenario, correlationId, startedUtc);
-        }
-        catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested)
-        {
-            return BuildTimeoutResponse(scenario, correlationId, startedUtc);
-        }
-        finally
-        {
-            await enumerator.DisposeAsync().ConfigureAwait(false);
-            bus.CleanupAgent(replyToId);
-        }
-    }
-
-    private static ChatResponse BuildTimeoutResponse(PlaygroundScenario scenario, string correlationId, DateTime startedUtc)
-    {
-        return new ChatResponse(
-            fromAgentId: "system",
-            toAgentId: scenario.ToAgentId,
-            content: $"Timeout: no report received within {scenario.TimeoutMs}ms",
-            payload: new Dictionary<string, object>(),
-            correlationId: correlationId,
-            causationId: null,
-            receivedUtc: DateTime.UtcNow,
-            durationMs: (DateTime.UtcNow - startedUtc).TotalMilliseconds);
-    }
-
-    private static IDisposable StartBenchmarkResponder(
-        ChannelMessageBus bus,
-        Func<string, string> contentByBenchmark,
-        CancellationToken ct)
-    {
-        var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-
-        var loop = Task.Run(async () =>
-        {
-            await foreach (var message in bus.SubscribeAsync("lucifer", linkedCts.Token))
-            {
-                if (message.Type != MessageType.Task)
-                {
-                    continue;
-                }
-
-                var benchmarkId = ExtractBenchmarkId(message.Content);
-                var content = contentByBenchmark(benchmarkId);
-
-                await Task.Delay(TimeSpan.FromMilliseconds(25), linkedCts.Token).ConfigureAwait(false);
-
-                await bus.PublishAsync(new AgentMessage
-                {
-                    Id = Guid.NewGuid().ToString("N"),
-                    FromAgentId = "lucifer",
-                    ToAgentId = message.FromAgentId,
-                    Type = MessageType.Report,
-                    Content = content,
-                    CorrelationId = message.CorrelationId,
-                    CausationId = message.Id,
-                    Payload = new Dictionary<string, object>
-                    {
-                        ["benchmark_id"] = benchmarkId
-                    }
-                }, linkedCts.Token).ConfigureAwait(false);
-            }
-        }, linkedCts.Token);
-
-        return new AsyncDisposableAction(async () =>
-        {
-            linkedCts.Cancel();
-            try
-            {
-                await loop.ConfigureAwait(false);
-            }
-            catch (OperationCanceledException)
-            {
-            }
-            finally
-            {
-                bus.CleanupAgent("lucifer");
-                linkedCts.Dispose();
-            }
-        });
-    }
-
-    private static string ExtractBenchmarkId(string prompt)
-    {
-        const string marker = "benchmark:";
-        var idx = prompt.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
-        if (idx < 0)
-        {
-            return "unknown";
-        }
-
-        return prompt[(idx + marker.Length)..].Trim();
+        return $"grade={report.Grade}, coverage={report.Coverage:P0}, overall={report.OverallScore:F1}, scenarios=[{scenarios}]";
     }
 
     private static bool MeetsThresholds(
@@ -280,24 +174,4 @@ public sealed class AutonomyScorecardGateTests
             && actualRank >= minimumRank;
     }
 
-    private sealed class AsyncDisposableAction : IDisposable
-    {
-        private readonly Func<Task> _disposeAsync;
-        private int _disposed;
-
-        public AsyncDisposableAction(Func<Task> disposeAsync)
-        {
-            _disposeAsync = disposeAsync;
-        }
-
-        public void Dispose()
-        {
-            if (Interlocked.Exchange(ref _disposed, 1) != 0)
-            {
-                return;
-            }
-
-            _disposeAsync().GetAwaiter().GetResult();
-        }
-    }
 }

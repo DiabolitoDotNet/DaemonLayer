@@ -1,5 +1,18 @@
 # 🚀 Next Steps - Getting Advanced Features Running
 
+## Update (Aug 2, 2026)
+
+- Strict autonomy runtime blockers are closed (A102.1/A102.2).
+- Federation optimization passes are completed (A103.1/A103.2) with perf-gate evidence.
+- Current validated baseline:
+  - Perf gate PASS (`federationAggregation` latency/op 0.156ms; alloc/op 31877B).
+  - Full regression PASS (904/904).
+
+### Current focus after closure
+
+- Keep perf gate and regression gate green in CI.
+- Treat this document as operational bring-up guidance; roadmap closure/progress lives in `TODO.md` and `COMPLETED.md`.
+
 **Last Updated**: February 4, 2026  
 **Status**: Solution builds and tests pass in Release; advanced features are integrated and ready to run (some require local dependencies)
 

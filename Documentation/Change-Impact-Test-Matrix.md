@@ -15,6 +15,10 @@ Use this matrix to select the first suites to run based on touched projects.
 | skills/, souls/, templates/ | Host.Tests, Agents.Tests | Full solution tests |
 | CI/workflows/scripts/docs only | CI syntax check + one representative fast suite | Optional full solution tests |
 
+## Performance gate pairing
+
+- Changes touching federation aggregation hot paths (`src/InfernalHierarchy.Messaging/Federation/*`) should also run `tools/InfernalHierarchy.PerfGate` and compare `federationAggregation` latency/op + alloc/op with current baseline.
+
 ## CI Alignment
 
 - PR gate runs fast lane first and full lane after fast lane success.

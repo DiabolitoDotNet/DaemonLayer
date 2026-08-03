@@ -198,6 +198,12 @@ public class AgentCollaborationService : IAgentCollaborationService
 
                     // Conflict / low-confidence: attempt resolution.
                     var resolved = await ResolveConflictAsync(validResponses, request.Strategy, request.Id, ct).ConfigureAwait(false);
+                    if (resolved.NeedsSupervisorIntervention
+                        || string.Equals(resolved.NextAction, "supervisor_adjudication_workflow", StringComparison.OrdinalIgnoreCase))
+                    {
+                        resolved = await ExecuteSupervisorAdjudicationWorkflowAsync(request, validResponses, resolved, ct).ConfigureAwait(false);
+                    }
+
                     if (resolved.Decision != "CONFLICT_UNRESOLVED_RETRY")
                     {
                         ApplyConflictProtocolMetadata(resolved, request, validResponses);
@@ -303,6 +309,96 @@ public class AgentCollaborationService : IAgentCollaborationService
             ConflictReasonCode = request.Status == CollaborationStatus.Cancelled ? "request_cancelled" : "collaboration_failed",
             NextAction = request.Status == CollaborationStatus.Cancelled ? "restart_collaboration_if_still_needed" : "escalate_to_supervisor",
             NeedsSupervisorIntervention = request.Status != CollaborationStatus.Cancelled
+        };
+    }
+
+    private async Task<CollaborationResult> ExecuteSupervisorAdjudicationWorkflowAsync(
+        CollaborationRequest request,
+        List<AgentResponse> responses,
+        CollaborationResult unresolvedResult,
+        CancellationToken ct)
+    {
+        _logger.LogWarning(
+            "Executing autonomous supervisor adjudication workflow for collaboration {RequestId} (reason={Reason})",
+            request.Id,
+            unresolvedResult.ConflictReasonCode);
+
+        await Task.CompletedTask.ConfigureAwait(false);
+
+        AgentResponse? supervisorDecision = null;
+        var supervisorPriority = int.MaxValue;
+
+        foreach (var response in responses)
+        {
+            if (string.IsNullOrWhiteSpace(response.Response))
+            {
+                continue;
+            }
+
+            var priority = RankPriority(response.AgentRank);
+            if (supervisorDecision is null
+                || priority < supervisorPriority
+                || (priority == supervisorPriority && response.Confidence > supervisorDecision.Confidence)
+                || (priority == supervisorPriority
+                    && Math.Abs(response.Confidence - supervisorDecision.Confidence) < 0.0001
+                    && string.CompareOrdinal(response.AgentId, supervisorDecision.AgentId) < 0))
+            {
+                supervisorDecision = response;
+                supervisorPriority = priority;
+            }
+        }
+
+        if (supervisorDecision is null)
+        {
+            return new CollaborationResult
+            {
+                Decision = "AUTONOMOUS_ADJUDICATION_FAILED",
+                Confidence = 0,
+                Responses = responses,
+                ParticipantCount = responses.Count,
+                AgreementScore = 0,
+                Strategy = request.Strategy,
+                AggregatedReasoning = "Autonomous supervisor adjudication workflow executed but found no usable responses.",
+                ConflictClass = "unresolved",
+                ConflictReasonCode = "autonomous_supervisor_adjudication_failed",
+                NextAction = "none",
+                NeedsSupervisorIntervention = false
+            };
+        }
+
+        var agreementCount = responses.Count(r =>
+            !string.IsNullOrWhiteSpace(r.Response)
+            && string.Equals(r.Response.Trim(), supervisorDecision.Response.Trim(), StringComparison.OrdinalIgnoreCase));
+
+        var agreementScore = responses.Count == 0 ? 0 : agreementCount / (double)responses.Count;
+
+        return new CollaborationResult
+        {
+            Decision = supervisorDecision.Response,
+            Confidence = Math.Max(supervisorDecision.Confidence, unresolvedResult.Confidence),
+            Responses = responses,
+            ParticipantCount = responses.Count,
+            AgreementScore = agreementScore,
+            WinningResponse = supervisorDecision,
+            Strategy = CollaborationStrategy.Hierarchical,
+            AggregatedReasoning =
+                $"Autonomous supervisor adjudication workflow selected response '{supervisorDecision.Response}' from {supervisorDecision.AgentId} ({supervisorDecision.AgentRank}, confidence={supervisorDecision.Confidence:F2}).",
+            ConflictClass = "resolved",
+            ConflictReasonCode = "resolved_by_supervisor_adjudication_workflow",
+            NextAction = "none",
+            NeedsSupervisorIntervention = false
+        };
+    }
+
+    private static int RankPriority(AgentRank rank)
+    {
+        return rank switch
+        {
+            AgentRank.Supreme => 0,
+            AgentRank.Prince => 1,
+            AgentRank.Duke => 2,
+            AgentRank.Worker => 3,
+            _ => 4,
         };
     }
 

@@ -181,23 +181,28 @@ public class SendCollaborationRequestsStep : ISagaStep
     }
 
     /// <inheritdoc/>
-    public Task ExecuteAsync(SagaContext context, CancellationToken ct = default)
+    public async Task ExecuteAsync(SagaContext context, CancellationToken ct = default)
     {
         _logger.LogDebug("Sending collaboration requests for saga {SagaId}", context.SagaId);
 
-        // In real implementation, would send messages to all participants
-        // For now, just mark as sent
+        var request = (CollaborationRequest)context.Data["CollaborationRequest"];
+        var result = await _collaborationService.RequestCollaborationAsync(request, ct).ConfigureAwait(false);
+
+        context.Data["CollaborationRequestResult"] = result;
         context.Data["RequestsSent"] = true;
-        return Task.CompletedTask;
     }
 
     /// <inheritdoc/>
-    public Task CompensateAsync(SagaContext context, CancellationToken ct = default)
+    public async Task CompensateAsync(SagaContext context, CancellationToken ct = default)
     {
         _logger.LogWarning("Compensating SendRequests step - sending cancellation messages");
 
-        // In real implementation, would send cancellation messages
-        return Task.CompletedTask;
+        if (context.Data.TryGetValue("CollaborationRequest", out var requestObj)
+            && requestObj is CollaborationRequest request
+            && !string.IsNullOrWhiteSpace(request.Id))
+        {
+            await _collaborationService.CancelCollaborationAsync(request.Id, ct).ConfigureAwait(false);
+        }
     }
 }
 
@@ -228,17 +233,13 @@ public class AggregateResponsesStep : ISagaStep
     {
         _logger.LogDebug("Aggregating responses for saga {SagaId}", context.SagaId);
 
-        // In real implementation, would wait for and aggregate responses
-        var mockResult = new CollaborationResult
+        if (!context.Data.TryGetValue("CollaborationRequestResult", out var resultObj)
+            || resultObj is not CollaborationResult result)
         {
-            Decision = "AGGREGATED_DECISION",
-            Confidence = 0.85,
-            ParticipantCount = 3,
-            AgreementScore = 0.9,
-            AggregatedReasoning = "Consensus reached via saga"
-        };
+            throw new InvalidOperationException("Collaboration request result missing before aggregation step");
+        }
 
-        context.Data["AggregatedResult"] = mockResult;
+        context.Data["AggregatedResult"] = result;
         return Task.CompletedTask;
     }
 

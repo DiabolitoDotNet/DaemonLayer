@@ -1,167 +1,83 @@
-# InfernalHierarchy - Final Gap TODO (Strict 100% Autonomy)
+# InfernalHierarchy - Final TODO (Strict 100% Autonomy Audit)
 
 > Last Updated: 2026-08-02
-> Scope: only real remaining blockers after final audit.
-
-This file no longer tracks historical work. It tracks only what still prevents a strict, defensible claim of:
-- 100% autonomous agent execution,
-- production-grade reliability,
-- modern C#/.NET 10 optimization with measurable proof.
+> Goal: strict, defensible 100% autonomy claim (execution without required human intervention), with measurable performance evidence.
 
 ---
 
-## Audit Verdict
+## Audit Summary
 
-### What is already solid
+### Confirmed complete
 
-- Federation heartbeat truthfulness and inactive-instance handling are implemented and tested.
-- Build/Deploy profile-permission alignment and drift diagnostics are implemented.
-- Strategy-consistent federated aggregation and supervisor escalation are implemented.
-- Collaboration strategy learning loop and perf gate harness exist.
-- CI includes perf gate and autonomy scorecard gate steps.
-- Targeted suites + full regression are green.
+- Federation heartbeat truthfulness is implemented and validated.
+- Runtime authorization profile alignment and drift diagnostics are in place.
+- Strategy-consistent collaboration/federation aggregation is implemented.
+- Telegram send path is real transport-backed (no fake success).
+- Autonomy scorecard gate uses real end-to-end agent runs.
+- Unresolved local/federated conflicts now execute an autonomous supervisor adjudication workflow.
+- Custom tool generation/startup paths no longer hard-stop on manual approval gates.
+- Full regression is green.
 
-### What still blocks a strict 100% autonomy claim
+### Remaining strict gaps (blocking 100% autonomy claim)
 
-None on the blocking scope. Remaining work is optional/iterative optimization only.
-
----
-
-## Final Blocking Backlog
-
-### A100X.1 - Make send_telegram truly operational (not log-only)
-
-Status: DONE
-Priority: P0 (critical)
-
-Evidence:
-
-- `TelegramSendTool` still contains a TODO and returns success after logging intent instead of real send.
-- Current behavior can report message delivery while nothing was sent.
-
-Implementation:
-
-- Inject a real sender abstraction backed by Telegram bot client/service.
-- Return delivery result based on real API outcome (success/failure, error code, retryability).
-- Emit deterministic metadata (message id, chat id, transport status, latency).
-- Keep policy/rate-limit enforcement unchanged.
-
-Acceptance Criteria:
-
-- `send_telegram` fails when Telegram API fails and succeeds only on confirmed send.
-- No fake success path remains in tool execution.
-- ReAct command paths depending on Telegram tool remain stable.
-
-Validation:
-
-- Unit tests for success, transport failure, invalid chat, rate-limit response.
-- Integration test with mocked Telegram client proving behavior mapping.
-
-Completion note (2026-08-02):
-
-- Introduced `ITelegramMessageSender` abstraction and Host implementation `TelegramMessageSender` backed by real Telegram transport.
-- `TelegramSendTool` now reports success/failure from actual send outcome (no fake-success path), with retryability and latency metadata.
-- Tool tests updated to cover validation, transport failure mapping, and success metadata.
+- None currently identified in runtime execution paths.
 
 ---
 
-### A100X.2 - Convert autonomy gate to real benchmark evidence
+## Optimization Track (Non-blocking)
 
-Status: DONE
-Priority: P0 (critical)
+### A103.1 - Increase perf-gate headroom on federation aggregation allocations
 
-Evidence:
-
-- `AutonomyScorecardGateTests` currently validate threshold logic with seeded runs.
-- Gate correctness is tested, but autonomy capability is not measured from live autonomous scenario execution in CI.
-
-Implementation:
-
-- Add deterministic benchmark scenario runner that executes real playground scenarios before scorecard evaluation.
-- Persist run outputs and durations used by scorecard in the same job.
-- Gate on actual generated scorecard report (coverage/grade/per-scenario success).
-
-Acceptance Criteria:
-
-- CI gate fails when real benchmark scenarios underperform.
-- Gate cannot pass without executing benchmark scenarios.
-- Scorecard artifacts are exported for auditability.
-
-Validation:
-
-- Add a controlled failing benchmark fixture in CI (or dedicated test lane) proving gate blocks regressions.
-
-Completion note (2026-08-02):
-
-- `AutonomyScorecardGateTests` now execute real benchmark runs over the message bus before scorecard evaluation (no seeded-only scorecard input).
-- Includes both underperforming scenario failure gate and healthy scenario pass gate.
-- CI gate step remains wired to these tests in full lane.
-
----
-
-### A100X.3 - Remove stale profile enforcement comments
-
-Status: DONE
-Priority: P1
-
-Evidence:
-
-- `ExecutionProfilePolicy` still states file/network/command scopes are placeholders and not enforced, while they are now enforced by `ToolAuthorizationService`.
-
-Implementation:
-
-- Update stale comments to match real behavior.
-- Ensure docs do not contradict runtime enforcement.
-
-Acceptance Criteria:
-
-- No misleading comment remains on execution-profile enforcement.
-- Docs and code are semantically aligned.
-
-Validation:
-
-- Doc/code consistency review pass.
-
-Completion note (2026-08-02):
-
-- Updated stale enforcement comment in execution profile options to match runtime behavior enforced by `ToolAuthorizationService`.
-
----
-
-## Optimization Backlog (non-blocking but recommended)
-
-### A100X.4 - Modern C# allocation tightening (post-closure)
-
-Status: DONE
+Status: DONE  
 Priority: P2
 
-Objective:
+Context:
 
-- Continue reducing avoidable allocations and lock contention in hot paths while preserving clarity.
+- Current `federationAggregation` allocation is within budget but close to ceiling (~33.1KB/op vs 35KB/op).
 
-Targets:
+Focus:
 
-- Pre-normalized frozen snapshots for frequently checked allowlists/scopes.
-- Review high-frequency LINQ usage in federation aggregation and authorization.
-- Keep async paths explicit and avoid sync-over-async hazards.
+- Reduce per-call temporary allocations in aggregation response materialization and reasoning composition.
+- Keep semantics unchanged and preserve deterministic strategy behavior.
 
 Validation:
 
-- Extend perf gate budgets after each optimization.
-- Track latency/op and alloc/op trend in CI artifacts.
-
-Completion note (2026-08-02):
-
-- Added immutable frozen per-profile command allowlist snapshots in `ToolAuthorizationService` to reduce repeated hot-path normalization/scans.
-- Reload path now refreshes these snapshots atomically with profile reload.
+- Perf gate PASS with improved alloc/op headroom.
+- `federationAggregation` improved from 33133B/op to 31877B/op (budget 35000B).
+- Full regression: 904/904 pass.
 
 ---
 
-## Definition Of Done (Strict Closure)
+## Recently Closed
 
-Strict 100% autonomy claim is valid only when:
+### A102.1 - Executable supervisor adjudication workflow
 
-- A100X.1 to A100X.4 are DONE and validated.
-- CI gates rely on real benchmark execution evidence.
-- No fake-success outbound action path remains.
-- Full solution regression remains green after these changes.
+Status: DONE
+
+### A102.2 - Remove required manual gate from custom-tool path
+
+Status: DONE
+
+### A103.1 - Increase perf-gate headroom on federation aggregation allocations
+
+Status: DONE
+
+### A103.2 - Cross-instance response parsing latency pass
+
+Status: DONE
+
+Evidence snapshot:
+
+- New autonomous adjudication coverage in local and federated collaboration tests.
+- New startup custom-tool autonomy test proving policy-flagged tool load without manual gate.
+- Perf gate: PASS (`federationAggregation` latency/op 0.156ms; alloc/op 31877B).
+- Full regression: 904/904 pass.
+
+---
+
+## Definition of Done (Strict 100% Claim)
+
+Strict 100% autonomy is reached when:
+
+- No required human approval/intervention remains in supported runtime task execution paths.
+- Autonomy scorecard and full regression remain green.

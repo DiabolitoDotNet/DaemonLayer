@@ -232,20 +232,65 @@ public sealed class SagaCoverageTests
     [Fact]
     public async Task SendCollaborationRequestsStep_ExecuteAndCompensate_SetsFlag()
     {
-        var step = new SendCollaborationRequestsStep(NullLogger.Instance, Mock.Of<IAgentCollaborationService>());
-        var context = new SagaContext();
+        var collaborationService = new Mock<IAgentCollaborationService>();
+        collaborationService
+            .Setup(s => s.RequestCollaborationAsync(It.IsAny<CollaborationRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new CollaborationResult
+            {
+                Decision = "ok",
+                Confidence = 0.9,
+                ParticipantCount = 2,
+                AgreementScore = 1,
+                AggregatedReasoning = "unit"
+            });
+        collaborationService
+            .Setup(s => s.CancelCollaborationAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        var step = new SendCollaborationRequestsStep(NullLogger.Instance, collaborationService.Object);
+        var context = new SagaContext
+        {
+            Data =
+            {
+                ["CollaborationRequest"] = new CollaborationRequest
+                {
+                    Id = "cov-req-1",
+                    InitiatorAgentId = "lucifer",
+                    Task = "t",
+                    ParticipantAgentIds = ["a", "b"],
+                    MinimumParticipants = 2,
+                    MinimumConfidence = 0.7,
+                    Strategy = CollaborationStrategy.Voting
+                }
+            }
+        };
 
         await step.ExecuteAsync(context, CancellationToken.None);
         context.Data.Should().ContainKey("RequestsSent");
+        context.Data.Should().ContainKey("CollaborationRequestResult");
 
         await step.CompensateAsync(context, CancellationToken.None);
+        collaborationService.Verify(s => s.CancelCollaborationAsync("cov-req-1", It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
     public async Task AggregateResponsesStep_ExecuteAndCompensate_SetsAndClearsResult()
     {
         var step = new AggregateResponsesStep(NullLogger.Instance, Mock.Of<IAgentCollaborationService>());
-        var context = new SagaContext();
+        var context = new SagaContext
+        {
+            Data =
+            {
+                ["CollaborationRequestResult"] = new CollaborationResult
+                {
+                    Decision = "d",
+                    Confidence = 0.8,
+                    ParticipantCount = 2,
+                    AgreementScore = 1,
+                    AggregatedReasoning = "unit"
+                }
+            }
+        };
 
         await step.ExecuteAsync(context, CancellationToken.None);
         context.Data.Should().ContainKey("AggregatedResult");

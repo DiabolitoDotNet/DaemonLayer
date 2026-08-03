@@ -1,6 +1,6 @@
 # InfernalHierarchy – Completed Work Log
 
-> **Last Updated:** August 1, 2026
+> **Last Updated:** August 3, 2026
 >
 > This file contains items/features that are **implemented / completed** and were moved out of `TODO.md` to keep the TODO list focused on remaining work.
 >
@@ -218,7 +218,7 @@
 - SearXNG Startpage JSON decode errors stopped by disabling Startpage engines in `searxng/settings.yml`.
 
 ### Custom Tools: approval, debug, and deterministic execution ✅
-- Manual approval relaxed for **network-only** custom tools via config (`CustomTools:AllowNetworkWithoutManualApproval=true`) while keeping manual approval for IO/process/reflection patterns.
+- Manual approval was initially relaxed for **network-only** custom tools via config (`CustomTools:AllowNetworkWithoutManualApproval=true`) while keeping manual approval for IO/process/reflection patterns. (Superseded by A102.2 autonomous custom-tool lane.)
 - Deterministic “forced invocation” fast-path in the ReAct loop: explicit `Invoke tool <name> {json}` bypasses the model and executes immediately (records tool calls reliably via `/api/chat`).
 - Forced invocation now supports `create_custom_tool` as well, enabling deterministic overwrite/regeneration without relying on model choice.
 - Tool registry supports replacing existing `custom_*` tools at runtime (updates existing entry instead of refusing duplicates).
@@ -267,6 +267,68 @@
 - **A100X.3 profile enforcement documentation consistency**: stale execution-profile enforcement comment updated to match runtime enforcement.
 - **A100X.4 C# hot-path optimization**: authorization profile command allowlists are now cached as immutable frozen snapshots for lower per-call overhead.
 - **Validation**: Telegram tool tests (4/4), Host autonomy/authorization targeted tests (11/11), perf gate pass, full solution regression green (`EXIT:0`).
+
+## ✅ Strict Autonomy Closure (A101, Aug 3, 2026)
+
+- **A101.1 saga real-flow closure**: `CreateCollaborationSaga` no longer uses placeholder send/aggregate logic.
+  - `SendCollaborationRequestsStep` now executes real collaboration dispatch through `IAgentCollaborationService.RequestCollaborationAsync` and stores `CollaborationRequestResult`.
+  - Compensation now performs real `CancelCollaborationAsync` when a valid request id is available.
+  - `AggregateResponsesStep` now consumes the real collaboration result from context and fails fast if the upstream step contract is broken.
+- **A101.2 autonomy evidence closure**: `AutonomyScorecardGateTests` now run real benchmark scenarios end-to-end via Host Playground API (`/api/playground/scenarios`, `/run`) using `InfernalHierarchyTestWebAppFactory`.
+  - Gate pass/fail is now derived from real orchestrated agent execution traces and timings, not synthetic responder-seeded outputs.
+  - Deterministic CI behavior is retained through benchmark tagging and controlled prompt/time budget parameters.
+- **Validation**:
+  - Targeted suites: saga execution/coverage + host autonomy gate all passing.
+  - Full regression: 902 tests passed, 0 failed.
+
+## ✅ Continuous Optimization Closure (A101.3, Aug 3, 2026)
+
+- **A101.3 hot-path allocation reduction**: optimized cross-instance federation aggregation internals in `FederationService`.
+  - Replaced several high-frequency LINQ order/group/select chains with single-pass loop selection for Voting, WeightedVoting, HighestConfidence, and Hierarchical strategy winner resolution.
+  - Replaced LINQ `GroupBy` projection with a dictionary-backed response accumulator to reduce temporary enumerable/object allocations while preserving aggregation semantics.
+- **Validation**:
+  - `FederationServiceTests`: 17/17 pass.
+  - Perf gate: PASS with budget compliance after optimization (`federationAggregation` latency/op 0.161ms, alloc/op 33133B).
+  - Full regression: 902/902 pass.
+
+## ✅ Strict Autonomy Runtime Closure (A102, Aug 3, 2026)
+
+- **A102.1 executable adjudication workflow**:
+  - `AgentCollaborationService` now executes an autonomous supervisor adjudication workflow when conflicts remain unresolved after bounded rounds.
+  - `FederationService` now executes the same autonomous adjudication workflow for unresolved cross-instance outcomes, returning terminal autonomous decisions instead of action-token-only escalation.
+- **A102.2 custom-tool autonomy closure**:
+  - `CreateCustomToolTool` no longer hard-blocks creation/registration on manual-approval branches.
+  - `CustomToolsStartupService` no longer blocks loading policy-flagged custom tools pending manual approval; tools are compiled/loaded autonomously when policy allows.
+- **Validation**:
+  - Added local unresolved-consensus adjudication test in `AgentCollaborationServiceTests`.
+  - Updated federated unresolved-path tests to assert autonomous adjudication outcomes.
+  - Updated custom-tool creation tests to assert compile/register behavior without manual-approval gate.
+  - Added startup reload test proving policy-flagged tool load without manual gate.
+  - Full regression: 904/904 pass.
+
+## ✅ Performance Headroom Closure (A103.1, Aug 3, 2026)
+
+- **A103.1 federation allocation headroom improvement**:
+  - Reduced temporary allocations in `FederationService.RequestCrossInstanceCollaborationAsync` by replacing the concurrent-bag + LINQ task pipeline with pre-sized list collection and explicit task wiring.
+  - Reduced aggregation materialization overhead by tracking weighted totals in `ResponseAccumulator` (no per-group item list retention for weighted voting).
+  - Preserved deterministic behavior with stable adjudication tie-break (`AgentId`) when rank/confidence are equal.
+- **Validation**:
+  - Perf gate: PASS (`federationAggregation` latency/op 0.153ms; alloc/op 32157B, budget 35000B).
+  - Regression improvement vs previous measured alloc/op 33133B: **-976B/op**.
+  - Targeted federation tests: 20/20 pass.
+  - Full regression: 904/904 pass.
+
+## ✅ Federation Micro-Latency/Parsing Pass (A103.2, Aug 2, 2026)
+
+- **A103.2 response extraction and routing pass**:
+  - Replaced active-instance LINQ snapshot/filter in `RequestCrossInstanceCollaborationAsync` with explicit snapshot builder (`GetActiveRemoteInstancesSnapshot`) to reduce per-call iterator overhead.
+  - Reworked `TryExtractAgentResponse` into a single-pass payload scan (Decision/Response/AgentId/Reasoning/Confidence), avoiding repeated per-key dictionary scans.
+  - Kept deterministic adjudication tie-break behavior intact.
+- **Validation**:
+  - Targeted federation tests: 20/20 pass.
+  - Perf gate: PASS (`federationAggregation` latency/op 0.156ms; alloc/op 31877B, budget 35000B).
+  - Allocation improvement vs A103.1 snapshot (32157B/op): **-280B/op**.
+  - Full regression: 904/904 pass.
 
 ### Implemented Tests (existing)
 - Host: integration tests

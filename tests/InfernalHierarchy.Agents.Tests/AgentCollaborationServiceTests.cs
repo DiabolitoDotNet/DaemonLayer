@@ -674,4 +674,78 @@ public class AgentCollaborationServiceTests
         stats!.TopTools.Select(t => t.ToolName)
             .Should().Contain("collaboration_strategy_consensus");
     }
+
+    [Fact]
+    public async Task RequestCollaborationAsync_WhenConsensusRemainsUnresolved_ExecutesAutonomousSupervisorAdjudicationWorkflow()
+    {
+        var publishCount = 0;
+        var firstRoundPublished = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var secondRoundPublished = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var thirdRoundPublished = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var bus = new Mock<IMessageBus>();
+        bus.Setup(b => b.PublishAsync(It.IsAny<AgentMessage>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask)
+            .Callback(() =>
+            {
+                // 2 participants => 2 publish calls per round
+                var current = Interlocked.Increment(ref publishCount);
+                if (current == 2)
+                {
+                    firstRoundPublished.TrySetResult(true);
+                }
+                if (current == 4)
+                {
+                    secondRoundPublished.TrySetResult(true);
+                }
+                if (current == 6)
+                {
+                    thirdRoundPublished.TrySetResult(true);
+                }
+            });
+
+        var registry = new AgentRegistry(new Mock<ILogger<AgentRegistry>>().Object);
+        registry.Register(CreateAgent("d1", AgentRank.Duke).Object);
+        registry.Register(CreateAgent("w1", AgentRank.Worker).Object);
+
+        var service = new AgentCollaborationService(
+            new Mock<ILogger<AgentCollaborationService>>().Object,
+            bus.Object,
+            registry);
+
+        var request = new CollaborationRequest
+        {
+            Id = Guid.NewGuid().ToString(),
+            InitiatorAgentId = "init",
+            Task = "Pick one option",
+            Strategy = CollaborationStrategy.Consensus,
+            MinimumParticipants = 2,
+            MinimumConfidence = 0.95,
+            Timeout = TimeSpan.FromSeconds(2),
+            ParticipantAgentIds = new List<string> { "d1", "w1" }
+        };
+
+        var collaborationTask = service.RequestCollaborationAsync(request, CancellationToken.None);
+
+        await firstRoundPublished.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        await service.SubmitResponseAsync(request.Id, new AgentResponse { AgentId = "d1", AgentRank = AgentRank.Duke, Response = "A", Confidence = 0.6, Reasoning = "senior call" });
+        await service.SubmitResponseAsync(request.Id, new AgentResponse { AgentId = "w1", AgentRank = AgentRank.Worker, Response = "B", Confidence = 0.9, Reasoning = "different" });
+
+        await secondRoundPublished.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        await service.SubmitResponseAsync(request.Id, new AgentResponse { AgentId = "d1", AgentRank = AgentRank.Duke, Response = "A", Confidence = 0.62, Reasoning = "unchanged" });
+        await service.SubmitResponseAsync(request.Id, new AgentResponse { AgentId = "w1", AgentRank = AgentRank.Worker, Response = "B", Confidence = 0.91, Reasoning = "unchanged" });
+
+        await thirdRoundPublished.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        await service.SubmitResponseAsync(request.Id, new AgentResponse { AgentId = "d1", AgentRank = AgentRank.Duke, Response = "A", Confidence = 0.65, Reasoning = "final" });
+        await service.SubmitResponseAsync(request.Id, new AgentResponse { AgentId = "w1", AgentRank = AgentRank.Worker, Response = "B", Confidence = 0.92, Reasoning = "final" });
+
+        var result = await collaborationTask;
+
+        result.Decision.Should().Be("A");
+        result.ConflictReasonCode.Should().Be("resolved_by_supervisor_adjudication_workflow");
+        result.NextAction.Should().Be("none");
+        result.NeedsSupervisorIntervention.Should().BeFalse();
+        result.Strategy.Should().Be(CollaborationStrategy.Hierarchical);
+        publishCount.Should().BeGreaterThanOrEqualTo(6);
+    }
 }
