@@ -69,10 +69,10 @@ Every mitigation is emitted as an auditable decision event and reflected in inci
 Cross-instance collaboration can now collect remote responses and aggregate them into a single decision with source provenance:
 
 - remote responses are parsed from federated payloads,
-- final decision/confidence/agreement are computed from collected responses,
+- final decision/confidence/agreement are computed using strategy-consistent aggregation (Voting, WeightedVoting, Consensus, HighestConfidence, Hierarchical),
 - reasoning keeps source instance lineage for auditability.
 
-When no remote response is available in time, the system returns a structured fallback result (`cross_instance_no_responses`) with a next action for local collaboration fallback.
+When no remote response is available in time, or when minimum participation is not met, the system returns a structured fallback result with deterministic next actions for local/supervisor fallback.
 
 ### 8) Autonomous saga compensation recovery
 
@@ -81,6 +81,14 @@ Saga compensation no longer ends in manual-only mode by default:
 - each compensation step retries with bounded attempts,
 - compensation failures emit structured reason codes,
 - saga result includes a supervisor escalation hint (`NeedsSupervisorIntervention`) and next action.
+
+### 9) Execution-profile/runtime consistency checks
+
+Build/Deploy autonomy depends on profile-to-runtime authorization consistency. The host now:
+
+- aligns default runtime tool permissions with Build/Deploy execution profile expectations,
+- logs profile/permission drift diagnostics at startup and configuration reload,
+- preserves deny-by-default behavior for unknown tool surfaces.
 
 ## Example workflows
 

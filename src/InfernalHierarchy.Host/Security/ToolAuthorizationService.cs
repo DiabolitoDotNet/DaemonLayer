@@ -22,6 +22,7 @@ public class ToolAuthorizationService : IToolAuthorizationService
         _configuration = configuration;
         _toolPermissions = LoadToolPermissions();
         _executionProfiles = LoadExecutionProfiles();
+        LogProfilePermissionDrift(_toolPermissions, _executionProfiles);
     }
 
     /// <summary>
@@ -144,7 +145,59 @@ public class ToolAuthorizationService : IToolAuthorizationService
         var newPermissions = LoadToolPermissions();
         Interlocked.Exchange(ref _toolPermissions, newPermissions);
         _executionProfiles = LoadExecutionProfiles();
+        LogProfilePermissionDrift(_toolPermissions, _executionProfiles);
         _logger.LogInformation("✅ Tool permissions reloaded - {Count} tools configured", _toolPermissions.Count);
+    }
+
+    private void LogProfilePermissionDrift(
+        ImmutableDictionary<string, ToolPermissions> permissions,
+        ExecutionProfilesOptions profiles)
+    {
+        if (!profiles.Enabled || profiles.Profiles.Count == 0)
+        {
+            return;
+        }
+
+        var driftMessages = new List<string>();
+
+        foreach (var (profileName, profile) in profiles.Profiles)
+        {
+            if (!profile.Enabled || profile.AllowedTools.Count == 0)
+            {
+                continue;
+            }
+
+            foreach (var tool in profile.AllowedTools)
+            {
+                var normalized = NormalizeToolName(tool);
+                if (string.IsNullOrWhiteSpace(normalized))
+                {
+                    continue;
+                }
+
+                if (!permissions.TryGetValue(normalized, out var permission))
+                {
+                    driftMessages.Add($"profile={profileName} tool={normalized} reason=missing_tool_permission");
+                    continue;
+                }
+
+                if (!permission.Enabled)
+                {
+                    driftMessages.Add($"profile={profileName} tool={normalized} reason=tool_permission_disabled");
+                }
+            }
+        }
+
+        if (driftMessages.Count == 0)
+        {
+            _logger.LogInformation("✅ Execution profile and tool permission alignment: no drift detected");
+            return;
+        }
+
+        _logger.LogWarning(
+            "⚠️ Execution profile/tool permission drift detected ({Count}): {Details}",
+            driftMessages.Count,
+            string.Join("; ", driftMessages));
     }
 
     private ExecutionProfilesOptions LoadExecutionProfiles()
@@ -254,13 +307,9 @@ public class ToolAuthorizationService : IToolAuthorizationService
 
         if (policy.CommandAllowlist.Count > 0)
         {
-            var allowlist = new HashSet<string>(
-                policy.CommandAllowlist.Where(x => !string.IsNullOrWhiteSpace(x)).Select(x => x.Trim()),
-                StringComparer.OrdinalIgnoreCase);
-
             foreach (var commandTarget in ExtractCommandTargets(normalizedToolName, parameters))
             {
-                if (!allowlist.Contains(commandTarget))
+                if (!ContainsIgnoreCase(policy.CommandAllowlist, commandTarget))
                 {
                     return AuthorizationResult.Failure(
                         $"Command '{commandTarget}' is not allowed by execution profile '{profileName}'");
@@ -693,56 +742,56 @@ public class ToolAuthorizationService : IToolAuthorizationService
             },
             ["fs_read"] = new()
             {
-                Enabled = false,
+                Enabled = true,
                 AllowedRanks = new() { AgentRank.Supreme, AgentRank.Prince, AgentRank.Duke, AgentRank.Worker },
                 WhitelistedAgents = new(),
                 BlacklistedAgents = new()
             },
             ["fs_search"] = new()
             {
-                Enabled = false,
+                Enabled = true,
                 AllowedRanks = new() { AgentRank.Supreme, AgentRank.Prince, AgentRank.Duke, AgentRank.Worker },
                 WhitelistedAgents = new(),
                 BlacklistedAgents = new()
             },
             ["fs_write"] = new()
             {
-                Enabled = false,
+                Enabled = true,
                 AllowedRanks = new() { AgentRank.Supreme, AgentRank.Prince },
                 WhitelistedAgents = new(),
                 BlacklistedAgents = new()
             },
             ["http_request"] = new()
             {
-                Enabled = false,
+                Enabled = true,
                 AllowedRanks = new() { AgentRank.Supreme, AgentRank.Prince, AgentRank.Duke },
                 WhitelistedAgents = new(),
                 BlacklistedAgents = new()
             },
             ["graphql_request"] = new()
             {
-                Enabled = false,
+                Enabled = true,
                 AllowedRanks = new() { AgentRank.Supreme, AgentRank.Prince, AgentRank.Duke },
                 WhitelistedAgents = new(),
                 BlacklistedAgents = new()
             },
             ["sql_query_readonly"] = new()
             {
-                Enabled = false,
+                Enabled = true,
                 AllowedRanks = new() { AgentRank.Supreme, AgentRank.Prince, AgentRank.Duke },
                 WhitelistedAgents = new(),
                 BlacklistedAgents = new()
             },
             ["python_exec"] = new()
             {
-                Enabled = false,
+                Enabled = true,
                 AllowedRanks = new() { AgentRank.Supreme, AgentRank.Prince, AgentRank.Duke },
                 WhitelistedAgents = new(),
                 BlacklistedAgents = new()
             },
             ["node_exec"] = new()
             {
-                Enabled = false,
+                Enabled = true,
                 AllowedRanks = new() { AgentRank.Supreme, AgentRank.Prince, AgentRank.Duke },
                 WhitelistedAgents = new(),
                 BlacklistedAgents = new()
@@ -823,6 +872,24 @@ public class ToolAuthorizationService : IToolAuthorizationService
     {
         return identities.Contains(agentId, StringComparer.OrdinalIgnoreCase)
             || identities.Contains(agentName, StringComparer.OrdinalIgnoreCase);
+    }
+
+    private static bool ContainsIgnoreCase(IReadOnlyCollection<string> values, string candidate)
+    {
+        foreach (var value in values)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                continue;
+            }
+
+            if (string.Equals(value.Trim(), candidate, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private List<AgentRank> ParseRanks(string ranksString, string toolName)

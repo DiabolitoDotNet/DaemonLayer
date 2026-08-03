@@ -243,6 +243,15 @@
 - **A100.3 saga compensation autonomy closure**: `SagaBase` now applies bounded compensation retries and returns structured failure metadata (`FailureReasonCode`, `NextAction`, `NeedsSupervisorIntervention`) with escalation hints when retries are exhausted.
 - **Validation**: targeted messaging/agents test suites passing + full solution regression green (`dotnet test InfernalHierarchy.sln`, `EXIT:0`).
 
+## ✅ Autonomy Strict-Hardening Closure (A100R, Aug 2, 2026)
+
+- **A100R.1 federation heartbeat truthfulness**: `FederationService.MonitorInstanceHealthAsync` now marks an instance healthy only on confirmed heartbeat response; transport/status failures no longer refresh `LastHeartbeat` and set `IsActive=false`.
+- **A100R.2 runtime authorization alignment**: Build/Deploy-critical tools are now enabled by default in `ToolAuthorizationService` permissions, and profile/permission drift diagnostics are logged at startup and reload.
+- **A100R.3 strategy-consistent cross-instance aggregation**: federation collaboration now applies strategy-specific aggregation semantics (Voting, WeightedVoting, Consensus, HighestConfidence, Hierarchical) with deterministic fallback when participants are insufficient.
+- **A100R.4 autonomous unresolved-conflict closure**: unresolved collaboration outcomes now route to `supervisor_adjudication_workflow` instead of manual-only guidance.
+- **A100R.5 modern C# optimization pass**: reduced hot-path allocations by removing per-call allowlist set materialization in profile command checks while preserving policy behavior.
+- **Validation**: messaging tests pass after aggregation semantics update (30/30), authorization targeted tests pass (9/9), and full solution regression remains green (`EXIT:0`).
+
 ### Implemented Tests (existing)
 - Host: integration tests
 - Agents: unit tests

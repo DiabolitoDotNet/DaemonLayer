@@ -1,6 +1,6 @@
 # InfernalHierarchy - TODO Implementation Plan
 
-> Last Updated: 2026-08-01
+> Last Updated: 2026-08-02
 > Objective: deliver the most autonomous, resilient, and optimized Telegram-first multi-agent platform.
 
 Use this file as the active implementation plan.
@@ -355,21 +355,144 @@ Validation:
 
 ## Immediate Next Sprint (start here)
 
-All roadmap items P0-P4 in this file are completed.
+Final hardening pass to reach strict 100% autonomy target with production-grade resilience and performance.
 
-Suggested next iteration focus:
+### A100R.1 Federation heartbeat truthfulness
 
-1. Expand incident-response UAT scenarios and tune thresholds from production-like telemetry.
-2. Add chaos/load automation around incident throttling + supervisor preemption interactions.
-3. Extend skillbook promotion quality gates (semantic dedupe + confidence scoring).
-4. Introduce release-level dashboards for incident_response/actions trend and false-positive rate.
-5. Promote this completed plan snapshot into long-term roadmap v2.
+Status: DONE
+
+Gap:
+
+- Heartbeat transport failures can still keep an instance marked healthy in monitor flow.
+
+Implementation:
+
+- Make heartbeat success explicit (do not infer health from swallowed transport failures).
+- Update instance state (`IsActive`, `LastHeartbeat`) only on confirmed heartbeat response.
+- Keep stale-instance eviction logic unchanged.
+
+Acceptance Criteria:
+
+- A failed heartbeat never refreshes `LastHeartbeat`.
+- `IsActive` flips to false on transport/status failure.
+- Delegation/collaboration no longer selects recently failed instances.
+
+Validation:
+
+- Update federation health tests for strict unhealthy-on-failure behavior.
+- Failure-injection integration test with multiple instances.
+
+### A100R.2 Runtime authorization alignment for Build/Deploy
+
+Status: DONE
+
+Gap:
+
+- Build/Deploy profiles allow tools that remain disabled by default in runtime tool permissions.
+
+Implementation:
+
+- Align default `ToolPermissions` with `ExecutionProfiles` for Build/Deploy-critical tools.
+- Add startup consistency check that reports profile/permission drift.
+- Keep deny-by-default for unknown tools.
+
+Acceptance Criteria:
+
+- Every tool allowed by active profile is executable unless explicitly denied by policy.
+- Drift is visible at startup and testable.
+
+Validation:
+
+- Policy tests covering profile-to-permission consistency.
+- E2E Build and Deploy representative scenarios.
+
+### A100R.3 Strategy-consistent cross-instance aggregation
+
+Status: DONE
+
+Gap:
+
+- Cross-instance aggregation uses simplified majority logic and does not fully enforce strategy semantics.
+
+Implementation:
+
+- Apply strategy-consistent aggregation (Voting, WeightedVoting, Consensus, Hierarchical, HighestConfidence).
+- Enforce minimum participant semantics before final decision.
+- Preserve source-instance provenance in final reasoning.
+
+Acceptance Criteria:
+
+- Federated result semantics match local collaboration strategy semantics.
+- Incomplete participation returns deterministic structured fallback.
+
+Validation:
+
+- Multi-instance integration tests per strategy.
+- Deterministic tie/low-confidence conflict-path tests.
+
+### A100R.4 Autonomous unresolved-conflict closure
+
+Status: DONE
+
+Gap:
+
+- Final unresolved collaboration path still points to manual adjudication wording.
+
+Implementation:
+
+- Replace manual-only terminal guidance with autonomous escalation ladder.
+- Route unresolved outcomes to supervisor-driven adjudication workflow.
+- Emit structured reason codes and next actions consistently.
+
+Acceptance Criteria:
+
+- No terminal path requires manual-only wording in autonomous flow.
+- Supervisor escalation path is deterministic and auditable.
+
+Validation:
+
+- Conflict exhaustion scenarios verify escalation event lineage.
+- Explainability timeline includes reason code and next-action chain.
+
+### A100R.5 Performance and modern C# tightening
+
+Status: DONE
+
+Gap:
+
+- Final pass still has optimization opportunities on hot authorization/federation paths.
+
+Implementation:
+
+- Review hot dictionaries/sets for immutable/frozen snapshots where beneficial.
+- Reduce avoidable allocations in repeated authorization and aggregation paths.
+- Keep async/error-flow explicit and allocation-aware.
+
+Acceptance Criteria:
+
+- No measurable regression in throughput/latency.
+- Reduced allocations on target hot paths.
+
+Validation:
+
+- Benchmark before/after (latency + allocation counters).
+- Full regression + targeted perf checks.
+
+Completion note (2026-08-02):
+
+- Targeted optimization implemented on authorization hot path (removed per-call allowlist HashSet allocation in profile command checks).
+- Functional safety validated with targeted test suites and full solution regression (EXIT:0).
+- Additional benchmark harness remains recommended for future quantitative baseline tracking.
 
 ---
 
 ## Autonomy 100% Closure Plan
 
 Objective: close the final gaps so agents can complete requested tasks end-to-end without human intervention.
+
+Note:
+
+- A100.1-A100.4 are implemented and validated, but a final strict-autonomy hardening pass remains open in A100R.* (see Immediate Next Sprint).
 
 ### A100.1 Apply execution profile switches automatically
 

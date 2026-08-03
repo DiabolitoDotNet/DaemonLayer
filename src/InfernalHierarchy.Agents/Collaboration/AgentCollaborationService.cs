@@ -634,10 +634,10 @@ Instruction: If you change your decision, explain why. If you keep it, explain w
             ParticipantCount = responses.Count,
             AgreementScore = 0.0,
             Strategy = originalStrategy,
-            AggregatedReasoning = "Multiple strategies and rounds failed to resolve disagreement. Manual intervention may be required.",
+            AggregatedReasoning = "Multiple strategies and rounds failed to resolve disagreement. Escalating to supervisor adjudication workflow.",
             ConflictClass = "unresolved",
             ConflictReasonCode = "max_rounds_exhausted",
-            NextAction = "supervisor_manual_adjudication",
+            NextAction = "supervisor_adjudication_workflow",
             NeedsSupervisorIntervention = true
         };
     }

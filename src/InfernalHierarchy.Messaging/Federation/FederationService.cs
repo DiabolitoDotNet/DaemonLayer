@@ -200,18 +200,43 @@ public class FederationService : IFederationService
         }
 
         var collectedResponses = responses.ToList();
-        var winningGroup = collectedResponses
-            .GroupBy(r => r.Response, StringComparer.OrdinalIgnoreCase)
-            .OrderByDescending(g => g.Count())
-            .ThenByDescending(g => g.Average(r => r.Confidence))
-            .First();
+        if (collectedResponses.Count < request.MinimumParticipants)
+        {
+            return new CollaborationResult
+            {
+                Decision = "INSUFFICIENT_CROSS_INSTANCE_PARTICIPANTS",
+                Confidence = 0,
+                Responses = collectedResponses,
+                ParticipantCount = collectedResponses.Count,
+                AgreementScore = 0,
+                AggregatedReasoning = $"Received {collectedResponses.Count} responses but minimum participants is {request.MinimumParticipants}.",
+                Strategy = request.Strategy,
+                ConflictClass = "unresolved",
+                ConflictReasonCode = "cross_instance_minimum_participants_not_met",
+                NextAction = "fallback_to_local_collaboration",
+                NeedsSupervisorIntervention = false
+            };
+        }
 
-        var winningResponse = winningGroup
-            .OrderByDescending(r => r.Confidence)
-            .First();
+        var strategyOutcome = AggregateByStrategy(request.Strategy, collectedResponses, request.MinimumConfidence);
+        if (!strategyOutcome.IsResolved)
+        {
+            return new CollaborationResult
+            {
+                Decision = "CONFLICT_UNRESOLVED",
+                Confidence = strategyOutcome.Confidence,
+                Responses = collectedResponses,
+                ParticipantCount = collectedResponses.Count,
+                AgreementScore = strategyOutcome.AgreementScore,
+                AggregatedReasoning = strategyOutcome.Reasoning,
+                Strategy = request.Strategy,
+                ConflictClass = "unresolved",
+                ConflictReasonCode = strategyOutcome.ReasonCode,
+                NextAction = "supervisor_adjudication_workflow",
+                NeedsSupervisorIntervention = true
+            };
+        }
 
-        var overallConfidence = collectedResponses.Average(r => r.Confidence);
-        var agreementScore = (double)winningGroup.Count() / collectedResponses.Count;
         var sourceInstances = collectedResponses
             .Select(r => TryReadSourceInstanceFromReasoning(r.Reasoning))
             .Where(s => !string.IsNullOrWhiteSpace(s))
@@ -225,15 +250,234 @@ public class FederationService : IFederationService
 
         return new CollaborationResult
         {
-            Decision = winningResponse.Response,
-            Confidence = overallConfidence,
+            Decision = strategyOutcome.Decision,
+            Confidence = strategyOutcome.Confidence,
             Responses = collectedResponses,
             ParticipantCount = collectedResponses.Count,
-            AgreementScore = agreementScore,
-            WinningResponse = winningResponse,
-            AggregatedReasoning = $"Aggregated {collectedResponses.Count} cross-instance responses from [{sourceSummary}]",
+            AgreementScore = strategyOutcome.AgreementScore,
+            WinningResponse = strategyOutcome.WinningResponse,
+            AggregatedReasoning = $"Aggregated {collectedResponses.Count} cross-instance responses from [{sourceSummary}] using {request.Strategy}: {strategyOutcome.Reasoning}",
             Strategy = request.Strategy
         };
+    }
+
+    private static StrategyAggregationOutcome AggregateByStrategy(
+        CollaborationStrategy strategy,
+        List<AgentResponse> responses,
+        double minimumConfidence)
+    {
+        return strategy switch
+        {
+            CollaborationStrategy.Consensus => AggregateConsensus(responses, minimumConfidence),
+            CollaborationStrategy.WeightedVoting => AggregateWeightedVoting(responses, minimumConfidence),
+            CollaborationStrategy.HighestConfidence => AggregateHighestConfidence(responses, minimumConfidence),
+            CollaborationStrategy.Hierarchical => AggregateHierarchical(responses, minimumConfidence),
+            _ => AggregateVoting(responses, minimumConfidence),
+        };
+    }
+
+    private static StrategyAggregationOutcome AggregateVoting(List<AgentResponse> responses, double minimumConfidence)
+    {
+        var groups = GroupByResponse(responses);
+        var ordered = groups
+            .OrderByDescending(g => g.Count)
+            .ThenByDescending(g => g.AverageConfidence)
+            .ToList();
+
+        if (ordered.Count == 0)
+        {
+            return StrategyAggregationOutcome.Unresolved("cross_instance_empty_responses", "No responses to aggregate.");
+        }
+
+        if (ordered.Count > 1
+            && ordered[0].Count == ordered[1].Count
+            && Math.Abs(ordered[0].AverageConfidence - ordered[1].AverageConfidence) < 0.0001)
+        {
+            return StrategyAggregationOutcome.Unresolved(
+                "cross_instance_voting_tie",
+                "Voting resulted in a tie across candidate decisions.");
+        }
+
+        var winner = ordered[0];
+        var confidence = winner.AverageConfidence;
+        var agreement = (double)winner.Count / responses.Count;
+
+        if (confidence < minimumConfidence)
+        {
+            return StrategyAggregationOutcome.Unresolved(
+                "cross_instance_confidence_below_threshold",
+                $"Voting winner confidence {confidence:0.00} is below threshold {minimumConfidence:0.00}.",
+                confidence,
+                agreement);
+        }
+
+        return StrategyAggregationOutcome.Resolved(
+            winner.Response,
+            confidence,
+            agreement,
+            winner.BestResponse,
+            "majority voting converged");
+    }
+
+    private static StrategyAggregationOutcome AggregateWeightedVoting(List<AgentResponse> responses, double minimumConfidence)
+    {
+        var groups = GroupByResponse(responses);
+        var weighted = groups
+            .Select(g => new
+            {
+                Group = g,
+                Weight = g.Items.Sum(r => r.Weight > 0 ? r.Weight : Math.Max(r.Confidence, 0.1)),
+            })
+            .OrderByDescending(x => x.Weight)
+            .ThenByDescending(x => x.Group.AverageConfidence)
+            .ToList();
+
+        if (weighted.Count == 0)
+        {
+            return StrategyAggregationOutcome.Unresolved("cross_instance_empty_responses", "No responses to aggregate.");
+        }
+
+        if (weighted.Count > 1 && Math.Abs(weighted[0].Weight - weighted[1].Weight) < 0.0001)
+        {
+            return StrategyAggregationOutcome.Unresolved(
+                "cross_instance_weighted_tie",
+                "Weighted voting resulted in equal scores.");
+        }
+
+        var winner = weighted[0].Group;
+        var confidence = winner.AverageConfidence;
+        var totalWeight = weighted.Sum(x => x.Weight);
+        var agreement = totalWeight <= 0 ? 0 : weighted[0].Weight / totalWeight;
+
+        if (confidence < minimumConfidence)
+        {
+            return StrategyAggregationOutcome.Unresolved(
+                "cross_instance_confidence_below_threshold",
+                $"Weighted winner confidence {confidence:0.00} is below threshold {minimumConfidence:0.00}.",
+                confidence,
+                agreement);
+        }
+
+        return StrategyAggregationOutcome.Resolved(
+            winner.Response,
+            confidence,
+            agreement,
+            winner.BestResponse,
+            "weighted voting converged");
+    }
+
+    private static StrategyAggregationOutcome AggregateConsensus(List<AgentResponse> responses, double minimumConfidence)
+    {
+        var groups = GroupByResponse(responses)
+            .OrderByDescending(g => g.Count)
+            .ThenByDescending(g => g.AverageConfidence)
+            .ToList();
+
+        if (groups.Count != 1)
+        {
+            return StrategyAggregationOutcome.Unresolved(
+                "cross_instance_consensus_not_reached",
+                "Consensus strategy requires all participants to return the same decision.");
+        }
+
+        var winner = groups[0];
+        if (winner.AverageConfidence < minimumConfidence)
+        {
+            return StrategyAggregationOutcome.Unresolved(
+                "cross_instance_confidence_below_threshold",
+                $"Consensus confidence {winner.AverageConfidence:0.00} is below threshold {minimumConfidence:0.00}.",
+                winner.AverageConfidence,
+                1);
+        }
+
+        return StrategyAggregationOutcome.Resolved(
+            winner.Response,
+            winner.AverageConfidence,
+            1,
+            winner.BestResponse,
+            "consensus reached");
+    }
+
+    private static StrategyAggregationOutcome AggregateHighestConfidence(List<AgentResponse> responses, double minimumConfidence)
+    {
+        var winner = responses
+            .OrderByDescending(r => r.Confidence)
+            .FirstOrDefault();
+
+        if (winner is null)
+        {
+            return StrategyAggregationOutcome.Unresolved("cross_instance_empty_responses", "No responses to aggregate.");
+        }
+
+        if (winner.Confidence < minimumConfidence)
+        {
+            return StrategyAggregationOutcome.Unresolved(
+                "cross_instance_confidence_below_threshold",
+                $"Highest confidence response {winner.Confidence:0.00} is below threshold {minimumConfidence:0.00}.",
+                winner.Confidence,
+                0);
+        }
+
+        return StrategyAggregationOutcome.Resolved(
+            winner.Response,
+            winner.Confidence,
+            0,
+            winner,
+            "selected highest confidence response");
+    }
+
+    private static StrategyAggregationOutcome AggregateHierarchical(List<AgentResponse> responses, double minimumConfidence)
+    {
+        var winner = responses
+            .OrderBy(r => RankPriority(r.AgentRank))
+            .ThenByDescending(r => r.Confidence)
+            .FirstOrDefault();
+
+        if (winner is null)
+        {
+            return StrategyAggregationOutcome.Unresolved("cross_instance_empty_responses", "No responses to aggregate.");
+        }
+
+        if (winner.Confidence < minimumConfidence)
+        {
+            return StrategyAggregationOutcome.Unresolved(
+                "cross_instance_confidence_below_threshold",
+                $"Hierarchical winner confidence {winner.Confidence:0.00} is below threshold {minimumConfidence:0.00}.",
+                winner.Confidence,
+                0);
+        }
+
+        return StrategyAggregationOutcome.Resolved(
+            winner.Response,
+            winner.Confidence,
+            0,
+            winner,
+            "selected highest-rank response");
+    }
+
+    private static int RankPriority(AgentRank rank)
+    {
+        return rank switch
+        {
+            AgentRank.Supreme => 0,
+            AgentRank.Prince => 1,
+            AgentRank.Duke => 2,
+            _ => 3,
+        };
+    }
+
+    private static List<ResponseGroup> GroupByResponse(List<AgentResponse> responses)
+    {
+        return responses
+            .Where(r => !string.IsNullOrWhiteSpace(r.Response))
+            .GroupBy(r => r.Response.Trim(), StringComparer.OrdinalIgnoreCase)
+            .Select(g => new ResponseGroup(
+                Response: g.Key,
+                Count: g.Count(),
+                AverageConfidence: g.Average(x => x.Confidence),
+                BestResponse: g.OrderByDescending(x => x.Confidence).First(),
+                Items: g.ToList()))
+            .ToList();
     }
 
     private async Task<FederatedMessage?> SendMessageWithOptionalResponseAsync(
@@ -513,7 +757,13 @@ public class FederationService : IFederationService
                     TtlSeconds = 10
                 };
 
-                await SendMessageAsync(message, ct).ConfigureAwait(false);
+                var heartbeatResponse = await SendMessageWithOptionalResponseAsync(message, ct).ConfigureAwait(false);
+                if (heartbeatResponse is null)
+                {
+                    instance.IsActive = false;
+                    return;
+                }
+
                 instance.LastHeartbeat = DateTime.UtcNow;
                 instance.IsActive = true;
             }
@@ -560,5 +810,55 @@ public class FederationService : IFederationService
         }
 
         return selectedInstance?.InstanceId;
+    }
+
+    private sealed record ResponseGroup(
+        string Response,
+        int Count,
+        double AverageConfidence,
+        AgentResponse BestResponse,
+        List<AgentResponse> Items);
+
+    private sealed record StrategyAggregationOutcome(
+        bool IsResolved,
+        string Decision,
+        double Confidence,
+        double AgreementScore,
+        AgentResponse? WinningResponse,
+        string Reasoning,
+        string ReasonCode)
+    {
+        public static StrategyAggregationOutcome Resolved(
+            string decision,
+            double confidence,
+            double agreementScore,
+            AgentResponse? winningResponse,
+            string reasoning)
+        {
+            return new StrategyAggregationOutcome(
+                IsResolved: true,
+                Decision: decision,
+                Confidence: confidence,
+                AgreementScore: agreementScore,
+                WinningResponse: winningResponse,
+                Reasoning: reasoning,
+                ReasonCode: string.Empty);
+        }
+
+        public static StrategyAggregationOutcome Unresolved(
+            string reasonCode,
+            string reasoning,
+            double confidence = 0,
+            double agreementScore = 0)
+        {
+            return new StrategyAggregationOutcome(
+                IsResolved: false,
+                Decision: string.Empty,
+                Confidence: confidence,
+                AgreementScore: agreementScore,
+                WinningResponse: null,
+                Reasoning: reasoning,
+                ReasonCode: reasonCode);
+        }
     }
 }

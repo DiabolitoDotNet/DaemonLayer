@@ -336,6 +336,17 @@ public sealed class ToolAuthorizationServiceCoverageTests
         result.Reason.Should().Contain("not allowed by execution profile");
     }
 
+    [Fact]
+    public void IsAuthorized_DefaultBuildProfileTools_ShouldBeExecutableForDuke()
+    {
+        IConfiguration config = new ConfigurationBuilder().AddInMemoryCollection().Build();
+        var sut = new ToolAuthorizationService(NullLogger<ToolAuthorizationService>.Instance, config);
+
+        sut.IsAuthorized("a1", "vassago", AgentRank.Duke, "fs_read", "Build").IsAuthorized.Should().BeTrue();
+        sut.IsAuthorized("a1", "vassago", AgentRank.Duke, "http_request", "Build").IsAuthorized.Should().BeTrue();
+        sut.IsAuthorized("a1", "vassago", AgentRank.Duke, "python_exec", "Build").IsAuthorized.Should().BeTrue();
+    }
+
     private static IConfiguration BuildConfig(Dictionary<string, string?> values)
         => new ConfigurationBuilder().AddInMemoryCollection(values).Build();
 }

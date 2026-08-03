@@ -21,7 +21,10 @@ Un système distribué d'agents LLM locaux fonctionnant avec Ollama, organisés 
 - ✅ **Supervision** : AgentSupervisor détecte les agents bloqués (replan) et peut préempter un sous-agent après replan si aucune progression
 - ✅ **Incident response autonome** : mitigation automatique des spikes timeout/rejets queue avec replan, préemption contrôlée et réduction temporaire du débit tool
 - ✅ **Collaboration fédérée** : collecte et agrégation cross-instance des réponses avec provenance des instances distantes
+- ✅ **Agrégation fédérée cohérente par stratégie** : Voting/WeightedVoting/Consensus/HighestConfidence/Hierarchical avec fallback structuré si participation insuffisante
 - ✅ **Saga compensation autonome** : retries bornés de compensation + escalade superviseur structurée si épuisement
+- ✅ **Profils d'exécution alignés runtime** : outils Build/Deploy critiques activés par défaut + diagnostic de dérive profil/permissions au démarrage/reload
+- ✅ **Santé fédération fiable** : un heartbeat échoué ne maintient plus une instance en état healthy
 - ✅ **.NET 10** : Dernière version avec performance optimisée
 
 ## 📋 Architecture
