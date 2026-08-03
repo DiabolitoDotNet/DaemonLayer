@@ -69,18 +69,23 @@ InfernalHierarchy/
 ### Prérequis
 
 1. **.NET 10 SDK** - [Télécharger](https://dotnet.microsoft.com/download/dotnet/10.0)
-2. **Docker Desktop + Docker Compose** - Pour lancer Ollama/SearXNG/Qdrant en local. Ollama tourne comme service séparé et l'application pointe simplement vers son endpoint OpenAI-compatible.
+2. **Docker Desktop + Docker Compose** - Pour lancer SearXNG/Qdrant en local (Ollama est deja installe et lance en local sur la machine hote).
   ```bash
-  docker compose up -d
-  docker compose up -d ollama
-  docker compose up --no-deps --abort-on-container-exit ollama-init
   curl.exe -s http://localhost:11434/api/tags
+  powershell -ExecutionPolicy Bypass -File .\scripts\setup-local-docker.ps1
   ```
-  Le profil `docker-compose.yml` reste minimal. Ajoute des overrides seulement si nécessaire:
+  Le profil local recommande est `docker-compose.local.yml` (ports bindes en localhost + optimisation poste local).
+  Tu peux aussi lancer manuellement:
+  ```bash
+  docker compose -f docker-compose.local.yml up -d --build
+  ```
+  Ajoute des overrides seulement si nécessaire:
   - `docker-compose.voice.yml` pour STT/TTS et l'API voice
   - `docker-compose.onnx.yml` pour les embeddings ONNX locaux
   - `docker-compose.automation.yml` pour supervisor, memory learning, Brave fallback et GitHub publisher
-3. **Ollama (optionnel)** - Si tu préfères exécuter Ollama hors Docker, pointe simplement `Ollama:BaseUrl` vers ton endpoint local.
+3. **Ollama local (requis pour cette config)** - endpoint attendu: `http://localhost:11434`.
+   - Depuis le conteneur, l'endpoint hote est `http://host.docker.internal:11434/v1`.
+   - Depuis ta machine (hors Docker), utilise `http://localhost:11434`.
 4. **Bot Telegram** - Créer via [@BotFather](https://t.me/BotFather)
 
 ### Installation

@@ -640,10 +640,8 @@ Enable in `appsettings.json`:
 ```
 
 ### 3. Configure Multi-Model LLM
-Start Ollama (Docker) and pull the default model:
+Start Ollama locally and verify the default model is available:
 ```powershell
-docker compose up -d ollama
-docker compose up --no-deps --abort-on-container-exit ollama-init
 curl.exe -s http://localhost:11434/api/tags
 ```
 

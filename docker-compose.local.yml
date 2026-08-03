@@ -1,57 +1,47 @@
-# Docker Compose pour services locaux (SearXNG + Qdrant) avec Ollama deja installe en local
+# Local workstation compose profile (Windows + Docker Desktop + local Ollama on host)
+# Usage:
+#   $env:OLLAMA_BASE_URL="http://host.docker.internal:11434/v1"
+#   docker compose -f docker-compose.local.yml up -d --build
 
 services:
-  # InfernalHierarchy .NET Worker Service
   infernal-hierarchy:
     build:
       context: .
       dockerfile: Dockerfile
     container_name: infernal-hierarchy
     environment:
-      # Ollama tourne en local hors Docker. host.docker.internal fonctionne sous Docker Desktop.
-      - Ollama__BaseUrl=http://host.docker.internal:11434/v1
+      - Ollama__BaseUrl=${OLLAMA_BASE_URL:-http://host.docker.internal:11434/v1}
       - Ollama__DefaultModel=qwen3:8b
       - Ollama__AlternativeModel=dolphin3:8b
       - Ollama__RequestTimeoutSeconds=600
+
       - SearXNG__BaseUrl=http://searxng:8080
       - SearXNG__Enabled=true
+
       - Memory__DatabasePath=/app/data/infernal.db
       - Http__Enabled=true
       - Http__Urls=http://0.0.0.0:5080
       - Ui__LocalOnly=false
       - WebSockets__LocalOnly=false
 
-      # Reduce log noise: disable OpenTelemetry console trace exporter
       - OpenTelemetry__Exporters__Console__Enabled=false
 
-      # Telegram voice replies (agent reports -> Telegram voice note)
       - TelegramVoice__Enabled=false
       - TelegramVoice__ReplyWithVoice=false
-
-      # Telegram startup notification (set to your private chat id / user id)
       - Telegram__StartupNotificationChatId=5879484069
 
-      # Voice features stay disabled in the base image/compose profile.
-      # Enable them with docker-compose.voice.yml (uses the runtime-voice target).
       - Voice__Enabled=false
       - Voice__LocalOnly=true
       - VoiceCopilot__Enabled=false
 
-      # Ensure docker secrets are honored in container runs.
       - DockerSecrets__Enabled=true
       - DockerSecrets__RootPath=/run/secrets
 
-      # GitHub publisher (token + username come from docker secrets)
       - GitHubPublisher__Enabled=false
-
-      # Web search fallback (api key comes from docker secrets)
       - BraveSearch__Enabled=false
-
-      # Background services
       - AgentSupervisor__Enabled=false
       - MemoryLearningOptions__Enabled=false
 
-      # ONNX embeddings are optional and enabled via docker-compose.onnx.yml.
       - OnnxEmbeddingOptions__Enabled=false
       - VectorMemoryOptions__Enabled=true
       - VectorMemoryOptions__QdrantUrl=http://qdrant:6333
@@ -69,7 +59,12 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:
-      - "5080:5080"
+      - "127.0.0.1:5080:5080"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     secrets:
       - telegram_bot_token
       - telegram_user_ids
@@ -79,12 +74,11 @@ services:
       - github_publisher_username
       - brave_search_api_key
 
-  # SearXNG - Local web search engine
   searxng:
     image: searxng/searxng:latest
     container_name: searxng
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"
     volumes:
       - ./searxng:/etc/searxng:rw
     environment:
@@ -92,19 +86,28 @@ services:
     restart: unless-stopped
     networks:
       - infernal-network
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
-  # Qdrant - Vector database for semantic search
   qdrant:
     image: qdrant/qdrant:latest
     container_name: qdrant
     ports:
-      - "6333:6333"
-      - "6334:6334"
+      - "127.0.0.1:6333:6333"
+      - "127.0.0.1:6334:6334"
     volumes:
       - qdrant_data:/qdrant/storage
     networks:
       - infernal-network
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
 networks:
   infernal-network:
@@ -128,8 +131,3 @@ secrets:
     file: ./secrets/github_publisher_username.txt
   brave_search_api_key:
     file: ./secrets/brave_search_api_key.txt
-
-# Usage:
-# 1) Verifier Ollama local: curl.exe -s http://localhost:11434/api/tags
-# 2) Lancer la stack: docker compose up -d --build
-# Acces: http://localhost:5080/ui

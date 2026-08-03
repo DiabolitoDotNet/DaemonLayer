@@ -45,12 +45,12 @@ All advanced features have been **implemented and compile successfully**:
 
 ---
 
-### 2️⃣ **Start Ollama (Docker) + Pull Model** (REQUIRED for LLM)
+### 2️⃣ **Start Ollama (Local)** (REQUIRED for LLM)
 
-This repo now runs Ollama via Docker Compose and automatically pulls a single model (`qwen3:8b`) on first start.
+This repo expects Ollama to run locally on the host and the default model (`qwen3:8b`) to be available.
 
 ```bash
-docker compose up -d ollama
+ollama list
 ```
 
 **Time Required**: ~5-15 minutes depending on internet speed  
@@ -62,17 +62,21 @@ Verify:
 curl.exe http://localhost:11434/api/tags
 ```
 
-**Change model (Docker)**:
+**Change model (local Ollama)**:
 
-1) Update the model in `docker-compose.yml`:
-- `ollama.environment.OLLAMA_MODEL`
-- `ollama-init.command` (pulls the model)
-- `infernal-hierarchy.environment.Ollama__DefaultModel` (so the app uses it)
-
-2) Pull the new model into the Ollama volume:
+1) Pull the model locally:
 
 ```bash
-docker compose up --no-deps --abort-on-container-exit ollama-init
+ollama pull qwen3:8b
+```
+
+2) Update the app model in `docker-compose.yml`:
+- `infernal-hierarchy.environment.Ollama__DefaultModel`
+
+3) Verify:
+
+```bash
+curl.exe -s http://localhost:11434/api/tags
 ```
 
 ---
@@ -317,8 +321,7 @@ dotnet test .\tests\InfernalHierarchy.Memory.Tests\InfernalHierarchy.Memory.Test
 ### Test Multi-Model LLM
 
 1. Ensure Ollama is running and the model is present:
-  - `docker compose up -d ollama`
-  - `docker compose up --no-deps --abort-on-container-exit ollama-init`
+  - `ollama list`
 2. Run the app
 3. Send tasks with different complexities
 4. Check logs for model selection:
@@ -415,8 +418,8 @@ docker compose up -d qdrant
 **Solution**:
 ```bash
 curl.exe -s http://localhost:11434/api/tags
-# Or pull again via compose init job
-docker compose up --no-deps --abort-on-container-exit ollama-init
+# Pull the required model locally
+ollama pull qwen3:8b
 ```
 
 ### Issue: "StyleCop warnings everywhere"
@@ -450,7 +453,7 @@ If you want fewer IDE warnings while iterating, prefer suppressing specific rule
 - **ADVANCED_FEATURES.md** - Comprehensive guide to all new features
 - **TODO.md** - Complete project status and roadmap
 - **README.md** - Project overview and architecture
-- **docker-compose.yml** - Service configuration (Ollama, Qdrant, SearXNG)
+- **docker-compose.yml** - Service configuration (InfernalHierarchy, Qdrant, SearXNG)
 
 ---
 
@@ -460,9 +463,9 @@ If you're setting this up for the first time:
 
 1. ✅ Register services in Program.cs (step 1)
 2. ✅ Build and verify no errors: `dotnet build`
-3. ✅ Start Ollama (Docker) + ensure model is pulled:
-   - `docker compose up -d ollama`
-   - `docker compose up --no-deps --abort-on-container-exit ollama-init`
+3. ✅ Start Ollama locally + ensure model is available:
+  - `ollama list`
+  - `curl.exe -s http://localhost:11434/api/tags`
 4. ✅ Start basic app: `dotnet run --project src/InfernalHierarchy.Host`
 5. ⏩ Enable Qdrant if you want vector search (steps 3-4)
 6. ⏩ Enable memory pruning if you want automatic cleanup (steps 4-5)
