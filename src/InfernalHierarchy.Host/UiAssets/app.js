@@ -1,4 +1,71 @@
 const qs = (id) => document.getElementById(id);
+const OPERATOR_KEY_STORAGE = 'infernal.operatorApiKey';
+
+const operatorApiKeyInput = qs('operatorApiKey');
+const operatorApiKeySaveBtn = qs('operatorApiKeySave');
+const operatorApiKeyClearBtn = qs('operatorApiKeyClear');
+
+function getStoredOperatorApiKey() {
+  try {
+    return localStorage.getItem(OPERATOR_KEY_STORAGE) || '';
+  } catch {
+    return '';
+  }
+}
+
+function setStoredOperatorApiKey(value) {
+  try {
+    if (value) {
+      localStorage.setItem(OPERATOR_KEY_STORAGE, value);
+    } else {
+      localStorage.removeItem(OPERATOR_KEY_STORAGE);
+    }
+  } catch {
+    // Ignore storage errors (private mode, disabled storage, etc.)
+  }
+}
+
+function getOperatorApiKey() {
+  const fromInput = (operatorApiKeyInput && operatorApiKeyInput.value || '').trim();
+  return fromInput || getStoredOperatorApiKey();
+}
+
+const nativeFetch = window.fetch.bind(window);
+window.fetch = function patchedFetch(input, init) {
+  const requestUrl = typeof input === 'string'
+    ? input
+    : (input && typeof input.url === 'string' ? input.url : '');
+  const isApiCall = requestUrl.startsWith('/api/');
+
+  if (!isApiCall) {
+    return nativeFetch(input, init);
+  }
+
+  const key = getOperatorApiKey();
+  if (!key) {
+    return nativeFetch(input, init);
+  }
+
+  const headers = new Headers((init && init.headers) || (typeof input !== 'string' && input ? input.headers : undefined));
+  headers.set('X-Infernal-Operator-Key', key);
+
+  return nativeFetch(input, { ...(init || {}), headers });
+};
+
+if (operatorApiKeyInput) {
+  operatorApiKeyInput.value = getStoredOperatorApiKey();
+}
+if (operatorApiKeySaveBtn) {
+  operatorApiKeySaveBtn.onclick = () => {
+    setStoredOperatorApiKey((operatorApiKeyInput && operatorApiKeyInput.value || '').trim());
+  };
+}
+if (operatorApiKeyClearBtn) {
+  operatorApiKeyClearBtn.onclick = () => {
+    setStoredOperatorApiKey('');
+    if (operatorApiKeyInput) operatorApiKeyInput.value = '';
+  };
+}
 
 function append(el, line) {
   if (!el) return;
@@ -55,6 +122,16 @@ function setActiveNav() {
 const wsLog = qs('wsLog');
 const chatLog = qs('chatLog');
 const sys = qs('sys');
+const sysSummary = qs('sysSummary');
+const agentsHierarchy = qs('agentsHierarchy');
+const toolsCards = qs('toolsCards');
+const agentsViewMode = qs('agentsViewMode');
+const agentsSortMode = qs('agentsSortMode');
+const agentsStatusFilter = qs('agentsStatusFilter');
+const agentsFocus = qs('agentsFocus');
+const agentsSearch = qs('agentsSearch');
+const agentsCollapseAll = qs('agentsCollapseAll');
+const agentsExpandAll = qs('agentsExpandAll');
 
 const connectBtn = qs('connect');
 const disconnectBtn = qs('disconnect');
@@ -62,6 +139,7 @@ const clearBtn = qs('clear');
 const refreshBtn = qs('refresh');
 
 const toAgentIdInput = qs('toAgentId');
+const telegramChatIdInput = qs('telegramChatId');
 const messageInput = qs('message');
 const sendTaskBtn = qs('sendTask');
 const sendHttpBtn = qs('sendHttp');
@@ -75,16 +153,357 @@ const ttsAudio = qs('ttsAudio');
 const voiceLog = qs('voiceLog');
 
 let socket = null;
+let systemAgentsCache = [];
+let systemToolsCache = [];
+let collapsedAgentIds = new Set();
+
+const SYSTEM_RANKS = ['Supreme', 'Prince', 'Duke', 'Worker'];
+const RANK_ICONS = {
+  Supreme: '♛',
+  Prince: '♚',
+  Duke: '♜',
+  Worker: '⚙',
+};
+
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+}
+
+function rankOrder(rank) {
+  const idx = SYSTEM_RANKS.indexOf(rank);
+  return idx >= 0 ? idx : SYSTEM_RANKS.length;
+}
+
+function normalizeStatusGroup(status) {
+  const normalized = String(status || '').toLowerCase();
+  if (normalized.includes('error') || normalized.includes('fail')) return 'error';
+  if (normalized.includes('busy') || normalized.includes('run') || normalized.includes('process')) return 'busy';
+  if (normalized.includes('suspend') || normalized.includes('stop') || normalized.includes('offline')) return 'stopped';
+  return 'idle';
+}
+
+function buildHierarchyMaps(agents) {
+  const byId = new Map();
+  const childrenByParent = new Map();
+
+  for (const agent of agents) {
+    byId.set(agent.id, agent);
+  }
+
+  for (const agent of agents) {
+    const key = agent.parentAgentId || '__root__';
+    if (!childrenByParent.has(key)) childrenByParent.set(key, []);
+    childrenByParent.get(key).push(agent);
+  }
+
+  return { byId, childrenByParent };
+}
+
+function collectSubtreeIds(rootId, childrenByParent) {
+  const result = new Set();
+  const stack = [rootId];
+
+  while (stack.length > 0) {
+    const current = stack.pop();
+    if (!current || result.has(current)) continue;
+    result.add(current);
+    const children = childrenByParent.get(current) || [];
+    for (const child of children) {
+      stack.push(child.id);
+    }
+  }
+
+  return result;
+}
+
+function applyAgentFilters(agents) {
+  const statusFilter = (agentsStatusFilter && agentsStatusFilter.value) || 'all';
+  const search = ((agentsSearch && agentsSearch.value) || '').trim().toLowerCase();
+
+  let filtered = [...agents];
+  if (statusFilter !== 'all') {
+    filtered = filtered.filter((a) => normalizeStatusGroup(a.status) === statusFilter);
+  }
+
+  if (search) {
+    filtered = filtered.filter((a) => {
+      const hay = `${a.name || ''} ${a.id || ''} ${a.rank || ''} ${a.status || ''}`.toLowerCase();
+      return hay.includes(search);
+    });
+  }
+
+  return filtered;
+}
+
+function syncFocusOptions(agents) {
+  if (!agentsFocus) return;
+  const prev = agentsFocus.value || '';
+  const sorted = sortAgents(agents);
+  const options = ['<option value="">Focus: All agents</option>']
+    .concat(sorted.map((a) => `<option value="${escapeHtml(a.id)}">Focus: ${escapeHtml(a.name)} (${escapeHtml(a.rank)})</option>`));
+  agentsFocus.innerHTML = options.join('');
+  if (prev && sorted.some((a) => a.id === prev)) {
+    agentsFocus.value = prev;
+  }
+}
+
+function sortAgents(list) {
+  const mode = (agentsSortMode && agentsSortMode.value) || 'rank_name';
+  const statusPriority = { error: 0, busy: 1, idle: 2, stopped: 3 };
+
+  return [...list].sort((a, b) => {
+    if (mode === 'status') {
+      const sCmp = (statusPriority[normalizeStatusGroup(a.status)] ?? 99) - (statusPriority[normalizeStatusGroup(b.status)] ?? 99);
+      if (sCmp !== 0) return sCmp;
+    }
+
+    if (mode === 'rank_name') {
+      const rankCmp = rankOrder(a.rank) - rankOrder(b.rank);
+      if (rankCmp !== 0) return rankCmp;
+    }
+
+    return String(a.name || '').localeCompare(String(b.name || ''));
+  });
+}
+
+function statusClass(status) {
+  const group = normalizeStatusGroup(status);
+  if (group === 'error') return 'statusError';
+  if (group === 'busy') return 'statusBusy';
+  if (group === 'stopped') return 'statusStopped';
+  return 'statusIdle';
+}
+
+function renderAgentTreeNode(agent, childrenByParent, allById, visited, focusedId) {
+  const id = String(agent.id || '');
+  if (visited.has(id)) {
+    return `<div class="agentNode"><div class="agentMeta">Cycle detected on ${escapeHtml(id)}</div></div>`;
+  }
+
+  visited.add(id);
+  const children = sortAgents(childrenByParent.get(id) || []);
+  const icon = RANK_ICONS[agent.rank] || '•';
+  const parentName = agent.parentAgentId
+    ? (allById.get(agent.parentAgentId)?.name || agent.parentAgentId)
+    : null;
+
+  const relationBits = [];
+  if (parentName) relationBits.push(`parent: ${escapeHtml(parentName)}`);
+  if (children.length > 0) relationBits.push(`${children.length} child${children.length > 1 ? 'ren' : ''}`);
+  const relationLine = relationBits.length > 0 ? `<div class="agentRelation">${relationBits.join(' • ')}</div>` : '';
+
+  const isFocused = focusedId && String(agent.id) === String(focusedId);
+  const isCollapsed = collapsedAgentIds.has(id);
+  const toggle = children.length > 0
+    ? `<button class="agentToggle" type="button" data-agent-toggle="${escapeHtml(id)}" aria-label="Toggle children">${isCollapsed ? '+' : '−'}</button>`
+    : '<span class="agentToggle" style="visibility:hidden"></span>';
+  const node = `
+    <div class="agentNode ${statusClass(agent.status)}${isFocused ? ' selected' : ''}${isCollapsed ? ' collapsed' : ''}" data-agent-id="${escapeHtml(id)}">
+      <div class="agentNodeHead">
+        ${toggle}
+        <span class="agentIcon">${icon}</span>
+        <span class="agentName">${escapeHtml(agent.name)}</span>
+        <span class="rankBadge">${escapeHtml(agent.rank || 'Unknown')}</span>
+        <span class="statusBadge ${statusClass(agent.status)}">${escapeHtml(agent.status || 'Unknown')}</span>
+      </div>
+      <div class="agentMeta">${escapeHtml(agent.id)}</div>
+      ${relationLine}
+      ${children.length > 0 ? `<div class="agentChildren">${children.map((child) => renderAgentTreeNode(child, childrenByParent, allById, new Set(visited), focusedId)).join('')}</div>` : ''}
+    </div>
+  `;
+
+  return node;
+}
+
+function renderAgentsHierarchy(agents) {
+  if (!agentsHierarchy) return;
+
+  const list = Array.isArray(agents) ? agents : [];
+  if (list.length === 0) {
+    agentsHierarchy.innerHTML = '<div class="emptyState">No agents available.</div>';
+    return;
+  }
+
+  const { byId, childrenByParent } = buildHierarchyMaps(list);
+  const focusedId = (agentsFocus && agentsFocus.value) || '';
+
+  let working = [...list];
+  if (focusedId && byId.has(focusedId)) {
+    const subtreeIds = collectSubtreeIds(focusedId, childrenByParent);
+    working = working.filter((a) => subtreeIds.has(a.id));
+  }
+  working = applyAgentFilters(working);
+
+  if (working.length === 0) {
+    agentsHierarchy.innerHTML = '<div class="emptyState">No agents match current filters.</div>';
+    return;
+  }
+
+  const mode = (agentsViewMode && agentsViewMode.value) || 'tree';
+  if (mode === 'rank') {
+    renderAgentsRankColumns(working, focusedId);
+    return;
+  }
+
+  const filteredMaps = buildHierarchyMaps(working);
+  const roots = sortAgents(working.filter((a) => !a.parentAgentId || !filteredMaps.byId.has(a.parentAgentId)));
+  const rootsToRender = roots.length > 0 ? roots : sortAgents(working);
+  const rendered = rootsToRender.map((root) => renderAgentTreeNode(root, filteredMaps.childrenByParent, filteredMaps.byId, new Set(), focusedId));
+  agentsHierarchy.innerHTML = `<div class="agentTree">${rendered.join('')}</div>`;
+}
+
+function renderAgentsRankColumns(agents, focusedId) {
+  if (!agentsHierarchy) return;
+
+  const grouped = new Map();
+  for (const rank of SYSTEM_RANKS) grouped.set(rank, []);
+
+  for (const agent of agents) {
+    const rank = SYSTEM_RANKS.includes(agent.rank) ? agent.rank : 'Worker';
+    grouped.get(rank).push(agent);
+  }
+
+  const columns = SYSTEM_RANKS.map((rank) => {
+    const rankAgents = sortAgents(grouped.get(rank) || []);
+    const cards = rankAgents.length === 0
+      ? '<div class="agentMeta">none</div>'
+      : rankAgents.map((agent) => {
+        const isFocused = focusedId && String(agent.id) === String(focusedId);
+        return `<div class="agentChip ${statusClass(agent.status)}${isFocused ? ' selected' : ''}"><div class="agentNodeHead"><span class="agentIcon">${escapeHtml(RANK_ICONS[agent.rank] || '•')}</span><span class="agentName">${escapeHtml(agent.name)}</span><span class="statusBadge ${statusClass(agent.status)}">${escapeHtml(agent.status || 'Unknown')}</span></div><div class="agentMeta">${escapeHtml(agent.id)}</div></div>`;
+      }).join('');
+
+    return `<div class="rankColumn"><div class="rankTitle">${escapeHtml(rank)} (${rankAgents.length})</div>${cards}</div>`;
+  });
+
+  agentsHierarchy.innerHTML = `<div class="rankColumns">${columns.join('')}</div>`;
+}
+
+function renderToolsCards(tools) {
+  if (!toolsCards) return;
+
+  if (Array.isArray(tools)) {
+    if (tools.length === 0) {
+      toolsCards.innerHTML = '<div class="emptyState">No tools registered.</div>';
+      return;
+    }
+
+    toolsCards.innerHTML = tools
+      .map((tool) => `<div class="toolCard"><div class="toolName">${escapeHtml(tool.name)}</div><div class="toolDesc">${escapeHtml(tool.description || 'No description')}</div></div>`)
+      .join('');
+    return;
+  }
+
+  const warning = tools && tools.warning
+    ? `${escapeHtml(tools.warning)}${tools.status ? ` (HTTP ${escapeHtml(tools.status)})` : ''}`
+    : 'Tools unavailable.';
+  toolsCards.innerHTML = `<div class="emptyState">${warning}</div>`;
+}
+
+function renderSystemSummary(agents, tools) {
+  if (!sysSummary) return;
+  const agentCount = Array.isArray(agents) ? agents.length : 0;
+  const toolCount = Array.isArray(tools) ? tools.length : 0;
+  const toolsState = Array.isArray(tools) ? `${toolCount} tools` : 'tools unavailable';
+  sysSummary.textContent = `${agentCount} agents • ${toolsState}`;
+}
+
+function renderSystemView(agents, tools) {
+  syncFocusOptions(Array.isArray(agents) ? agents : []);
+  renderSystemSummary(agents, tools);
+  renderAgentsHierarchy(agents);
+  renderToolsCards(tools);
+}
+
+function rerenderSystemFromCache() {
+  renderSystemView(systemAgentsCache, systemToolsCache);
+  if (sys) sys.textContent = pretty({ agents: systemAgentsCache, tools: systemToolsCache });
+}
+
+function collapseAllAgents() {
+  const list = applyAgentFilters(systemAgentsCache);
+  const maps = buildHierarchyMaps(list);
+  const ids = list
+    .filter((a) => (maps.childrenByParent.get(a.id) || []).length > 0)
+    .map((a) => a.id);
+  collapsedAgentIds = new Set(ids);
+  rerenderSystemFromCache();
+}
+
+function expandAllAgents() {
+  collapsedAgentIds = new Set();
+  rerenderSystemFromCache();
+}
+
+if (agentsViewMode) agentsViewMode.onchange = rerenderSystemFromCache;
+if (agentsSortMode) agentsSortMode.onchange = rerenderSystemFromCache;
+if (agentsStatusFilter) agentsStatusFilter.onchange = rerenderSystemFromCache;
+if (agentsFocus) agentsFocus.onchange = rerenderSystemFromCache;
+if (agentsSearch) agentsSearch.oninput = rerenderSystemFromCache;
+if (agentsCollapseAll) agentsCollapseAll.onclick = collapseAllAgents;
+if (agentsExpandAll) agentsExpandAll.onclick = expandAllAgents;
+if (agentsHierarchy) {
+  agentsHierarchy.onclick = (evt) => {
+    const target = evt.target;
+    if (!(target instanceof Element)) return;
+    const btn = target.closest('[data-agent-toggle]');
+    if (!btn) return;
+    const id = btn.getAttribute('data-agent-toggle');
+    if (!id) return;
+    if (collapsedAgentIds.has(id)) collapsedAgentIds.delete(id);
+    else collapsedAgentIds.add(id);
+    rerenderSystemFromCache();
+  };
+}
+
+async function parseJsonResponse(res) {
+  const bodyText = await res.text();
+  if (!res.ok) {
+    const detail = bodyText ? ` - ${bodyText}` : '';
+    throw new Error(`HTTP ${res.status} ${res.statusText}${detail}`);
+  }
+
+  if (!bodyText) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(bodyText);
+  } catch {
+    throw new Error(`Invalid JSON response from ${res.url || 'endpoint'}`);
+  }
+}
 
 async function refreshSystem() {
   try {
-    const [agents, tools] = await Promise.all([
-      fetch('/api/agents').then(r => r.json()),
-      fetch('/api/tools').then(r => r.json()),
-    ]);
-    if (sys) sys.textContent = pretty({ agents, tools });
+    const agents = await fetch('/api/agents').then(parseJsonResponse);
+
+    let tools;
+    const toolsRes = await fetch('/api/tools');
+    if (!toolsRes.ok) {
+      const body = await toolsRes.text();
+      tools = {
+        warning: 'Tools endpoint unavailable or requires operator authorization (X-Infernal-Operator-Key).',
+        status: toolsRes.status,
+        detail: body || null,
+      };
+    } else {
+      tools = await parseJsonResponse(toolsRes);
+    }
+
+    systemAgentsCache = Array.isArray(agents) ? agents : [];
+    systemToolsCache = tools;
+    renderSystemView(systemAgentsCache, systemToolsCache);
+    if (sys) sys.textContent = pretty({ agents: systemAgentsCache, tools: systemToolsCache });
   } catch (e) {
+    systemAgentsCache = [];
+    systemToolsCache = { warning: String(e) };
     if (sys) sys.textContent = String(e);
+    renderSystemView(systemAgentsCache, systemToolsCache);
   }
 }
 
@@ -113,13 +532,23 @@ if (sendTaskBtn) sendTaskBtn.onclick = () => {
 
 if (sendHttpBtn) sendHttpBtn.onclick = async () => {
   const toAgentId = ((toAgentIdInput && toAgentIdInput.value) || 'lucifer').trim();
+  const telegramChatIdRaw = ((telegramChatIdInput && telegramChatIdInput.value) || '').trim();
   const message = ((messageInput && messageInput.value) || '').trim();
   if (!message) return;
+
+  const body = { message, toAgentId, timeoutMs: 60000 };
+  if (telegramChatIdRaw) {
+    const parsed = Number.parseInt(telegramChatIdRaw, 10);
+    if (Number.isFinite(parsed) && parsed !== 0) {
+      body.telegramChatId = parsed;
+    }
+  }
+
   append(chatLog, `[http ÔåÆ ${toAgentId}] ${message}`);
   const res = await fetch('/api/chat', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ message, toAgentId, timeoutMs: 60000 }),
+    body: JSON.stringify(body),
   });
   append(chatLog, `[http] ${res.status} ${await res.text()}`);
   if (messageInput) messageInput.value = '';

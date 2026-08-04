@@ -16,6 +16,12 @@ internal static partial class DashboardAssets
     <h1>InfernalHierarchy</h1>
     <div class="sub">Local dashboard + WebSocket stream</div>
 
+    <div class="row opAuth">
+      <input id="operatorApiKey" type="password" placeholder="Operator API key (X-Infernal-Operator-Key)" autocomplete="off" />
+      <button id="operatorApiKeySave" type="button">Save key</button>
+      <button id="operatorApiKeyClear" type="button">Clear key</button>
+    </div>
+
     <nav class="nav">
       <a class="navLink" href="/ui">Dashboard</a>
       <a class="navLink" href="/ui/perf">Performance</a>
@@ -45,6 +51,7 @@ internal static partial class DashboardAssets
           <h2>Chat</h2>
           <div class="row">
             <input id="toAgentId" placeholder="to_agent_id (default: lucifer)" />
+            <input id="telegramChatId" placeholder="telegram_chat_id (optional)" />
             <button id="connect">Connect WS</button>
             <button id="disconnect">Disconnect</button>
           </div>
@@ -83,8 +90,53 @@ internal static partial class DashboardAssets
           <h2>System</h2>
           <div class="row">
             <button id="refresh">Refresh</button>
+            <span id="sysSummary" class="pill"></span>
           </div>
-          <pre id="sys" class="log"></pre>
+          <div class="row systemControls">
+            <select id="agentsViewMode">
+              <option value="tree" selected>Hierarchy view</option>
+              <option value="rank">Rank columns</option>
+            </select>
+            <select id="agentsSortMode">
+              <option value="rank_name" selected>Sort: Rank then name</option>
+              <option value="name">Sort: Name</option>
+              <option value="status">Sort: Status priority</option>
+            </select>
+            <select id="agentsStatusFilter">
+              <option value="all" selected>All statuses</option>
+              <option value="idle">Idle</option>
+              <option value="busy">Busy/Running</option>
+              <option value="error">Error/Failed</option>
+              <option value="stopped">Stopped/Suspended</option>
+            </select>
+            <select id="agentsFocus">
+              <option value="">Focus: All agents</option>
+            </select>
+            <input id="agentsSearch" placeholder="Search agent (name/id/rank/status)" />
+            <button id="agentsCollapseAll" type="button">Collapse all</button>
+            <button id="agentsExpandAll" type="button">Expand all</button>
+          </div>
+          <div id="agentsLegend" class="systemLegend">
+            <span class="legendItem"><span class="agentIcon">♛</span> Supreme</span>
+            <span class="legendItem"><span class="agentIcon">♚</span> Prince</span>
+            <span class="legendItem"><span class="agentIcon">♜</span> Duke</span>
+            <span class="legendItem"><span class="agentIcon">⚙</span> Worker</span>
+            <span class="legendItem"><span class="statusBadge statusIdle">Idle</span></span>
+            <span class="legendItem"><span class="statusBadge statusBusy">Busy</span></span>
+            <span class="legendItem"><span class="statusBadge statusError">Error</span></span>
+            <span class="legendItem"><span class="statusBadge statusStopped">Stopped</span></span>
+          </div>
+          <div class="systemLayout">
+            <div class="systemPanel">
+              <h3>Agents Hierarchy</h3>
+              <div id="agentsHierarchy" class="hierarchyBoard"></div>
+            </div>
+            <div class="systemPanel">
+              <h3>Tools</h3>
+              <div id="toolsCards" class="toolsCards"></div>
+            </div>
+          </div>
+          <pre id="sys" class="log small"></pre>
         </section>
       </div>
     </div>

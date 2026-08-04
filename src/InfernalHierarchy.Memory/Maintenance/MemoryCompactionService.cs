@@ -41,9 +41,16 @@ public sealed class MemoryCompactionService : BackgroundService
 
         var interval = TimeSpan.FromHours(_options.IntervalHours);
         using var timer = new PeriodicTimer(interval);
-        while (await timer.WaitForNextTickAsync(stoppingToken).ConfigureAwait(false))
+        try
         {
-            await RunCompactionIfNeededAsync(stoppingToken).ConfigureAwait(false);
+            while (await timer.WaitForNextTickAsync(stoppingToken).ConfigureAwait(false))
+            {
+                await RunCompactionIfNeededAsync(stoppingToken).ConfigureAwait(false);
+            }
+        }
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+        {
+            _logger.LogDebug("LiteDB compaction service stopping due to cancellation");
         }
     }
 

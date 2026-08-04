@@ -16,7 +16,8 @@ internal static class AgentsApi
                     id = a.Id,
                     name = a.Name,
                     rank = a.Rank.ToString(),
-                    status = a.Status.ToString()
+                    status = a.Status.ToString(),
+                    parentAgentId = (a is InfernalHierarchy.Agents.Base.BaseAgent ba) ? ba.ParentAgentId : null
                 })
                 .OrderBy(a => a.rank)
                 .ThenBy(a => a.name)

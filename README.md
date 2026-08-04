@@ -101,6 +101,35 @@ InfernalHierarchy/
    dotnet user-secrets set "Telegram:AllowedUserIds:0" "YOUR_TELEGRAM_USER_ID"
    ```
 
+  ### Email Gmail
+
+  Pour Gmail, utilise un app password et ajoute au minimum un destinataire par défaut.
+
+  ```powershell
+  powershell -ExecutionPolicy Bypass -File .\scripts\set-email-user-secrets.ps1 -Enable `
+    -SmtpHost "smtp.gmail.com" `
+    -Port 587 `
+    -UseSsl $true `
+    -Username "XXXXX@gmail.com" `
+    -FromAddress "XXXX@gmail.com" `
+    -FromName "XXXXX"
+
+  powershell -ExecutionPolicy Bypass -File .\scripts\set-email-inbox-user-secrets.ps1 -Enable `
+    -ImapHost "imap.gmail.com" `
+    -Port 993 `
+    -UseSsl $true `
+    -Username "XXXX@gmail.com" `
+    -Folder "INBOX"
+
+  dotnet user-secrets set "Email:DefaultTo" "YYYYY@gmail.com" --project src/InfernalHierarchy.Host/InfernalHierarchy.Host.csproj
+  ```
+
+  Ensuite, exporte le secret SMTP Docker si tu lances le host dans le conteneur :
+
+  ```powershell
+  powershell -ExecutionPolicy Bypass -File .\scripts\export-email-docker-secret.ps1 -Force
+  ```
+
 3. **Optionnel : Configurer Brave Search (alternative à SearXNG)**
    ```bash
    dotnet user-secrets set "BraveSearch:ApiKey" "YOUR_BRAVE_API_KEY"

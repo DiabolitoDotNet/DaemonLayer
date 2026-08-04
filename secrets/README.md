@@ -16,6 +16,8 @@
 # Email SMTP (recommended: user-secrets)
 # Use the helper script to store Email:* settings in the Host project's user-secrets (no credentials committed):
 #   powershell -ExecutionPolicy Bypass -File .\scripts\set-email-user-secrets.ps1
+# For inbox query (IMAP), use:
+#   powershell -ExecutionPolicy Bypass -File .\scripts\set-email-inbox-user-secrets.ps1
 
 # Example:
 # echo "123456789:ABCdefGHIjklMNOpqrSTUvwxYZ" > telegram_bot_token.txt

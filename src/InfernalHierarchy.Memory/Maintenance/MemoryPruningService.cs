@@ -46,16 +46,20 @@ public class MemoryPruningService : BackgroundService
             _options.DryRun,
             _options.MaxDeletesPerRun);
 
-        while (!stoppingToken.IsCancellationRequested)
+        while (await _timer.WaitForNextTickAsync(stoppingToken).ConfigureAwait(false))
         {
             try
             {
-                await _timer.WaitForNextTickAsync(stoppingToken);
-                await PruneMemoryAsync(stoppingToken);
+                await PruneMemoryAsync(stoppingToken).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {
                 // Expected during shutdown
+                break;
+            }
+            catch (ObjectDisposedException ex) when (string.Equals(ex.ObjectName, "System.Threading.ReaderWriterLockSlim", StringComparison.Ordinal))
+            {
+                _logger.LogWarning(ex, "Stopping memory pruning because LiteDB synchronization primitives are disposed");
                 break;
             }
             catch (Exception ex)
@@ -141,6 +145,10 @@ public class MemoryPruningService : BackgroundService
                 }
             }
         }
+        catch (ObjectDisposedException)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error pruning old facts");
@@ -179,6 +187,10 @@ public class MemoryPruningService : BackgroundService
                     }
                 }
             }
+        }
+        catch (ObjectDisposedException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -226,6 +238,10 @@ public class MemoryPruningService : BackgroundService
                 await _sharedMemory.DeleteDecisionAsync(decision.Id, ct);
                 pruned++;
             }
+        }
+        catch (ObjectDisposedException)
+        {
+            throw;
         }
         catch (Exception ex)
         {

@@ -6,6 +6,8 @@ a:hover { text-decoration: underline; }
 header { padding:16px 20px; border-bottom:1px solid var(--border); background:rgba(18,24,38,.6); position:sticky; top:0; backdrop-filter: blur(8px); }
 h1 { margin:0; font-size:18px; }
 .sub { color:var(--muted); font-size:12px; margin-top:4px; }
+  .opAuth { margin-top:10px; align-items:center; }
+  .opAuth input { max-width: 520px; }
   .nav { display:flex; gap:10px; margin-top:10px; flex-wrap:wrap; }
   .navLink { text-decoration:none; color:var(--text); font-size:13px; padding:8px 10px; border-radius:10px; border:1px solid var(--border); background:#0f1420; }
   .navLink.active { border-color: var(--accent); color: var(--accent); }
@@ -54,3 +56,51 @@ audio { width: 100%; margin-top: 8px; }
   .traceNode.critical .name { color: #ffd37a; }
   .traceIndent { margin-left: 14px; border-left: 1px dashed rgba(122,162,255,.25); padding-left: 10px; }
   .tagLine { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 11px; color: var(--muted); margin: 4px 0 6px 32px; white-space: pre-wrap; }
+
+  .systemLayout { display:grid; grid-template-columns: 1.2fr 1fr; gap:12px; margin-bottom:10px; }
+  @media (max-width: 1100px) { .systemLayout { grid-template-columns: 1fr; } }
+  .systemControls { flex-wrap: wrap; }
+  .systemControls select, .systemControls input { min-width: 180px; }
+  .systemControls button { white-space: nowrap; }
+  .systemLegend { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px; }
+  .legendItem { border:1px dashed var(--border); border-radius:999px; padding:4px 8px; font-size:11px; color:var(--muted); display:inline-flex; align-items:center; gap:5px; background:#0f1420; }
+  .systemPanel { border:1px solid var(--border); border-radius:10px; background:#0a0e16; padding:10px; min-height: 220px; }
+  .systemPanel h3 { margin:0 0 10px 0; font-size:12px; color:var(--muted); text-transform: uppercase; letter-spacing:.04em; }
+
+  .hierarchyBoard { max-height: 460px; overflow:auto; }
+  .agentTree { display:flex; flex-direction:column; gap:8px; }
+  .agentNode { border:1px solid var(--border); border-radius:10px; background:#111827; padding:8px; }
+  .agentNodeHead { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  .agentToggle { width:20px; height:20px; border-radius:6px; border:1px solid var(--border); background:#0f1420; color:var(--muted); padding:0; line-height:1; cursor:pointer; }
+  .agentToggle:hover { border-color:var(--accent); color:var(--text); }
+  .agentIcon { width:18px; text-align:center; color:#ffd37a; font-size:13px; }
+  .agentName { font-size:12px; font-weight:600; }
+  .rankBadge { font-size:10px; border:1px solid var(--border); border-radius:999px; padding:1px 7px; color:var(--muted); text-transform: uppercase; letter-spacing:.03em; }
+  .statusBadge { font-size:10px; border-radius:999px; padding:1px 7px; text-transform: uppercase; letter-spacing:.03em; border:1px solid transparent; }
+  .statusBadge.statusIdle { color:#8cf5b2; background:rgba(26,127,55,.15); border-color:rgba(26,127,55,.45); }
+  .statusBadge.statusBusy { color:#ffd37a; background:rgba(184,134,11,.15); border-color:rgba(184,134,11,.45); }
+  .statusBadge.statusError { color:#ff9b9b; background:rgba(170,35,35,.15); border-color:rgba(170,35,35,.45); }
+  .statusBadge.statusStopped { color:#b8c1d1; background:rgba(90,102,122,.18); border-color:rgba(90,102,122,.45); }
+  .agentNode.statusError { border-color: rgba(170,35,35,.55); }
+  .agentNode.statusBusy { border-color: rgba(184,134,11,.55); }
+  .agentNode.statusIdle { border-color: rgba(26,127,55,.35); }
+  .agentNode.statusStopped { border-color: rgba(90,102,122,.5); }
+  .agentNode.selected { box-shadow: 0 0 0 1px rgba(122,162,255,.45), 0 0 22px rgba(122,162,255,.14); }
+  .agentMeta { font-size:11px; color:var(--muted); margin-top:4px; }
+  .agentRelation { font-size:11px; color:#8aa0c6; margin-top:3px; }
+  .agentChildren { margin-top:8px; margin-left:10px; padding-left:10px; border-left:1px dashed rgba(122,162,255,.35); display:flex; flex-direction:column; gap:8px; overflow:hidden; max-height:1200px; opacity:1; transition:max-height .25s ease, opacity .2s ease, margin-top .2s ease; }
+  .agentNode.collapsed > .agentChildren { max-height:0; opacity:0; margin-top:0; border-left-color:transparent; }
+
+  .rankColumns { display:grid; grid-template-columns: repeat(4, minmax(140px, 1fr)); gap:8px; }
+  @media (max-width: 900px) { .rankColumns { grid-template-columns: repeat(2, minmax(140px, 1fr)); } }
+  .rankColumn { border:1px dashed var(--border); border-radius:10px; padding:8px; background:#0f1420; }
+  .rankTitle { font-size:11px; color:var(--muted); margin-bottom:8px; text-transform: uppercase; }
+  .agentChip { border:1px solid var(--border); border-radius:8px; background:#111827; padding:7px 8px; margin-bottom:6px; }
+  .agentChip:last-child { margin-bottom:0; }
+  .agentChip.selected { box-shadow: 0 0 0 1px rgba(122,162,255,.45), 0 0 14px rgba(122,162,255,.12); }
+
+  .toolsCards { display:grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap:8px; }
+  .toolCard { border:1px solid var(--border); border-radius:10px; background:#0f1420; padding:8px; }
+  .toolName { font-size:12px; font-weight:600; margin-bottom:6px; color:var(--accent); }
+  .toolDesc { font-size:11px; color:var(--muted); line-height:1.35; }
+  .emptyState { font-size:12px; color:var(--muted); border:1px dashed var(--border); border-radius:8px; padding:10px; background:#0f1420; }

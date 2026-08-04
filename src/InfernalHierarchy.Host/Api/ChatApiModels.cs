@@ -4,7 +4,8 @@ public sealed record ChatRequest(
     string Message,
     string? ToAgentId = null,
     int? TimeoutMs = null,
-    string? ExecutionProfile = null);
+    string? ExecutionProfile = null,
+    long? TelegramChatId = null);
 
 public sealed record ChatResponse(
     string fromAgentId,

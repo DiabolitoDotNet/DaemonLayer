@@ -8,12 +8,42 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      target: runtime-base
     container_name: infernal-hierarchy
     environment:
       - Ollama__BaseUrl=${OLLAMA_BASE_URL:-http://host.docker.internal:11434/v1}
       - Ollama__DefaultModel=qwen3:8b
       - Ollama__AlternativeModel=dolphin3:8b
       - Ollama__RequestTimeoutSeconds=600
+
+      # Keep local multi-model router aligned with the intended project defaults
+      - LlmOptions__Models__0__Name=qwen3:8b
+      - LlmOptions__Models__0__BaseUrl=${OLLAMA_BASE_URL:-http://host.docker.internal:11434/v1}
+      - LlmOptions__Models__0__Complexity=Medium
+      - LlmOptions__Models__0__Priority=1
+      - LlmOptions__Models__0__Temperature=0.7
+      - LlmOptions__Models__0__MaxTokens=2048
+
+      - LlmOptions__Models__1__Name=qwen3:8b
+      - LlmOptions__Models__1__BaseUrl=${OLLAMA_BASE_URL:-http://host.docker.internal:11434/v1}
+      - LlmOptions__Models__1__Complexity=Simple
+      - LlmOptions__Models__1__Priority=1
+      - LlmOptions__Models__1__Temperature=0.5
+      - LlmOptions__Models__1__MaxTokens=1024
+
+      - LlmOptions__Models__2__Name=dolphin3:8b
+      - LlmOptions__Models__2__BaseUrl=${OLLAMA_BASE_URL:-http://host.docker.internal:11434/v1}
+      - LlmOptions__Models__2__Complexity=Complex
+      - LlmOptions__Models__2__Priority=1
+      - LlmOptions__Models__2__Temperature=0.8
+      - LlmOptions__Models__2__MaxTokens=4096
+
+      - LlmOptions__Models__3__Name=dolphin3:8b
+      - LlmOptions__Models__3__BaseUrl=${OLLAMA_BASE_URL:-http://host.docker.internal:11434/v1}
+      - LlmOptions__Models__3__Complexity=Expert
+      - LlmOptions__Models__3__Priority=1
+      - LlmOptions__Models__3__Temperature=0.3
+      - LlmOptions__Models__3__MaxTokens=2048
 
       - SearXNG__BaseUrl=http://searxng:8080
       - SearXNG__Enabled=true
@@ -56,11 +86,25 @@ services:
 
       - DockerSecrets__Enabled=true
       - DockerSecrets__RootPath=/run/secrets
+      - OperatorApi__Enabled=true
+      - OperatorApi__ApiKey=${OPERATOR_API_KEY:-daemonlayer-local-operator-key}
+
+      # Optional IMAP inbox config for email_inbox_query (set via local env vars)
+      - EmailInbox__Enabled=${EMAIL_INBOX_ENABLED:-false}
+      - EmailInbox__Host=${EMAIL_INBOX_HOST:-}
+      - EmailInbox__Port=${EMAIL_INBOX_PORT:-993}
+      - EmailInbox__UseSsl=${EMAIL_INBOX_USE_SSL:-true}
+      - EmailInbox__Username=${EMAIL_INBOX_USERNAME:-}
+      - EmailInbox__Password=${EMAIL_INBOX_PASSWORD:-}
+      - EmailInbox__Folder=${EMAIL_INBOX_FOLDER:-INBOX}
+      - EmailInbox__TimeoutMs=${EMAIL_INBOX_TIMEOUT_MS:-15000}
+      - EmailInbox__MaxResults=${EMAIL_INBOX_MAX_RESULTS:-20}
 
       - GitHubPublisher__Enabled=false
       - BraveSearch__Enabled=false
       - AgentSupervisor__Enabled=false
       - MemoryLearningOptions__Enabled=false
+      - AutonomyReadiness__FailStartupOnCriticalNotReady=false
 
       - OnnxEmbeddingOptions__Enabled=false
       - VectorMemoryOptions__Enabled=true

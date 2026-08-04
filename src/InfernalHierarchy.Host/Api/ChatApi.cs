@@ -1,4 +1,5 @@
 using InfernalHierarchy.Core.Entities;
+using InfernalHierarchy.Telegram.Options;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using System.Diagnostics;
@@ -10,6 +11,7 @@ internal static class ChatApi
     public static void Map(WebApplication app, UiInterfaceOptions uiOptions)
     {
         var operatorOptions = app.Services.GetRequiredService<IOptions<OperatorApiOptions>>().Value;
+        var telegramOptions = app.Services.GetService<IOptions<TelegramOptions>>()?.Value;
 
         app.MapPost("/api/chat", async (
             HttpContext ctx,
@@ -74,6 +76,15 @@ internal static class ChatApi
                         ["execution_profile"] = executionProfile
                     }
                 };
+
+                var telegramChatId = request.TelegramChatId.HasValue && request.TelegramChatId.Value != 0
+                    ? request.TelegramChatId.Value
+                    : ResolveDefaultTelegramChatId(telegramOptions);
+
+                if (telegramChatId != 0)
+                {
+                    message.Payload["telegram_chat_id"] = telegramChatId;
+                }
 
                 await messageBus.PublishAsync(message, ct);
 
@@ -148,5 +159,22 @@ internal static class ChatApi
         return string.IsNullOrWhiteSpace(traceId)
             ? Guid.NewGuid().ToString("N")
             : traceId;
+    }
+
+    private static long ResolveDefaultTelegramChatId(TelegramOptions? options)
+    {
+        if (options is null)
+        {
+            return 0;
+        }
+
+        if (options.StartupNotificationChatId != 0)
+        {
+            return options.StartupNotificationChatId;
+        }
+
+        return options.AllowedUserIds.Length == 1
+            ? options.AllowedUserIds[0]
+            : 0;
     }
 }
