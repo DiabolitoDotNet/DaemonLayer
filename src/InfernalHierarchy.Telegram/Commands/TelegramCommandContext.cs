@@ -8,4 +8,5 @@ public sealed record TelegramCommandContext(
     string RawText,
     IReadOnlyList<string> Parts,
     IMessageBus MessageBus,
-    ILogger Logger);
+    ILogger Logger,
+    string CorrelationId);

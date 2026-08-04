@@ -84,6 +84,7 @@ function wsUrl() {
 
 function currentPage() {
   const p = (location.pathname || '/ui').toLowerCase();
+  if (p.endsWith('/ui/ops')) return 'ops';
   if (p.endsWith('/ui/perf')) return 'perf';
   if (p.endsWith('/ui/timeline')) return 'timeline';
   if (p.endsWith('/ui/playground')) return 'playground';
@@ -106,6 +107,7 @@ function setActiveNav() {
 
   const pages = {
     home: qs('page-home'),
+    ops: qs('page-ops'),
     perf: qs('page-perf'),
     timeline: qs('page-timeline'),
     playground: qs('page-playground'),
@@ -137,11 +139,11 @@ const connectBtn = qs('connect');
 const disconnectBtn = qs('disconnect');
 const clearBtn = qs('clear');
 const refreshBtn = qs('refresh');
+const refreshOpsBtn = qs('refreshOps');
 
 const toAgentIdInput = qs('toAgentId');
 const telegramChatIdInput = qs('telegramChatId');
 const messageInput = qs('message');
-const sendTaskBtn = qs('sendTask');
 const sendHttpBtn = qs('sendHttp');
 
 const audioFileInput = qs('audioFile');
@@ -519,16 +521,7 @@ if (connectBtn) connectBtn.onclick = () => {
 if (disconnectBtn) disconnectBtn.onclick = () => { if (socket) socket.close(); };
 if (clearBtn) clearBtn.onclick = () => { if (wsLog) wsLog.textContent = ''; if (chatLog) chatLog.textContent = ''; };
 if (refreshBtn) refreshBtn.onclick = refreshSystem;
-
-if (sendTaskBtn) sendTaskBtn.onclick = () => {
-  if (!socket || socket.readyState !== WebSocket.OPEN) { append(chatLog, '[chat] connect WS first'); return; }
-  const toAgentId = ((toAgentIdInput && toAgentIdInput.value) || 'lucifer').trim();
-  const message = ((messageInput && messageInput.value) || '').trim();
-  if (!message) return;
-  socket.send(JSON.stringify({ type: 'task', toAgentId, content: message }));
-  append(chatLog, `[me ÔåÆ ${toAgentId}] ${message}`);
-  if (messageInput) messageInput.value = '';
-};
+if (refreshOpsBtn) refreshOpsBtn.onclick = refreshSystem;
 
 if (sendHttpBtn) sendHttpBtn.onclick = async () => {
   const toAgentId = ((toAgentIdInput && toAgentIdInput.value) || 'lucifer').trim();

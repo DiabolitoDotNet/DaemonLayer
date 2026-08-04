@@ -509,7 +509,9 @@ internal static class HostDependencyInjection
     public static void AddHostedServices(WebApplicationBuilder builder)
     {
         builder.Services.AddInfernalTelegramCommandHandlers();
-        builder.Services.AddHostedService<TelegramBotService>();
+        builder.Services.AddSingleton<TelegramBotService>();
+        builder.Services.AddSingleton<ITelegramInboundSimulator>(sp => sp.GetRequiredService<TelegramBotService>());
+        builder.Services.AddHostedService(sp => sp.GetRequiredService<TelegramBotService>());
         builder.Services.AddHostedService<AgentOrchestrator>();
         builder.Services.AddHostedService<FederationHealthMonitorHostedService>();
 

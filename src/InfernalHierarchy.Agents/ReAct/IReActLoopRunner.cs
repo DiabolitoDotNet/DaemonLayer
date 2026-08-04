@@ -29,7 +29,8 @@ public sealed record ReActLoopContext(
     ReActOptions ReActOptions,
     IReActPromptBuilder PromptBuilder,
     Func<ReActCheckpoint, CancellationToken, Task>? EmitCheckpoint = null,
-    string? ExecutionProfile = null);
+    string? ExecutionProfile = null,
+    string? CorrelationId = null);
 
 public sealed record ReActLoopResult(
     string FinalAnswer,

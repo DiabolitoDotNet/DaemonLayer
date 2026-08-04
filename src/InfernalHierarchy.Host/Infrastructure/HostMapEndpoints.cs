@@ -25,6 +25,7 @@ internal static class HostMapEndpoints
         ToolsApi.Map(app, uiOptions);
         EventsApi.Map(app, uiOptions);
         DeadLettersApi.Map(app, uiOptions);
+        TelegramOpsApi.Map(app, uiOptions);
 
         PersonasApi.Map(app, uiOptions);
         DocsApi.Map(app, uiOptions);

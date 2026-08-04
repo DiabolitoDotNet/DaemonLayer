@@ -296,7 +296,8 @@ public sealed class DefaultReActTaskProcessor : IReActTaskProcessor
         }
 
         effectiveContext.SetStatus(AgentStatus.Thinking);
-        effectiveContext.Logger.LogInformation("🔥 {AgentName} processing task: {Content}", effectiveContext.AgentName, effectiveTaskContent);
+        var taskCorrelationId = effectiveTask.CorrelationId ?? effectiveTask.Id;
+        effectiveContext.Logger.LogInformation("🔥 {AgentName} processing task: {Content} | CorrelationId: {CorrelationId}", effectiveContext.AgentName, effectiveTaskContent, taskCorrelationId);
 
         try
         {
@@ -981,7 +982,8 @@ public sealed class DefaultReActTaskProcessor : IReActTaskProcessor
             ReActOptions: context.ReActOptions,
             PromptBuilder: context.PromptBuilder,
             EmitCheckpoint: EmitCheckpointAsync,
-            ExecutionProfile: ResolveExecutionProfile(sourceTask.Payload));
+            ExecutionProfile: ResolveExecutionProfile(sourceTask.Payload),
+            CorrelationId: sourceTask.CorrelationId ?? sourceTask.Id);
 
         var result = await context.LoopRunner.RunAsync(loopContext, ct).ConfigureAwait(false);
 

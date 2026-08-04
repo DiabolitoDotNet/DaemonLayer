@@ -8,6 +8,7 @@ internal static partial class DashboardAssets
     private static readonly Lazy<string> _indexHtml = new(
         () => LayoutPrefix
             + PageHome
+            + PageOps
             + PagePerf
             + PageTimeline
             + PagePlayground

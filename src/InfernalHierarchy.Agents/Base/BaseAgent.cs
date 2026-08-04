@@ -145,8 +145,8 @@ public abstract class BaseAgent : IAgent
 
                     if (shouldProcess)
                     {
-                        _logger.LogInformation("📨 {AgentName} received {MessageType}: {Content}",
-                            Name, message.Type, message.Content);
+                        _logger.LogInformation("📨 {AgentName} received {MessageType}: {Content} | CorrelationId: {CorrelationId}",
+                            Name, message.Type, message.Content, message.CorrelationId ?? message.Id);
 
                         var response = await ProcessTaskAsync(message, ct);
                         await _messageBus.PublishAsync(response, ct);

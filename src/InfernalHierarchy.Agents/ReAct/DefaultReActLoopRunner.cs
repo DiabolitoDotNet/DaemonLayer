@@ -213,7 +213,7 @@ public sealed class DefaultReActLoopRunner : IReActLoopRunner
                 }
 
                 context.Logger.LogInformation("💭 Thought: {Thought}", thought);
-                context.Logger.LogInformation("⚡ Action: {Action}", action);
+                context.Logger.LogInformation("⚡ Action: {Action} | CorrelationId: {CorrelationId}", action, context.CorrelationId ?? "n/a");
 
                 await TryEmitCheckpointAsync(context, new ReActCheckpoint(
                     Phase: "plan",
@@ -346,6 +346,8 @@ public sealed class DefaultReActLoopRunner : IReActLoopRunner
                         Detail: actionInput,
                         Iteration: iterations,
                         OccurredAtUtc: DateTime.UtcNow), ct).ConfigureAwait(false);
+
+                    context.Logger.LogInformation("✅ Action: FINAL_ANSWER | CorrelationId: {CorrelationId}", context.CorrelationId ?? "n/a");
 
                     return new ReActLoopResult(
                         FinalAnswer: actionInput,

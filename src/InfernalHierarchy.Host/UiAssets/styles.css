@@ -14,6 +14,7 @@ h1 { margin:0; font-size:18px; }
 
   main { padding:16px 20px; }
   .grid { display:grid; gap:16px; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
+  .grid .fullSpan { grid-column: 1 / -1; }
   .page { display:none; }
   .page.active { display:block; }
   .split { display:grid; gap:16px; grid-template-columns: 360px 1fr; }
@@ -57,7 +58,7 @@ audio { width: 100%; margin-top: 8px; }
   .traceIndent { margin-left: 14px; border-left: 1px dashed rgba(122,162,255,.25); padding-left: 10px; }
   .tagLine { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 11px; color: var(--muted); margin: 4px 0 6px 32px; white-space: pre-wrap; }
 
-  .systemLayout { display:grid; grid-template-columns: 1.2fr 1fr; gap:12px; margin-bottom:10px; }
+  .systemLayout { display:grid; grid-template-columns: 1fr; gap:12px; margin-bottom:10px; }
   @media (max-width: 1100px) { .systemLayout { grid-template-columns: 1fr; } }
   .systemControls { flex-wrap: wrap; }
   .systemControls select, .systemControls input { min-width: 180px; }
@@ -67,7 +68,7 @@ audio { width: 100%; margin-top: 8px; }
   .systemPanel { border:1px solid var(--border); border-radius:10px; background:#0a0e16; padding:10px; min-height: 220px; }
   .systemPanel h3 { margin:0 0 10px 0; font-size:12px; color:var(--muted); text-transform: uppercase; letter-spacing:.04em; }
 
-  .hierarchyBoard { max-height: 460px; overflow:auto; }
+  .hierarchyBoard { min-height: 360px; max-height: clamp(460px, 68vh, 980px); overflow:auto; }
   .agentTree { display:flex; flex-direction:column; gap:8px; }
   .agentNode { border:1px solid var(--border); border-radius:10px; background:#111827; padding:8px; }
   .agentNodeHead { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }

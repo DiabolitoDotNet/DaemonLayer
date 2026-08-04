@@ -24,6 +24,7 @@ internal static partial class DashboardAssets
 
     <nav class="nav">
       <a class="navLink" href="/ui">Dashboard</a>
+      <a class="navLink" href="/ui/ops">Operations</a>
       <a class="navLink" href="/ui/perf">Performance</a>
       <a class="navLink" href="/ui/timeline">Timeline</a>
       <a class="navLink" href="/ui/playground">Playground</a>
@@ -47,47 +48,8 @@ internal static partial class DashboardAssets
     internal const string PageHome = """
     <div id="page-home" class="page">
       <div class="grid">
-        <section class="card">
-          <h2>Chat</h2>
-          <div class="row">
-            <input id="toAgentId" placeholder="to_agent_id (default: lucifer)" />
-            <input id="telegramChatId" placeholder="telegram_chat_id (optional)" />
-            <button id="connect">Connect WS</button>
-            <button id="disconnect">Disconnect</button>
-          </div>
-          <textarea id="message" rows="3" placeholder="Type a task/message..."></textarea>
-          <div class="row">
-            <button id="sendTask">Send task (WS)</button>
-            <button id="sendHttp">Send task (HTTP)</button>
-          </div>
-          <pre id="chatLog" class="log"></pre>
-        </section>
-
-        <section class="card">
-          <h2>Voice</h2>
-          <div class="row">
-            <input id="audioFile" type="file" accept="audio/*" />
-            <button id="transcribe">Transcribe</button>
-          </div>
-          <textarea id="transcript" rows="3" placeholder="Transcript will appear here..." readonly></textarea>
-          <div class="row">
-            <input id="ttsText" placeholder="Text to speak..." />
-            <button id="speak">Speak</button>
-          </div>
-          <audio id="ttsAudio" controls></audio>
-          <pre id="voiceLog" class="log"></pre>
-        </section>
-
-        <section class="card">
-          <h2>Live Stream</h2>
-          <div class="row">
-            <button id="clear">Clear</button>
-          </div>
-          <pre id="wsLog" class="log"></pre>
-        </section>
-
-        <section class="card">
-          <h2>System</h2>
+        <section class="card fullSpan">
+          <h2>Hierarchy</h2>
           <div class="row">
             <button id="refresh">Refresh</button>
             <span id="sysSummary" class="pill"></span>
@@ -131,12 +93,61 @@ internal static partial class DashboardAssets
               <h3>Agents Hierarchy</h3>
               <div id="agentsHierarchy" class="hierarchyBoard"></div>
             </div>
-            <div class="systemPanel">
-              <h3>Tools</h3>
-              <div id="toolsCards" class="toolsCards"></div>
-            </div>
           </div>
           <pre id="sys" class="log small"></pre>
+        </section>
+
+        <section class="card fullSpan">
+          <h2>Live Stream</h2>
+          <div class="row">
+            <button id="connect">Connect WS</button>
+            <button id="disconnect">Disconnect</button>
+            <button id="clear">Clear</button>
+          </div>
+          <pre id="wsLog" class="log"></pre>
+        </section>
+      </div>
+    </div>
+
+""";
+
+    internal const string PageOps = """
+    <div id="page-ops" class="page">
+      <div class="grid">
+        <section class="card">
+          <h2>Chat</h2>
+          <div class="row">
+            <input id="toAgentId" placeholder="to_agent_id (default: lucifer)" />
+            <input id="telegramChatId" placeholder="telegram_chat_id (optional)" />
+          </div>
+          <textarea id="message" rows="3" placeholder="Type a task/message..."></textarea>
+          <div class="row">
+            <button id="sendHttp">Send task (HTTP)</button>
+          </div>
+          <pre id="chatLog" class="log"></pre>
+        </section>
+
+        <section class="card">
+          <h2>Voice</h2>
+          <div class="row">
+            <input id="audioFile" type="file" accept="audio/*" />
+            <button id="transcribe">Transcribe</button>
+          </div>
+          <textarea id="transcript" rows="3" placeholder="Transcript will appear here..." readonly></textarea>
+          <div class="row">
+            <input id="ttsText" placeholder="Text to speak..." />
+            <button id="speak">Speak</button>
+          </div>
+          <audio id="ttsAudio" controls></audio>
+          <pre id="voiceLog" class="log"></pre>
+        </section>
+
+        <section class="card fullSpan">
+          <h2>Tools</h2>
+          <div class="row">
+            <button id="refreshOps">Refresh tools/system</button>
+          </div>
+          <div id="toolsCards" class="toolsCards"></div>
         </section>
       </div>
     </div>

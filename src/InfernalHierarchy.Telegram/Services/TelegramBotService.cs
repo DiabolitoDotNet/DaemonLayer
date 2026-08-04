@@ -18,6 +18,7 @@ namespace InfernalHierarchy.Telegram.Services;
 /// Telegram Bot service for receiving commands and sending responses
 /// </summary>
 public class TelegramBotService : BackgroundService
+    , ITelegramInboundSimulator
 {
     private const string TelegramAgentId = "telegram";
     private static readonly HashSet<string> PresencePingMessages = new(StringComparer.OrdinalIgnoreCase)
@@ -165,6 +166,17 @@ public class TelegramBotService : BackgroundService
                         }
 
                         sentAny = true;
+                    }
+
+                    if (sentAny)
+                    {
+                        var correlationId = ResolveCorrelationId(message);
+                        _logger.LogInformation(
+                            "📨 Forwarded agent message {MessageId} from {From} to Telegram chat {ChatId} | CorrelationId: {CorrelationId}",
+                            message.Id,
+                            message.FromAgentId,
+                            chatId,
+                            correlationId);
                     }
                 }
                 catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -318,6 +330,28 @@ public class TelegramBotService : BackgroundService
         }
     }
 
+    private static string CreateTelegramCorrelationId(long chatId, long userId)
+    {
+        return $"tg:{chatId}:{userId}:{Guid.NewGuid():N}";
+    }
+
+    private static string ResolveCorrelationId(AgentMessage message)
+    {
+        if (!string.IsNullOrWhiteSpace(message.CorrelationId))
+        {
+            return message.CorrelationId;
+        }
+
+        if (message.Payload.TryGetValue("telegram_correlation_id", out var payloadCorrelation)
+            && payloadCorrelation is not null
+            && !string.IsNullOrWhiteSpace(payloadCorrelation.ToString()))
+        {
+            return payloadCorrelation.ToString()!;
+        }
+
+        return message.Id;
+    }
+
     private static string BuildLuciferContent(string userText, string? preamble)
     {
         var p = preamble?.Trim();
@@ -385,6 +419,55 @@ public class TelegramBotService : BackgroundService
         var chatId = message.Chat.Id;
         var userId = message.From?.Id ?? 0;
 
+        await ProcessIncomingTextAsync(
+            botClient,
+            chatId,
+            userId,
+            messageText,
+            message.MessageId,
+            ct).ConfigureAwait(false);
+    }
+
+    public async Task SimulateInboundTextAsync(long chatId, long userId, string messageText, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(messageText))
+        {
+            return;
+        }
+
+        var botClient = _botClient;
+        if (botClient is null)
+        {
+            if (string.IsNullOrWhiteSpace(_options.BotToken))
+            {
+                throw new InvalidOperationException("Telegram bot token is not configured.");
+            }
+
+            botClient = new TelegramBotClient(_options.BotToken);
+        }
+
+        await ProcessIncomingTextAsync(
+            botClient,
+            chatId,
+            userId,
+            messageText,
+            messageId: null,
+            ct).ConfigureAwait(false);
+    }
+
+    private async Task ProcessIncomingTextAsync(
+        ITelegramBotClient botClient,
+        long chatId,
+        long userId,
+        string messageText,
+        int? messageId,
+        CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(messageText))
+        {
+            return;
+        }
+
         if (_options.AllowedUserIds.Length > 0 && !_options.AllowedUserIds.Contains(userId))
         {
             _logger.LogWarning("🚫 Unauthorized user {UserId} attempted to send: {Text}", userId, messageText);
@@ -392,7 +475,8 @@ public class TelegramBotService : BackgroundService
             return;
         }
 
-        _logger.LogInformation("📩 Telegram message from {UserId}: {Text}", userId, messageText);
+        var correlationId = CreateTelegramCorrelationId(chatId, userId);
+        _logger.LogInformation("📩 Telegram message from {UserId}: {Text} | CorrelationId: {CorrelationId}", userId, messageText, correlationId);
 
         if (!messageText.StartsWith('/') && IsPresencePing(messageText))
         {
@@ -405,13 +489,16 @@ public class TelegramBotService : BackgroundService
         {
             if (messageText.StartsWith('/'))
             {
-                await HandleCommandAsync(botClient, chatId, messageText, ct);
+                await HandleCommandAsync(botClient, chatId, messageText, correlationId, ct);
             }
             else
             {
                 // Lightweight receipt acknowledgement (avoid noisy "Task queued..." spam).
                 // Prefer a reaction (👀) on the user's message, not a new message.
-                await TryAcknowledgeReceiptAsync(botClient, chatId, message.MessageId, ct).ConfigureAwait(false);
+                if (messageId is not null)
+                {
+                    await TryAcknowledgeReceiptAsync(botClient, chatId, messageId.Value, ct).ConfigureAwait(false);
+                }
 
                 var agentMessage = new AgentMessage
                 {
@@ -419,10 +506,12 @@ public class TelegramBotService : BackgroundService
                     ToAgentId = "lucifer",
                     Type = CoreMessageType.Task,
                     Content = BuildLuciferContent(messageText, _options.LuciferPreamble),
+                    CorrelationId = correlationId,
                     Payload = new Dictionary<string, object>
                     {
                         ["telegram_chat_id"] = chatId,
-                        ["telegram_user_id"] = userId
+                        ["telegram_user_id"] = userId,
+                        ["telegram_correlation_id"] = correlationId
                     }
                 };
 
@@ -444,13 +533,14 @@ public class TelegramBotService : BackgroundService
 
                 _logger.LogError(
                     ex,
-                    "🔥 Failed to handle Telegram message | Category: {Category} | CorrelationId: {CorrelationId}",
+                    "🔥 Failed to handle Telegram message | Category: {Category} | CorrelationId: {CorrelationId} | TelegramCorrelationId: {TelegramCorrelationId}",
                     handlingResult.Category,
-                    handlingResult.CorrelationId);
+                    handlingResult.CorrelationId,
+                    correlationId);
             }
             else
             {
-                _logger.LogError(ex, "Failed to handle Telegram message");
+                _logger.LogError(ex, "Failed to handle Telegram message | CorrelationId: {CorrelationId}", correlationId);
                 userMessage = $"❌ Error: {ex.Message}";
             }
 
@@ -458,7 +548,7 @@ public class TelegramBotService : BackgroundService
         }
     }
 
-    private async Task HandleCommandAsync(ITelegramBotClient botClient, long chatId, string command, CancellationToken ct)
+    private async Task HandleCommandAsync(ITelegramBotClient botClient, long chatId, string command, string correlationId, CancellationToken ct)
     {
         try
         {
@@ -484,7 +574,8 @@ public class TelegramBotService : BackgroundService
                 RawText: command,
                 Parts: parts,
                 MessageBus: _messageBus,
-                Logger: _logger);
+                Logger: _logger,
+                CorrelationId: correlationId);
 
             await handler.HandleAsync(context, ct);
         }

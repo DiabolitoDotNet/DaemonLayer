@@ -82,10 +82,12 @@ internal static class DefaultCommandHandlers
                 ToAgentId = "lucifer",
                 Type = CoreMessageType.Query,
                 Content = "status",
+                CorrelationId = context.CorrelationId,
                 Payload = new Dictionary<string, object>
                 {
                     ["telegram_chat_id"] = context.ChatId,
-                    ["command"] = "status"
+                    ["command"] = "status",
+                    ["telegram_correlation_id"] = context.CorrelationId
                 }
             };
 
@@ -131,12 +133,14 @@ internal static class DefaultCommandHandlers
                 ToAgentId = "lucifer",
                 Type = CoreMessageType.Command,
                 Content = "create_sub_agent",
+                CorrelationId = context.CorrelationId,
                 Payload = new Dictionary<string, object>
                 {
                     ["telegram_chat_id"] = context.ChatId,
                     ["demon_name"] = demonName,
                     ["rank"] = agentRank.ToString(),
-                    ["command"] = "summon"
+                    ["command"] = "summon",
+                    ["telegram_correlation_id"] = context.CorrelationId
                 }
             };
 
@@ -170,10 +174,12 @@ internal static class DefaultCommandHandlers
                 ToAgentId = agentId,
                 Type = CoreMessageType.Command,
                 Content = "terminate",
+                CorrelationId = context.CorrelationId,
                 Payload = new Dictionary<string, object>
                 {
                     ["telegram_chat_id"] = context.ChatId,
-                    ["command"] = "kill"
+                    ["command"] = "kill",
+                    ["telegram_correlation_id"] = context.CorrelationId
                 }
             };
 
@@ -196,11 +202,13 @@ internal static class DefaultCommandHandlers
                 ToAgentId = "lucifer",
                 Type = CoreMessageType.Query,
                 Content = "read_memory",
+                CorrelationId = context.CorrelationId,
                 Payload = new Dictionary<string, object>
                 {
                     ["telegram_chat_id"] = context.ChatId,
                     ["query"] = query,
-                    ["command"] = "memory"
+                    ["command"] = "memory",
+                    ["telegram_correlation_id"] = context.CorrelationId
                 }
             };
 
@@ -224,10 +232,12 @@ internal static class DefaultCommandHandlers
                 ToAgentId = "lucifer",
                 Type = CoreMessageType.Query,
                 Content = "token_usage",
+                CorrelationId = context.CorrelationId,
                 Payload = new Dictionary<string, object>
                 {
                     ["telegram_chat_id"] = context.ChatId,
-                    ["command"] = "usage"
+                    ["command"] = "usage",
+                    ["telegram_correlation_id"] = context.CorrelationId
                 }
             };
 
@@ -250,11 +260,13 @@ internal static class DefaultCommandHandlers
                 ToAgentId = "lucifer",
                 Type = CoreMessageType.Query,
                 Content = "learning_stats",
+                CorrelationId = context.CorrelationId,
                 Payload = new Dictionary<string, object>
                 {
                     ["telegram_chat_id"] = context.ChatId,
                     ["agent_id"] = agentId,
-                    ["command"] = "learning"
+                    ["command"] = "learning",
+                    ["telegram_correlation_id"] = context.CorrelationId
                 }
             };
 
@@ -278,10 +290,12 @@ internal static class DefaultCommandHandlers
                 ToAgentId = "lucifer",
                 Type = CoreMessageType.Query,
                 Content = "list_models",
+                CorrelationId = context.CorrelationId,
                 Payload = new Dictionary<string, object>
                 {
                     ["telegram_chat_id"] = context.ChatId,
-                    ["command"] = "models"
+                    ["command"] = "models",
+                    ["telegram_correlation_id"] = context.CorrelationId
                 }
             };
 
@@ -315,10 +329,12 @@ internal static class DefaultCommandHandlers
                 ToAgentId = agentId,
                 Type = CoreMessageType.Command,
                 Content = "suspend",
+                CorrelationId = context.CorrelationId,
                 Payload = new Dictionary<string, object>
                 {
                     ["telegram_chat_id"] = context.ChatId,
-                    ["command"] = "suspend"
+                    ["command"] = "suspend",
+                    ["telegram_correlation_id"] = context.CorrelationId
                 }
             };
 
@@ -352,10 +368,12 @@ internal static class DefaultCommandHandlers
                 ToAgentId = agentId,
                 Type = CoreMessageType.Command,
                 Content = "resume",
+                CorrelationId = context.CorrelationId,
                 Payload = new Dictionary<string, object>
                 {
                     ["telegram_chat_id"] = context.ChatId,
-                    ["command"] = "resume"
+                    ["command"] = "resume",
+                    ["telegram_correlation_id"] = context.CorrelationId
                 }
             };
 
