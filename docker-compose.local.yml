@@ -145,6 +145,7 @@ services:
       - "127.0.0.1:8080:8080"
     volumes:
       - ./searxng:/etc/searxng:rw
+      - searxng_cache:/var/cache/searxng
     environment:
       - SEARXNG_BASE_URL=http://localhost:8080/
     restart: unless-stopped
@@ -179,6 +180,9 @@ networks:
 
 volumes:
   qdrant_data:
+  searxng_cache:
+    external: true
+    name: daemonlayer_searxng_cache
 
 secrets:
   telegram_bot_token:
