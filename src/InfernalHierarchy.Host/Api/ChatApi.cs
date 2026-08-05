@@ -1,4 +1,5 @@
 using InfernalHierarchy.Core.Entities;
+using InfernalHierarchy.Host.Configuration;
 using InfernalHierarchy.Telegram.Options;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -12,6 +13,10 @@ internal static class ChatApi
     {
         var operatorOptions = app.Services.GetRequiredService<IOptions<OperatorApiOptions>>().Value;
         var telegramOptions = app.Services.GetService<IOptions<TelegramOptions>>()?.Value;
+        var executionProfilesOptions = app.Services.GetService<IOptions<ExecutionProfilesOptions>>()?.Value;
+        var defaultExecutionProfile = string.IsNullOrWhiteSpace(executionProfilesOptions?.DefaultProfile)
+            ? "Research"
+            : executionProfilesOptions.DefaultProfile.Trim();
 
         app.MapPost("/api/chat", async (
             HttpContext ctx,
@@ -46,7 +51,7 @@ internal static class ChatApi
                 ? request.TimeoutMs.Value
                 : 180_000;
             var executionProfile = string.IsNullOrWhiteSpace(request.ExecutionProfile)
-                ? "Research"
+                ? defaultExecutionProfile
                 : request.ExecutionProfile.Trim();
 
             var replyToId = $"http-{Guid.NewGuid():N}";

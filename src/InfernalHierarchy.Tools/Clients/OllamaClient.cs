@@ -1,5 +1,6 @@
 using System.Net.Http;
 using System.Net.Http.Headers;
+using System.Net;
 using System.Text;
 using System.Diagnostics.CodeAnalysis;
 using System.Text.Json;
@@ -335,6 +336,69 @@ public class OllamaClient : ILlmClient
         var options = GetCurrentOptions();
         var compactedUserMessage = CompactPromptIfEnabled(options, userMessage);
         var selectedModel = modelOverride ?? options.DefaultModel;
+        string output;
+
+        try
+        {
+            output = await ExecuteCompletionRequestAsync(
+                options,
+                selectedModel,
+                systemPrompt,
+                compactedUserMessage,
+                temperature,
+                maxTokens,
+                ct).ConfigureAwait(false);
+        }
+        catch (HttpRequestException ex)
+            when (IsPolicyBlockedHttpRequestException(ex) &&
+                  TryGetAlternativeModelForFallback(options, selectedModel, modelOverride, out var fallbackForBlockedPrimary))
+        {
+            _logger.LogInformation(
+                "Primary model {PrimaryModel} blocked by policy ({StatusCode}), retrying with alternative model {AlternativeModel}",
+                selectedModel,
+                ex.StatusCode.HasValue ? (int)ex.StatusCode.Value : -1,
+                fallbackForBlockedPrimary);
+
+            output = await ExecuteCompletionRequestAsync(
+                options,
+                fallbackForBlockedPrimary,
+                systemPrompt,
+                compactedUserMessage,
+                temperature,
+                maxTokens,
+                ct).ConfigureAwait(false);
+        }
+
+        if (TryGetAlternativeModelForFallback(options, selectedModel, modelOverride, out var alternativeModel) &&
+            IsPolicyRefusalOutput(output))
+        {
+            _logger.LogInformation(
+                "Primary model {PrimaryModel} returned policy refusal, retrying with alternative model {AlternativeModel}",
+                selectedModel,
+                alternativeModel);
+
+            return await ExecuteCompletionRequestAsync(
+                options,
+                alternativeModel,
+                systemPrompt,
+                compactedUserMessage,
+                temperature,
+                maxTokens,
+                ct).ConfigureAwait(false);
+        }
+
+        return output;
+    }
+
+    private async Task<string> ExecuteCompletionRequestAsync(
+        OllamaOptions options,
+        string model,
+        string systemPrompt,
+        string compactedUserMessage,
+        double? temperature,
+        int? maxTokens,
+        CancellationToken ct)
+    {
         var callStartedUtc = DateTime.UtcNow;
 
         try
@@ -342,7 +406,7 @@ public class OllamaClient : ILlmClient
             using var http = CreateConfiguredHttpClient(options);
             var request = new ChatCompletionRequest
             {
-                Model = selectedModel,
+                Model = model,
                 Temperature = temperature ?? options.Temperature,
                 MaxTokens = maxTokens ?? options.MaxTokens,
                 Stream = false,
@@ -369,6 +433,14 @@ public class OllamaClient : ILlmClient
                     "LLM request failed: {StatusCode} | Body: {Body}",
                     (int)response.StatusCode,
                     Truncate(responseText, 2000));
+
+                if (IsPolicyBlockedHttpResponse(response.StatusCode, responseText))
+                {
+                    throw new HttpRequestException(
+                        $"POLICY_BLOCKED: Ollama completion blocked for model {model} with status {(int)response.StatusCode} ({response.StatusCode})",
+                        inner: null,
+                        statusCode: response.StatusCode);
+                }
 
                 throw new HttpRequestException(
                     $"Ollama completion failed with status {(int)response.StatusCode} ({response.StatusCode})",
@@ -407,16 +479,113 @@ public class OllamaClient : ILlmClient
             _logger.LogDebug("LLM Response length: {Length} chars", output.Length);
             return output;
         }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (HttpRequestException ex) when (IsPolicyBlockedHttpRequestException(ex))
+        {
+            _routingFeedback?.RecordOutcome(
+                model,
+                success: false,
+                duration: DateTime.UtcNow - callStartedUtc,
+                outputTokens: 0);
+            throw;
+        }
         catch (Exception ex)
         {
             _routingFeedback?.RecordOutcome(
-                selectedModel,
+                model,
                 success: false,
                 duration: DateTime.UtcNow - callStartedUtc,
                 outputTokens: 0);
             _logger.LogError(ex, "Failed to get LLM completion");
             throw;
         }
+    }
+
+    private static bool TryGetAlternativeModelForFallback(
+        OllamaOptions options,
+        string selectedModel,
+        string? modelOverride,
+        [NotNullWhen(true)] out string? alternativeModel)
+    {
+        alternativeModel = null;
+
+        if (!string.IsNullOrWhiteSpace(modelOverride) &&
+            !string.Equals(modelOverride, options.DefaultModel, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        if (!string.Equals(selectedModel, options.DefaultModel, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        if (string.IsNullOrWhiteSpace(options.AlternativeModel))
+        {
+            return false;
+        }
+
+        var candidate = options.AlternativeModel.Trim();
+        if (string.Equals(candidate, selectedModel, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        alternativeModel = candidate;
+        return true;
+    }
+
+    private static bool IsPolicyBlockedHttpResponse(HttpStatusCode statusCode, string responseBody)
+    {
+        if (statusCode is not HttpStatusCode.BadRequest and not HttpStatusCode.Forbidden and not HttpStatusCode.UnprocessableEntity)
+        {
+            return false;
+        }
+
+        if (string.IsNullOrWhiteSpace(responseBody))
+        {
+            return false;
+        }
+
+        var body = responseBody.ToLowerInvariant();
+        return body.Contains("policy", StringComparison.Ordinal) ||
+               body.Contains("safety", StringComparison.Ordinal) ||
+               body.Contains("moderation", StringComparison.Ordinal) ||
+               body.Contains("content filter", StringComparison.Ordinal) ||
+               body.Contains("disallowed", StringComparison.Ordinal) ||
+               body.Contains("blocked", StringComparison.Ordinal) ||
+               body.Contains("refused", StringComparison.Ordinal);
+    }
+
+    private static bool IsPolicyRefusalOutput(string output)
+    {
+        if (string.IsNullOrWhiteSpace(output))
+        {
+            return false;
+        }
+
+        // Keep this heuristic strict to avoid rerouting normal answers.
+        var normalized = output.Trim().ToLowerInvariant();
+        if (normalized.Length > 800)
+        {
+            return false;
+        }
+
+        return normalized.Contains("i can't assist with", StringComparison.Ordinal) ||
+               normalized.Contains("i cannot assist with", StringComparison.Ordinal) ||
+               normalized.Contains("i can't help with", StringComparison.Ordinal) ||
+               normalized.Contains("i cannot help with", StringComparison.Ordinal) ||
+               normalized.Contains("i'm sorry, but i can't", StringComparison.Ordinal) ||
+               normalized.Contains("i am sorry, but i can't", StringComparison.Ordinal) ||
+               normalized.Contains("violates", StringComparison.Ordinal) && normalized.Contains("policy", StringComparison.Ordinal);
+    }
+
+    private static bool IsPolicyBlockedHttpRequestException(HttpRequestException ex)
+    {
+        return ex.Message.StartsWith("POLICY_BLOCKED:", StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -671,4 +840,5 @@ public class OllamaClient : ILlmClient
         [JsonPropertyName("reasoning")]
         public string? Reasoning { get; set; }
     }
+
 }
