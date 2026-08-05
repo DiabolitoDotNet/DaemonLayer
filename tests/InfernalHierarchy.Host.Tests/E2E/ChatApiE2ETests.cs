@@ -217,6 +217,34 @@ public sealed class ChatApiE2ETests
         bool.Parse(body.payload["autonomy_outcome_needs_supervisor_intervention"].ToString()!).Should().BeFalse();
     }
 
+    [Fact]
+    public async Task ApiChat_ShouldNormalizeProfileMentionsToEffectiveExecutionProfile()
+    {
+        using var factory = new InfernalHierarchyTestWebAppFactory();
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add(OperationalAuthGuard.HeaderName, "test-operator-key");
+
+        var llm = factory.Services.GetRequiredService<ScriptedLlmClient>();
+        llm.Enqueue("Lucifer",
+            "{\"thought\":\"Respond directly\",\"action\":\"FINAL_ANSWER\",\"actionInput\":\"Note: custom tool creation is restricted under the Research profile.\"}");
+
+        await WaitForAgentAsync(factory.Services, "lucifer");
+
+        var response = await client.PostAsJsonAsync("/api/chat", new ChatRequest(
+            Message: "Profile normalization check",
+            ToAgentId: "lucifer",
+            TimeoutMs: 10_000,
+            ExecutionProfile: "Build"));
+
+        response.EnsureSuccessStatusCode();
+
+        var body = await response.Content.ReadFromJsonAsync<ChatResponse>();
+        body.Should().NotBeNull();
+        body!.content.Should().Contain("under the Build profile");
+        body.content.Should().NotContain("under the Research profile");
+        body.payload["execution_profile"].ToString().Should().Be("Build");
+    }
+
     private static async Task WaitForAgentAsync(IServiceProvider services, string agentId)
     {
         var registry = services.GetRequiredService<IAgentRegistry>();

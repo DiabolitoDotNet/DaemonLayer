@@ -4,6 +4,7 @@ using InfernalHierarchy.Telegram.Options;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using System.Diagnostics;
+using System.Text.RegularExpressions;
 
 namespace InfernalHierarchy.Host.Api;
 
@@ -103,11 +104,14 @@ internal static class ChatApi
                         continue;
                     }
 
+                    var normalizedContent = NormalizeExecutionProfileMentions(response.Content, executionProfile);
+                    var normalizedPayload = NormalizeResponsePayload(response.Payload, executionProfile);
+
                     return Results.Ok(new ChatResponse(
                         fromAgentId: response.FromAgentId,
                         toAgentId: response.ToAgentId,
-                        content: response.Content,
-                        payload: AutonomyOutcomeContractEvaluator.EnrichAutonomyOutcomePayload(response.Content, response.Payload),
+                        content: normalizedContent,
+                        payload: AutonomyOutcomeContractEvaluator.EnrichAutonomyOutcomePayload(normalizedContent, normalizedPayload),
                         correlationId: response.CorrelationId ?? correlationId,
                         causationId: response.CausationId,
                         receivedUtc: DateTime.UtcNow,
@@ -181,5 +185,54 @@ internal static class ChatApi
         return options.AllowedUserIds.Length == 1
             ? options.AllowedUserIds[0]
             : 0;
+    }
+
+    private static Dictionary<string, object> NormalizeResponsePayload(
+        Dictionary<string, object>? payload,
+        string executionProfile)
+    {
+        var normalizedPayload = payload is null
+            ? new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase)
+            : new Dictionary<string, object>(payload, StringComparer.OrdinalIgnoreCase);
+
+        normalizedPayload["execution_profile"] = executionProfile;
+
+        if (normalizedPayload.TryGetValue("reasoning", out var reasoning)
+            && reasoning is string reasoningText
+            && !string.IsNullOrWhiteSpace(reasoningText))
+        {
+            normalizedPayload["reasoning"] = NormalizeExecutionProfileMentions(reasoningText, executionProfile);
+        }
+
+        return normalizedPayload;
+    }
+
+    private static string NormalizeExecutionProfileMentions(string content, string executionProfile)
+    {
+        if (string.IsNullOrWhiteSpace(content) || string.IsNullOrWhiteSpace(executionProfile))
+        {
+            return content;
+        }
+
+        var normalized = content;
+        normalized = Regex.Replace(
+            normalized,
+            @"\bcurrent\s+(Research|Build|Deploy)\s+profile\b",
+            $"current {executionProfile} profile",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+        normalized = Regex.Replace(
+            normalized,
+            @"\bunder\s+the\s+(Research|Build|Deploy)\s+profile\b",
+            $"under the {executionProfile} profile",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+        normalized = Regex.Replace(
+            normalized,
+            @"\bexecution\s+profile\s+is\s+'(Research|Build|Deploy)'\b",
+            $"execution profile is '{executionProfile}'",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+        return normalized;
     }
 }
